@@ -142,3 +142,7 @@ Not implemented now: real panel calls, payment processing, wallet accounting, su
 Never commit panel URLs, usernames, passwords, API keys, cookies, real UUIDs, customer subscription links, production domains, or provider credentials. `.env.example` contains placeholders only.
 
 Frontend dependency security is part of Milestone 0 verification. CI installs from `package-lock.json` with `npm ci` when the lockfile exists and runs `npm audit --audit-level=high`; critical and high advisories fail CI, while any non-blocking moderate advisory must be documented in `docs/SECURITY.md`.
+
+## Milestone 1A identity foundation
+
+Milestone 1A adds backend-only identity and access-control foundations: domain entities, account status transitions, identity/RBAC/session/audit schema, repository interfaces and SQLAlchemy implementations, Argon2id password hashing, opaque token hashing, and key-versioned encrypted-secret primitives. It intentionally does not add login routes, Telegram auth verification, MFA flows, frontend authentication pages, products, wallets, orders, payments, panel integrations, provisioning, or subscriptions.

@@ -209,3 +209,8 @@ Detailed milestone matrix is included below.
 - Observability: logs/metrics/audits updated.
 - Acceptance criteria: documented checks pass.
 - Rollback: reversible deploy and migration plan.
+
+### Milestone 1A
+- Scope: identity domain foundation, database schema, repositories, RBAC seed catalog, audit/security event foundations, and core security primitives.
+- Out-of-scope: login routes, refresh flows, Telegram authentication, MFA enrollment, frontend auth pages, commerce, wallets, orders, payments, panels, provisioning, and subscriptions.
+- Rollback: downgrade Alembic from `0002_milestone_1a_identity` to `0001_initial_foundation` on a disposable or pre-production database after confirming no later data depends on identity tables.
