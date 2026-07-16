@@ -1,0 +1,19 @@
+{
+  "root": true,
+  "extends": ["next/core-web-vitals", "next/typescript"],
+  "settings": {
+    "next": {
+      "rootDir": [
+        "apps/customer-web/",
+        "apps/admin-web/",
+        "apps/reseller-web/"
+      ]
+    }
+  },
+  "ignorePatterns": [
+    "node_modules/",
+    "**/.next/",
+    "**/dist/",
+    "**/*.tsbuildinfo"
+  ]
+}
