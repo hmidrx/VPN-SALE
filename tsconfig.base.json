@@ -11,14 +11,6 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "preserve",
-    "skipLibCheck": true,
-    "paths": {
-      "@vpnsale/ui": [
-        "./packages/ui/src/index.ts"
-      ],
-      "@vpnsale/shared-typescript": [
-        "./packages/shared-typescript/src/api-client.ts"
-      ]
-    }
+    "skipLibCheck": true
   }
 }

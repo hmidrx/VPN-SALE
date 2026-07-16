@@ -8,8 +8,14 @@ if [[ -d .venv ]]; then
 fi
 export VPN_SALE_ENVIRONMENT="test"
 export VPN_SALE_VERSION="ci-milestone0"
-export VPN_SALE_DATABASE_URL="${VPN_SALE_DATABASE_URL:-postgresql+asyncpg://vpnsale:vpnsale_ci_password@localhost:5432/vpnsale_test}"
-export VPN_SALE_REDIS_URL="${VPN_SALE_REDIS_URL:-redis://localhost:6379/0}"
+export POSTGRES_DB="${POSTGRES_DB:-vpnsale_test}"
+export POSTGRES_USER="${POSTGRES_USER:-vpnsale}"
+: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required for backend verification}"
+export POSTGRES_PASSWORD
+export POSTGRES_HOST="${POSTGRES_HOST:-127.0.0.1}"
+export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
+export VPN_SALE_DATABASE_URL="postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
+export VPN_SALE_REDIS_URL="${VPN_SALE_REDIS_URL:-redis://127.0.0.1:6379/0}"
 export PYTHONPATH="apps/api/src:apps/telegram-bot/src:apps/worker/src:packages/domain/src:packages/panel-adapters/src:packages/payment-adapters/src:${PYTHONPATH:-}"
 
 log "Python and tool versions"
@@ -19,6 +25,54 @@ ruff --version
 pyright --version
 pytest --version
 alembic --version
+
+log "PostgreSQL credential preflight"
+python - <<'PY'
+import asyncio
+import os
+from urllib.parse import urlsplit
+
+import asyncpg
+
+url = os.environ["VPN_SALE_DATABASE_URL"]
+parts = urlsplit(url)
+expected_host = os.environ["POSTGRES_HOST"]
+expected_db = os.environ["POSTGRES_DB"]
+expected_user = os.environ["POSTGRES_USER"]
+if parts.hostname != expected_host or parts.path.lstrip("/") != expected_db or parts.username != expected_user:
+    raise SystemExit(
+        "Database URL does not match expected CI host, database, and user "
+        f"(host={parts.hostname!r}, database={parts.path.lstrip('/')!r}, user={parts.username!r})."
+    )
+
+async def main() -> None:
+    last_error = "unknown error"
+    for attempt in range(1, 31):
+        try:
+            conn = await asyncpg.connect(
+                host=expected_host,
+                port=int(os.environ["POSTGRES_PORT"]),
+                database=expected_db,
+                user=expected_user,
+                **{"password": os.environ["POSTGRES_PASSWORD"]},
+                timeout=2,
+            )
+            try:
+                await conn.execute("SELECT 1")
+            finally:
+                await conn.close()
+            print(f"PostgreSQL credential preflight passed for host={expected_host} database={expected_db} user={expected_user}")
+            return
+        except Exception as exc:  # noqa: BLE001 - sanitized retry/failure boundary
+            last_error = exc.__class__.__name__
+            await asyncio.sleep(1)
+    raise SystemExit(
+        "PostgreSQL credential preflight failed for "
+        f"host={expected_host} database={expected_db} user={expected_user}; last_error={last_error}"
+    )
+
+asyncio.run(main())
+PY
 
 log "Python formatting"
 ruff format --check .

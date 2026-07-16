@@ -6,7 +6,7 @@ Testing strategy covers unit, integration, contract, adapter, pricing, wallet co
 
 Milestone 0 uses GitHub Actions as the authoritative verification environment. The main workflow `.github/workflows/verify.yml` runs backend, frontend, Docker Compose, and security jobs on Ubuntu with Python 3.12, Node.js 22, PostgreSQL 16, Redis 7, and Docker Compose v2.
 
-Repository scripts mirror CI categories and are intended for Codespaces and CI reuse:
+Repository scripts mirror CI categories and are intended for Codespaces and CI reuse. Backend verification derives the CI application database URL from the disposable PostgreSQL service credentials and verifies those credentials with a sanitized preflight before Alembic runs. Frontend verification reports tool versions and runs each real Next.js production build under a clear workspace label:
 
 - `scripts/verify-backend.sh`
 - `scripts/verify-frontend.sh`

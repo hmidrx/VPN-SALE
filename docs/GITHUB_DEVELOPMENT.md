@@ -8,8 +8,8 @@ The main workflow is `.github/workflows/verify.yml`. It runs on pull requests ta
 
 Jobs:
 
-- `backend`: Python 3.12 with PostgreSQL 16 and Redis 7 service containers. Runs formatting, linting, Pyright, pytest, Alembic upgrade/current/downgrade/re-upgrade, and API import/startup smoke checks.
-- `frontend`: Node.js 22 with npm. Uses `npm ci` when `package-lock.json` exists and temporarily uses `npm install` with a warning when no lockfile exists. If that fallback generates `package-lock.json`, the workflow uploads it as the `generated-package-lock` artifact while keeping read-only repository permissions. Runs lint, strict TypeScript checks, tests, real Next.js builds, and shared package validation.
+- `backend`: Python 3.12 with PostgreSQL 16 and Redis 7 service containers. Defines disposable CI database credentials at the backend job level, derives the application database URL for `127.0.0.1`, runs a sanitized PostgreSQL credential preflight, then runs formatting, linting, Pyright, pytest, Alembic upgrade/current/downgrade/re-upgrade, and API import/startup smoke checks.
+- `frontend`: Node.js 22 with npm. Uses `npm ci` when `package-lock.json` exists and temporarily uses `npm install` with a warning when no lockfile exists. If that fallback generates `package-lock.json`, the workflow uploads it as the `generated-package-lock` artifact while keeping read-only repository permissions. Reports Node, npm, TypeScript, and Next.js versions, then runs lint, strict TypeScript checks, tests, clearly labeled real Next.js builds for customer, admin, and reseller apps, and shared package validation.
 - `docker`: Runs Docker/Compose versions, `docker compose config`, builds the API image, starts PostgreSQL, Redis, API, and reverse proxy, verifies `/health`, `/ready`, `/version`, and `/metrics` through the reverse proxy, checks readiness content, and cleans up volumes.
 - `security`: Runs the repository security baseline without requiring production secrets and without printing secret values. The scanner excludes only its deliberate pattern-source files from self-matching and continues to scan all other tracked source and configuration files.
 
