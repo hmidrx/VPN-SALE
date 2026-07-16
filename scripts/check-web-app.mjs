@@ -26,4 +26,12 @@ const page = readFileSync(join(appPath, "app/page.tsx"), "utf8");
 if (!page.includes("@vpnsale/ui") || !page.includes("tokens.color")) {
   throw new Error(`${appPath} must consume shared UI design tokens`);
 }
+const tsconfig = JSON.parse(readFileSync(join(appPath, "tsconfig.json"), "utf8"));
+const paths = tsconfig.compilerOptions?.paths ?? {};
+if (paths["@vpnsale/ui"]?.[0] !== "../../packages/ui/src/index.ts") {
+  throw new Error(`${appPath} must resolve @vpnsale/ui relative to the app for Next.js builds`);
+}
+if (paths["@vpnsale/shared-typescript"]?.[0] !== "../../packages/shared-typescript/src/api-client.ts") {
+  throw new Error(`${appPath} must resolve @vpnsale/shared-typescript relative to the app for Next.js builds`);
+}
 console.log(`${appPath} web app check passed`);

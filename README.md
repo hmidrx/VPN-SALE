@@ -118,11 +118,12 @@ scripts/verify-frontend.sh
 scripts/verify-docker.sh
 scripts/verify-all.sh
 scripts/security-scan.sh
+scripts/test-security-scan.sh
 ```
 
 Open a Codespace from GitHub with **Code > Codespaces > Create codespace on current branch**. The dev container installs Python 3.12, Node.js 22, npm, Docker-in-Docker, GitHub CLI, curl, jq, PostgreSQL client, and Redis client. It runs `scripts/bootstrap-dev.sh` after creation.
 
-The repository currently supports a temporary no-lockfile npm path. The first successful Codespaces bootstrap may generate `package-lock.json`; commit it with:
+The repository currently supports a temporary no-lockfile npm path. When GitHub Actions must use `npm install` because `package-lock.json` is absent, it uploads the generated lockfile as the `generated-package-lock` artifact without committing or pushing it. The first successful Codespaces bootstrap may also generate `package-lock.json`; commit it with:
 
 ```bash
 git add package-lock.json
@@ -139,3 +140,5 @@ Not implemented now: real panel calls, payment processing, wallet accounting, su
 ## Security baseline
 
 Never commit panel URLs, usernames, passwords, API keys, cookies, real UUIDs, customer subscription links, production domains, or provider credentials. `.env.example` contains placeholders only.
+
+Frontend dependency security is part of Milestone 0 verification. CI installs from `package-lock.json` with `npm ci` when the lockfile exists and runs `npm audit --audit-level=high`; critical and high advisories fail CI, while any non-blocking moderate advisory must be documented in `docs/SECURITY.md`.
