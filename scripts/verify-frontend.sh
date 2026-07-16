@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+mkdir -p test-reports
+exec > >(tee test-reports/frontend-verification.log) 2>&1
+
 log() { printf '\n==> %s\n' "$*"; }
 log "Node and npm versions"
 node --version
