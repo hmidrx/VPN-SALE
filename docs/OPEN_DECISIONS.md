@@ -12,3 +12,5 @@ Milestone 1B-B open decisions: final KMS integration for admin signing/encryptio
 
 ## Milestone 1C-A customer authentication note
 Customer Telegram Mini App authentication now verifies raw init data, links Telegram identities to internal customers, issues isolated customer access credentials, rotates opaque refresh-cookie sessions, enforces CSRF on cookie-authenticated state changes, rate limits sensitive operations, and records sanitized audit/security events. Commerce and customer UI remain out of scope.
+## Milestone 1C-B1 open decisions
+Choose the production public Telegram bot username, final Mini App visual QA matrix across Telegram clients, and the exact CI-owned signed-init-data fixture for browser E2E. Service-worker caching remains intentionally skipped to avoid authenticated response caching risk.
