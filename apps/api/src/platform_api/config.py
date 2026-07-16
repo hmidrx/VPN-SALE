@@ -13,6 +13,13 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://localhost:6379/0"
     metrics_enabled: bool = True
+    password_argon2_time_cost: int = 3
+    password_argon2_memory_cost: int = 65536
+    password_argon2_parallelism: int = 4
+    opaque_token_bytes: int = 32
+    opaque_token_hash_salt: str = "vpnsale-identity-token-v1"  # noqa: S105
+    identity_encryption_key: str = ""
+    identity_encryption_key_version: str = "dev-v1"
     model_config = SettingsConfigDict(env_file=".env", env_prefix="VPN_SALE_", extra="ignore")
 
 

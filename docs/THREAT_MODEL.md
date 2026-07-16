@@ -1,3 +1,7 @@
 # Threat Model
 
 Threats: credential theft, panel compromise, Telegram init data forgery, session theft, CSRF, XSS, SSRF, SQL injection, webhook forgery/replay, duplicate payments, wallet races, double provisioning, IDOR, privilege escalation, unsafe uploads, secret/log leakage, malicious panel responses, supply chain risk, backup exposure, and insider abuse. Controls map to docs/SECURITY.md.
+
+## Milestone 1A additions
+
+New controls reduce credential theft, session replay, privilege escalation, and audit-log leakage risks. Raw passwords, refresh tokens, recovery codes, and TOTP secrets are not stored. Unique constraints protect duplicate normalized administrator email, Telegram ID, role-permission pairs, admin-role pairs, and token hashes. Remaining risks include future login endpoint rate limits, admin bootstrap hardening, TOTP enrollment UX, and production key-management decisions.

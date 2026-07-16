@@ -1,16 +1,22 @@
 import asyncio
 import os
+import sys
 from logging.config import fileConfig
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from alembic import context
 from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from platform_api.identity.models import IdentityBase
+
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-target_metadata = None
+target_metadata = IdentityBase.metadata
 
 database_url = os.environ.get("VPN_SALE_DATABASE_URL")
 if database_url:
