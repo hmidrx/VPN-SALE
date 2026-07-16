@@ -146,3 +146,13 @@ Frontend dependency security is part of Milestone 0 verification. CI installs fr
 ## Milestone 1A identity foundation
 
 Milestone 1A adds backend-only identity and access-control foundations: domain entities, account status transitions, identity/RBAC/session/audit schema, repository interfaces and SQLAlchemy implementations, Argon2id password hashing, opaque token hashing, and key-versioned encrypted-secret primitives. It intentionally does not add login routes, Telegram auth verification, MFA flows, frontend authentication pages, products, wallets, orders, payments, panel integrations, provisioning, or subscriptions.
+
+## Milestone 1B-A administrator authentication
+
+After migrations, bootstrap the first Super Admin explicitly:
+
+```bash
+python -m platform_api.cli bootstrap-admin --email admin@example.com
+```
+
+The command prompts without echoing the password. Protected automation may use `--password-stdin`; passwords are never accepted as normal command-line arguments. Admin authentication endpoints are under `/api/v1/admin/auth/...` and provide password login, MFA challenge verification, refresh rotation, logout/session inspection, and TOTP enrollment foundations.
