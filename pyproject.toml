@@ -17,8 +17,7 @@ pythonpath = ["apps/api/src", "apps/telegram-bot/src", "apps/worker/src", "packa
 testpaths = ["apps/api/tests"]
 
 [tool.pyright]
-include = ["apps", "packages"]
+include = ["apps/api/src", "apps/api/tests", "apps/telegram-bot/src", "apps/worker/src", "packages"]
+extraPaths = ["apps/api/src", "apps/api/tests", "apps/telegram-bot/src", "apps/worker/src", "packages/domain/src", "packages/panel-adapters/src", "packages/payment-adapters/src"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
-venvPath = "."
-venv = ".venv"
