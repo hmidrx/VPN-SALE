@@ -5,6 +5,21 @@ mkdir -p test-reports
 exec > >(tee test-reports/frontend-verification.log) 2>&1
 
 log() { printf '\n==> %s\n' "$*"; }
+
+build_workspace() {
+  local workspace="$1"
+  local app_dir="$2"
+  log "$workspace production build"
+  if npm run build -w "$workspace"; then
+    return 0
+  fi
+
+  echo "Build failed for $workspace; running post-build TypeScript diagnostics." >&2
+  find "$app_dir/.next/types" -maxdepth 4 -type f -print 2>/dev/null || true
+  npx tsc -p "$app_dir/tsconfig.json" --pretty false --noEmit || true
+  return 1
+}
+
 log "Node and npm versions"
 node --version
 npm --version
@@ -26,12 +41,9 @@ log "Frontend typecheck"
 npm run typecheck
 log "Frontend tests"
 npm run test
-log "Customer web production build"
-npm run build -w @vpnsale/customer-web
-log "Admin web production build"
-npm run build -w @vpnsale/admin-web
-log "Reseller web production build"
-npm run build -w @vpnsale/reseller-web
+build_workspace "@vpnsale/customer-web" "apps/customer-web"
+build_workspace "@vpnsale/admin-web" "apps/admin-web"
+build_workspace "@vpnsale/reseller-web" "apps/reseller-web"
 log "Shared package validation"
 npm run typecheck -w @vpnsale/shared-typescript
 npm run typecheck -w @vpnsale/ui
