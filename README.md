@@ -1,0 +1,141 @@
+# VPN-SALE Commerce Platform
+
+VPN-SALE is a production-grade, multi-channel subscription commerce platform for legitimate network-access services. Milestone 0 establishes architecture, documentation, local infrastructure, minimal application shells, and automated checks only; it intentionally does not implement real payments, panel provisioning, wallet accounting, or production authentication.
+
+## Repository structure
+
+- `apps/api` — FastAPI backend shell with health, readiness, version, and metrics endpoints.
+- `apps/telegram-bot` — aiogram-ready Telegram bot shell for local polling and future webhooks.
+- `apps/worker` — background worker shell for scheduled and queued jobs.
+- `apps/customer-web`, `apps/admin-web`, `apps/reseller-web` — Next.js shells sharing design tokens and API client architecture.
+- `packages/domain` — framework-independent domain contracts, state machines, and value objects.
+- `packages/panel-adapters` — panel provider contracts and fake provider scaffolding only.
+- `packages/payment-adapters` — payment provider contracts and fake provider scaffolding only.
+- `packages/shared-typescript` — shared frontend API client and types.
+- `packages/ui` — shared design tokens and UI primitives.
+- `infra` — Docker Compose, reverse proxy, monitoring, backup, and deployment scaffolds.
+- `docs` — product, architecture, security, operations, and milestone documentation.
+
+## Initial setup
+
+```bash
+cp .env.example .env
+python -m venv .venv
+. .venv/bin/activate
+python --version
+pip install --upgrade pip
+pip install -r requirements-dev.txt
+npm install
+```
+
+Python 3.12 is the target runtime. If your machine defaults to another Python version, create the virtual environment with a Python 3.12 executable, for example `python3.12 -m venv .venv`.
+
+## Database and cache startup
+
+```bash
+docker compose config
+docker compose up -d postgres redis
+```
+
+## Migrations
+
+```bash
+. .venv/bin/activate
+alembic -c apps/api/alembic.ini upgrade head
+alembic -c apps/api/alembic.ini downgrade base
+alembic -c apps/api/alembic.ini upgrade head
+```
+
+The initial Milestone 0 migration is intentionally safe and schema-neutral; later milestones add reviewed schema changes.
+
+## Starting applications
+
+Start the core API and reverse proxy:
+
+```bash
+docker compose up --build api reverse-proxy
+```
+
+Optional development profiles are disabled by default so they do not require future credentials:
+
+```bash
+docker compose --profile ops up --build worker
+docker compose --profile telegram up --build telegram-bot
+docker compose --profile web up --build customer-web admin-web reseller-web
+```
+
+Local endpoints:
+
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/ready
+curl http://localhost:8000/version
+curl http://localhost:8000/metrics
+curl http://localhost:8080/health
+```
+
+## Running checks
+
+```bash
+. .venv/bin/activate
+ruff format --check .
+ruff check .
+pyright
+pytest
+npm run lint
+npm run typecheck
+npm run test
+npm run build
+docker compose config
+```
+
+## Stopping and cleaning the environment
+
+```bash
+docker compose down
+docker compose down --volumes --remove-orphans
+```
+
+Only use the second command when you intentionally want to delete local PostgreSQL and Redis development data.
+
+
+## GitHub-native verification and Codespaces
+
+Milestone 0 verification is designed to run in GitHub rather than requiring a developer's local computer. See `docs/GITHUB_DEVELOPMENT.md` for full browser-based instructions.
+
+Authoritative CI workflow:
+
+```bash
+.github/workflows/verify.yml
+```
+
+Reusable verification scripts:
+
+```bash
+scripts/bootstrap-dev.sh
+scripts/verify-backend.sh
+scripts/verify-frontend.sh
+scripts/verify-docker.sh
+scripts/verify-all.sh
+scripts/security-scan.sh
+```
+
+Open a Codespace from GitHub with **Code > Codespaces > Create codespace on current branch**. The dev container installs Python 3.12, Node.js 22, npm, Docker-in-Docker, GitHub CLI, curl, jq, PostgreSQL client, and Redis client. It runs `scripts/bootstrap-dev.sh` after creation.
+
+The repository currently supports a temporary no-lockfile npm path. The first successful Codespaces bootstrap may generate `package-lock.json`; commit it with:
+
+```bash
+git add package-lock.json
+git commit -m "Add reproducible frontend dependency lockfile"
+git push
+```
+
+## Milestone 0 boundaries
+
+Implemented now: documentation, monorepo foundation, Docker Compose, PostgreSQL/Redis services, API/bot/worker/web shells, environment validation, logging, checks, smoke tests, CI, and fake provider interfaces.
+
+Not implemented now: real panel calls, payment processing, wallet accounting, subscription creation, production authentication, real domains, production secrets, or customer data.
+
+## Security baseline
+
+Never commit panel URLs, usernames, passwords, API keys, cookies, real UUIDs, customer subscription links, production domains, or provider credentials. `.env.example` contains placeholders only.

@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Bootstrap development environment",
+      "type": "shell",
+      "command": "scripts/bootstrap-dev.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "Verify backend",
+      "type": "shell",
+      "command": "scripts/verify-backend.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "Verify frontend",
+      "type": "shell",
+      "command": "scripts/verify-frontend.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "Verify Docker stack",
+      "type": "shell",
+      "command": "scripts/verify-docker.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "Verify everything",
+      "type": "shell",
+      "command": "scripts/verify-all.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "Start core development stack",
+      "type": "shell",
+      "command": "docker compose up --build api reverse-proxy",
+      "problemMatcher": []
+    },
+    {
+      "label": "Stop development stack",
+      "type": "shell",
+      "command": "docker compose down --volumes --remove-orphans",
+      "problemMatcher": []
+    }
+  ]
+}
