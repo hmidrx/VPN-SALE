@@ -1,11 +1,13 @@
 from fastapi import FastAPI, Response, status
 
+from .admin_auth.routes import router as admin_auth_router
 from .config import get_settings
 from .dependencies import check_database, check_redis
 from .logging import configure_logging
 
 configure_logging()
 app = FastAPI(title=get_settings().app_name, version=get_settings().version)
+app.include_router(admin_auth_router)
 
 
 @app.get("/health")
