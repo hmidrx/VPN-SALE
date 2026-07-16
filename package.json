@@ -1,0 +1,23 @@
+{
+  "scripts": {
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "workspaces": [
+    "apps/customer-web",
+    "apps/admin-web",
+    "apps/reseller-web",
+    "packages/shared-typescript",
+    "packages/ui"
+  ],
+  "devDependencies": {
+    "typescript": "5.7.2"
+  },
+  "packageManager": "npm@11.4.2",
+  "engines": {
+    "node": ">=22 <23",
+    "npm": ">=10 <12"
+  }
+}

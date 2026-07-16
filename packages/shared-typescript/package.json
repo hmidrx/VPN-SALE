@@ -1,0 +1,13 @@
+{
+  "name": "@vpnsale/shared-typescript",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/api-client.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node ../../scripts/check-package.mjs .",
+    "lint": "node ../../scripts/lint-workspace.mjs ."
+  }
+}

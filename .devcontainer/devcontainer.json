@@ -1,0 +1,82 @@
+{
+  "name": "VPN-SALE Milestone 0",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "dockerDashComposeVersion": "v2"
+    }
+  },
+  "postCreateCommand": "bash scripts/bootstrap-dev.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "ms-azuretools.vscode-docker",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "GitHub.vscode-github-actions",
+        "redhat.vscode-yaml"
+      ]
+    }
+  },
+  "forwardPorts": [
+    8080,
+    8000,
+    3000,
+    3001,
+    3002,
+    5432,
+    6379
+  ],
+  "portsAttributes": {
+    "8080": {
+      "label": "Reverse proxy",
+      "onAutoForward": "notify"
+    },
+    "8000": {
+      "label": "FastAPI",
+      "onAutoForward": "notify"
+    },
+    "3000": {
+      "label": "Customer web",
+      "onAutoForward": "notify"
+    },
+    "3001": {
+      "label": "Admin web",
+      "onAutoForward": "notify"
+    },
+    "3002": {
+      "label": "Reseller web",
+      "onAutoForward": "notify"
+    },
+    "5432": {
+      "label": "PostgreSQL dev only",
+      "onAutoForward": "silent"
+    },
+    "6379": {
+      "label": "Redis dev only",
+      "onAutoForward": "silent"
+    }
+  },
+  "remoteEnv": {
+    "PIP_DISABLE_PIP_VERSION_CHECK": "1"
+  },
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+  "build": {
+    "dockerfile": "Dockerfile"
+  }
+}
