@@ -118,11 +118,12 @@ scripts/verify-frontend.sh
 scripts/verify-docker.sh
 scripts/verify-all.sh
 scripts/security-scan.sh
+scripts/test-security-scan.sh
 ```
 
 Open a Codespace from GitHub with **Code > Codespaces > Create codespace on current branch**. The dev container installs Python 3.12, Node.js 22, npm, Docker-in-Docker, GitHub CLI, curl, jq, PostgreSQL client, and Redis client. It runs `scripts/bootstrap-dev.sh` after creation.
 
-The repository currently supports a temporary no-lockfile npm path. The first successful Codespaces bootstrap may generate `package-lock.json`; commit it with:
+The repository currently supports a temporary no-lockfile npm path. When GitHub Actions must use `npm install` because `package-lock.json` is absent, it uploads the generated lockfile as the `generated-package-lock` artifact without committing or pushing it. The first successful Codespaces bootstrap may also generate `package-lock.json`; commit it with:
 
 ```bash
 git add package-lock.json

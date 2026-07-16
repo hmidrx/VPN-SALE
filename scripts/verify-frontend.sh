@@ -2,9 +2,18 @@
 set -Eeuo pipefail
 
 log() { printf '\n==> %s\n' "$*"; }
-log "Node and npm versions"
+
+run_build() {
+  local workspace="$1"
+  log "Production build: ${workspace}"
+  CI=1 NEXT_TELEMETRY_DISABLED=1 npm --workspace "$workspace" run build
+}
+
+log "Frontend tool versions"
 node --version
 npm --version
+npx tsc --version
+npx next --version
 
 if [[ ! -d node_modules ]]; then
   if [[ -f package-lock.json ]]; then
@@ -23,12 +32,9 @@ log "Frontend typecheck"
 npm run typecheck
 log "Frontend tests"
 npm run test
-log "Customer web production build"
-npm run build -w @vpnsale/customer-web
-log "Admin web production build"
-npm run build -w @vpnsale/admin-web
-log "Reseller web production build"
-npm run build -w @vpnsale/reseller-web
+run_build "@vpnsale/customer-web"
+run_build "@vpnsale/admin-web"
+run_build "@vpnsale/reseller-web"
 log "Shared package validation"
 npm run typecheck -w @vpnsale/shared-typescript
 npm run typecheck -w @vpnsale/ui

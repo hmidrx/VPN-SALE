@@ -18,13 +18,22 @@ jobs:
   backend:
     name: Backend verification
     runs-on: ubuntu-latest
+    env:
+      VPN_SALE_ENVIRONMENT: test
+      VPN_SALE_VERSION: ci-milestone0
+      POSTGRES_DB: &ci_postgres_db vpnsale_test
+      POSTGRES_USER: &ci_postgres_user vpnsale
+      POSTGRES_PASSWORD: &ci_postgres_password vpnsale_ci_password
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      VPN_SALE_REDIS_URL: redis://127.0.0.1:6379/0
     services:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: vpnsale_test
-          POSTGRES_USER: vpnsale
-          POSTGRES_PASSWORD: vpnsale_ci_password
+          POSTGRES_DB: *ci_postgres_db
+          POSTGRES_USER: *ci_postgres_user
+          POSTGRES_PASSWORD: *ci_postgres_password
         ports:
           - 5432:5432
         options: >-
@@ -41,11 +50,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
-    env:
-      VPN_SALE_ENVIRONMENT: test
-      VPN_SALE_VERSION: ci-milestone0
-      VPN_SALE_DATABASE_URL: postgresql+asyncpg://vpnsale:vpnsale_ci_password@localhost:5432/vpnsale_test
-      VPN_SALE_REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -101,7 +105,17 @@ jobs:
           else
             echo '::warning::package-lock.json is absent; using temporary npm install fallback until the lockfile is generated and committed.'
             npm install
+            if [ -f package-lock.json ]; then
+              touch .ci-generated-package-lock
+            fi
           fi
+      - name: Upload generated package lock
+        if: ${{ hashFiles('.ci-generated-package-lock') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-package-lock
+          path: package-lock.json
+          if-no-files-found: error
       - name: Run frontend verification
         run: scripts/verify-frontend.sh
       - name: Frontend job summary
