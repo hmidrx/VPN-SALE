@@ -140,3 +140,5 @@ Not implemented now: real panel calls, payment processing, wallet accounting, su
 ## Security baseline
 
 Never commit panel URLs, usernames, passwords, API keys, cookies, real UUIDs, customer subscription links, production domains, or provider credentials. `.env.example` contains placeholders only.
+
+Frontend dependency security is part of Milestone 0 verification. CI installs from `package-lock.json` with `npm ci` when the lockfile exists and runs `npm audit --audit-level=high`; critical and high advisories fail CI, while any non-blocking moderate advisory must be documented in `docs/SECURITY.md`.

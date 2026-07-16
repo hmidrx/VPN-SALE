@@ -26,6 +26,8 @@ if [[ ! -d node_modules ]]; then
   fi
 fi
 
+log "Frontend dependency audit (high/critical gate)"
+npm audit --audit-level=high
 log "Frontend lint"
 npm run lint
 log "Frontend typecheck"
