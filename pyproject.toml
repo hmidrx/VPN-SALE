@@ -1,0 +1,23 @@
+[project]
+name = "vpnsale-platform"
+version = "0.0.0"
+requires-python = ">=3.12,<3.13"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["apps/api/src", "apps/telegram-bot/src", "apps/worker/src", "packages"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S"]
+ignore = ["S101"]
+
+[tool.pytest.ini_options]
+pythonpath = ["apps/api/src", "apps/telegram-bot/src", "apps/worker/src", "packages/domain/src", "packages/panel-adapters/src", "packages/payment-adapters/src"]
+testpaths = ["apps/api/tests"]
+
+[tool.pyright]
+include = ["apps", "packages"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+extraPaths = ["apps/api/src", "apps/telegram-bot/src", "apps/worker/src", "packages/domain/src", "packages/panel-adapters/src", "packages/payment-adapters/src"]
