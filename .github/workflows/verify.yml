@@ -114,6 +114,13 @@ jobs:
           if-no-files-found: error
       - name: Run frontend verification
         run: scripts/verify-frontend.sh
+      - name: Upload frontend verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-verification-log
+          path: test-reports/frontend-verification.log
+          if-no-files-found: ignore
       - name: Frontend job summary
         if: always()
         run: |
