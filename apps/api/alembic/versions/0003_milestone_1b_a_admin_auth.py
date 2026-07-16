@@ -23,10 +23,7 @@ def _has_table(table_name: str) -> bool:
 def _column_names(table_name: str) -> set[str]:
     if not _has_table(table_name):
         return set()
-    return {
-        str(column["name"])
-        for column in sa.inspect(op.get_bind()).get_columns(table_name)
-    }
+    return {str(column["name"]) for column in sa.inspect(op.get_bind()).get_columns(table_name)}
 
 
 def _index_names(table_name: str) -> set[str]:
@@ -106,9 +103,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     if "ix_admin_mfa_challenges_admin" in _index_names("admin_mfa_challenges"):
-        op.drop_index(
-            "ix_admin_mfa_challenges_admin", table_name="admin_mfa_challenges"
-        )
+        op.drop_index("ix_admin_mfa_challenges_admin", table_name="admin_mfa_challenges")
     if _has_table("admin_mfa_challenges"):
         op.drop_table("admin_mfa_challenges")
 
