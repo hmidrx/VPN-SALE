@@ -17,9 +17,19 @@ if git ls-files --error-unmatch .env >/dev/null 2>&1; then
   echo "Tracked .env file detected." >&2
   fail=1
 fi
+
 report_match "Private key material" '-----BEGIN (RSA |EC |OPENSSH |DSA |PRIVATE )?PRIVATE KEY-----' .
 report_match "Subscription URL" '(vless://|vmess://|trojan://|subscription://)' .
-report_match "Obvious assigned secret" '(api[_-]?key|secret|token|cookie|password)[[:space:]]*[:=][[:space:]]*[^[:space:]]{8,}' .
+
+# Detect literal secret assignments without treating typed schema fields such as
+# `encrypted_secret: Mapped[str]` or regex documentation such as `password=|token=`
+# as credentials. Quoted literals are checked in all tracked text files; bare
+# literals are checked only after `=` (plus `:` in configuration-like files).
+sensitive_name='(api[_-]?key|secret|token|cookie|password)'
+report_match "Obvious assigned secret" "${sensitive_name}[[:space:]]*[:=][[:space:]]*[\"'][^\"']{8,}[\"']" .
+report_match "Obvious assigned secret" "${sensitive_name}[[:space:]]*=[[:space:]]*[A-Za-z0-9_./+:-]{8,}([[:space:]]|$)" .
+report_match "Obvious assigned secret" "${sensitive_name}[[:space:]]*:[[:space:]]*[A-Za-z0-9_./+:-]{8,}([[:space:]]|$)" '*.yaml' '*.yml' '*.toml' '*.ini' '*.conf' '*.properties'
+
 report_match "Panel credential marker" '(xui|pasarguard).*(password|secret|token|api[_-]?key)' .
 
 mapfile -t unsafe < <(git ls-files '.env' '*.pem' '*.key' 'node_modules/*' '.next/*' 'apps/*/.next/*' '*.tsbuildinfo' 2>/dev/null || true)
