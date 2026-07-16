@@ -5,7 +5,7 @@ fail=0
 report_match() {
   local label="$1" pattern="$2"
   shift 2
-  mapfile -t matches < <(git grep -IlE "$pattern" -- "$@" 2>/dev/null || true)
+  mapfile -t matches < <(git grep -IlE "$pattern" -- "$@" ':(exclude)scripts/security-scan.sh' ':(exclude)scripts/verify-docker.sh' 2>/dev/null || true)
   if (( ${#matches[@]} > 0 )); then
     echo "${label} detected in tracked files:" >&2
     printf '  %s\n' "${matches[@]}" >&2

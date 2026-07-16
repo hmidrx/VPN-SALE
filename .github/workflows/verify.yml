@@ -101,7 +101,17 @@ jobs:
           else
             echo '::warning::package-lock.json is absent; using temporary npm install fallback until the lockfile is generated and committed.'
             npm install
+            if [ -f package-lock.json ]; then
+              touch .ci-generated-package-lock
+            fi
           fi
+      - name: Upload generated package lock
+        if: ${{ hashFiles('.ci-generated-package-lock') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-package-lock
+          path: package-lock.json
+          if-no-files-found: error
       - name: Run frontend verification
         run: scripts/verify-frontend.sh
       - name: Frontend job summary
