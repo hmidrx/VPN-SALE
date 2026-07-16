@@ -2,6 +2,7 @@ from fastapi import FastAPI, Response, status
 
 from .admin_auth.routes import router as admin_auth_router
 from .config import get_settings, validate_security_configuration
+from .customer_auth.routes import router as customer_auth_router
 from .dependencies import check_database, check_redis
 from .logging import configure_logging
 
@@ -9,6 +10,7 @@ configure_logging()
 validate_security_configuration(get_settings())
 app = FastAPI(title=get_settings().app_name, version=get_settings().version)
 app.include_router(admin_auth_router)
+app.include_router(customer_auth_router)
 
 
 @app.get("/health")

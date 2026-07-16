@@ -9,3 +9,6 @@ Milestone 1A open decisions: final production identity encryption key storage/KM
 Milestone 1B-A open decisions: final production Redis fail-closed SLO, exact admin TOTP mandatory rollout date, production signing-key storage/KMS, trusted-device policy, and formal browser CSRF header naming for the future admin UI.
 
 Milestone 1B-B open decisions: final KMS integration for admin signing/encryption keys, formal production Redis SLO and alert routing, whether TOTP becomes mandatory for every admin, and whether trusted-device labels should be user-editable beyond the current safe display model.
+
+## Milestone 1C-A customer authentication note
+Customer Telegram Mini App authentication now verifies raw init data, links Telegram identities to internal customers, issues isolated customer access credentials, rotates opaque refresh-cookie sessions, enforces CSRF on cookie-authenticated state changes, rate limits sensitive operations, and records sanitized audit/security events. Commerce and customer UI remain out of scope.

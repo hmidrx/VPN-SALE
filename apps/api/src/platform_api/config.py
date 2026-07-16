@@ -45,6 +45,35 @@ class Settings(BaseSettings):
     admin_recovery_code_count: int = 10
     admin_password_min_length: int = 14
     admin_password_max_length: int = 512
+
+    telegram_bot_token: str = ""
+    telegram_init_data_max_age_seconds: int = 86400
+    telegram_init_data_future_skew_seconds: int = 60
+    telegram_init_data_max_length: int = 4096
+    telegram_customer_auth_enabled: bool = True
+    fake_customer_auth_enabled: bool = False
+    customer_access_token_signing_key: str = (
+        "dev-disposable-customer-access-token-signing-key-change-me"  # noqa: S105
+    )
+    customer_access_token_key_id: str = "dev-v1"  # noqa: S105
+    customer_access_token_issuer: str = "vpnsale-customer"  # noqa: S105
+    customer_access_token_audience: str = "vpnsale-customer-api"  # noqa: S105
+    customer_access_token_lifetime_seconds: int = 900
+    customer_access_token_clock_skew_seconds: int = 30
+    customer_session_idle_timeout_seconds: int = 2592000
+    customer_session_absolute_lifetime_seconds: int = 7776000
+    customer_refresh_cookie_name: str = "vpnsale_customer_refresh"
+    customer_refresh_cookie_path: str = "/api/v1/customer/auth"
+    customer_refresh_cookie_domain: str = ""
+    customer_refresh_cookie_secure: bool = True
+    customer_refresh_cookie_samesite: str = "lax"
+    customer_csrf_secret: str = "dev-disposable-customer-csrf-secret-change-me"  # noqa: S105
+    customer_login_rate_limit: int = 20
+    customer_login_rate_limit_window_seconds: int = 300
+    customer_refresh_rate_limit: int = 60
+    customer_refresh_rate_limit_window_seconds: int = 300
+    customer_session_revocation_rate_limit: int = 30
+    customer_session_revocation_rate_limit_window_seconds: int = 300
     model_config = SettingsConfigDict(env_file=".env", env_prefix="VPN_SALE_", extra="ignore")
 
 
@@ -67,3 +96,18 @@ def validate_security_configuration(settings: Settings) -> None:
             raise ValueError("admin CSRF secret is required")
         if not settings.admin_refresh_cookie_secure:
             raise ValueError("admin refresh cookie must be Secure in production")
+        if settings.telegram_customer_auth_enabled and not settings.telegram_bot_token:
+            raise ValueError(
+                "Telegram bot token is required when customer Telegram auth is enabled"
+            )
+        if (
+            not settings.customer_access_token_signing_key
+            or "change-me" in settings.customer_access_token_signing_key
+        ):
+            raise ValueError("customer access-token signing key is required")
+        if not settings.customer_csrf_secret or "change-me" in settings.customer_csrf_secret:
+            raise ValueError("customer CSRF secret is required")
+        if not settings.customer_refresh_cookie_secure:
+            raise ValueError("customer refresh cookie must be Secure in production")
+        if settings.fake_customer_auth_enabled:
+            raise ValueError("fake customer authentication is forbidden in production")

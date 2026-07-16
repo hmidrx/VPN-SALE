@@ -21,3 +21,6 @@ Rotate admin access-token signing keys by publishing a new key ID/value, accepti
 ## Milestone 1B-B lifecycle
 
 The API creates a cached synchronous SQLAlchemy engine from the configured database URL and provides one request-scoped session with rollback on failure and close after completion. Production-like environments must provide identity encryption, admin access-token signing, and CSRF secrets explicitly; insecure production cookie settings are rejected during startup.
+
+## Milestone 1C-A customer authentication note
+Customer Telegram Mini App authentication now verifies raw init data, links Telegram identities to internal customers, issues isolated customer access credentials, rotates opaque refresh-cookie sessions, enforces CSRF on cookie-authenticated state changes, rate limits sensitive operations, and records sanitized audit/security events. Commerce and customer UI remain out of scope.

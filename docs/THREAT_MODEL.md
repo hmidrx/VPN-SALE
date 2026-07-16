@@ -13,3 +13,6 @@ New controls address administrator credential stuffing, account enumeration, sto
 ## Milestone 1B-B updated controls
 
 CSRF attacks against refresh-cookie endpoints are mitigated with session-bound tokens. Cross-administrator session revocation is denied by ownership checks. Redis limiter outage in production-like environments is treated as a sensitive authentication failure rather than unlimited access. The admin frontend avoids localStorage/sessionStorage for access tokens.
+
+## Milestone 1C-A customer authentication note
+Customer Telegram Mini App authentication now verifies raw init data, links Telegram identities to internal customers, issues isolated customer access credentials, rotates opaque refresh-cookie sessions, enforces CSRF on cookie-authenticated state changes, rate limits sensitive operations, and records sanitized audit/security events. Commerce and customer UI remain out of scope.

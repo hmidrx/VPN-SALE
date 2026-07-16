@@ -160,3 +160,6 @@ The command prompts without echoing the password. Protected automation may use `
 ## Milestone 1B-B admin security UI
 
 The admin web app now contains focused authentication and security routes under `/auth/...`, `/security/...`, and `/states/...`. The frontend keeps access tokens in memory, uses HttpOnly refresh cookies with CSRF headers, and connects to `/api/v1/admin/auth/...` for login, MFA, refresh, profile, sessions, password change, recovery codes, and MFA settings.
+
+## Milestone 1C-A customer authentication note
+Customer Telegram Mini App authentication now verifies raw init data, links Telegram identities to internal customers, issues isolated customer access credentials, rotates opaque refresh-cookie sessions, enforces CSRF on cookie-authenticated state changes, rate limits sensitive operations, and records sanitized audit/security events. Commerce and customer UI remain out of scope.

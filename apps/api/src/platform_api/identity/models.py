@@ -185,6 +185,8 @@ class CustomerSessionModel(IdentityBase):
     user_agent_metadata: Mapped[dict[str, object] | None]
     device_label: Mapped[str | None] = mapped_column(String(120))
     reuse_detected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    csrf_token_hash: Mapped[str | None] = mapped_column(String(96))
     __table_args__ = (
         UniqueConstraint("refresh_token_hash", name="uq_customer_sessions_refresh_token_hash"),
         Index("ix_customer_sessions_user_id", "user_id"),
