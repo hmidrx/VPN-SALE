@@ -13,6 +13,7 @@
     "packages/ui"
   ],
   "devDependencies": {
+    "@types/node": "22.19.21",
     "eslint": "8.57.1",
     "eslint-config-next": "15.1.12",
     "typescript": "5.7.2"
