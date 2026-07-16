@@ -106,7 +106,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     if "ix_admin_mfa_challenges_admin" in _index_names("admin_mfa_challenges"):
-        op.drop_index("ix_admin_mfa_challenges_admin", table_name="admin_mfa_challenges")
+        op.drop_index(
+            "ix_admin_mfa_challenges_admin", table_name="admin_mfa_challenges"
+        )
     if _has_table("admin_mfa_challenges"):
         op.drop_table("admin_mfa_challenges")
 
