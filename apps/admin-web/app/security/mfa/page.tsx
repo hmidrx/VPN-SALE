@@ -1,0 +1,2 @@
+import { AuthShell, SecurityNav } from "../../../src/components/AuthShell";
+export default function MfaSettingsPage(): React.ReactElement { return <AuthShell eyebrow="MFA و بازیابی" title="تنظیمات احراز هویت دومرحله‌ای"><SecurityNav/><div className="stack"><p className="notice">فعال‌سازی TOTP، بازتولید کدهای بازیابی و غیرفعال‌سازی MFA نیازمند تأیید قوی است.</p><a className="btn" href="/auth/enroll">شروع ثبت TOTP</a><button className="btn secondary">بازتولید کدهای بازیابی</button><button className="btn danger">غیرفعال‌سازی MFA</button></div></AuthShell>; }

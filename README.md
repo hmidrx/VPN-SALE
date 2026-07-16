@@ -156,3 +156,7 @@ python -m platform_api.cli bootstrap-admin --email admin@example.com
 ```
 
 The command prompts without echoing the password. Protected automation may use `--password-stdin`; passwords are never accepted as normal command-line arguments. Admin authentication endpoints are under `/api/v1/admin/auth/...` and provide password login, MFA challenge verification, refresh rotation, logout/session inspection, and TOTP enrollment foundations.
+
+## Milestone 1B-B admin security UI
+
+The admin web app now contains focused authentication and security routes under `/auth/...`, `/security/...`, and `/states/...`. The frontend keeps access tokens in memory, uses HttpOnly refresh cookies with CSRF headers, and connects to `/api/v1/admin/auth/...` for login, MFA, refresh, profile, sessions, password change, recovery codes, and MFA settings.

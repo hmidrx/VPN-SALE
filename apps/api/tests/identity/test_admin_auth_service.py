@@ -172,3 +172,64 @@ def test_access_token_validation_and_hardened_rate_key() -> None:
             svc.access.validate(str(result["access_token"]) + "tampered")
         key = hardened_rate_key("login", "Admin@Example.com", "127.0.0.1", salt="salt")
         assert "Admin" not in key and "127.0.0.1" not in key
+
+
+def test_csrf_profile_sessions_and_password_change_revokes_other_sessions() -> None:
+    with make_session() as session:
+        svc, _ = bootstrap(session)
+        first = svc.login("admin@example.com", "correct horse battery staple")
+        second = svc.login("admin@example.com", "correct horse battery staple")
+        first_session = svc.session_for_refresh(str(first["refresh_token"]))
+        second_session = svc.session_for_refresh(str(second["refresh_token"]))
+        assert first_session is not None and second_session is not None
+        assert svc.validate_csrf(first_session, str(first["csrf_token"]))
+        assert not svc.validate_csrf(first_session, str(second["csrf_token"]))
+        profile = svc.current_profile(first_session.admin_id, first_session.id)
+        assert profile["email"] == "admin@example.com"
+        listed = svc.list_sessions(first_session.admin_id, first_session.id)
+        assert len(listed) == 2
+        svc.change_password(
+            first_session.admin_id,
+            "correct horse battery staple",
+            "new correct horse battery staple",
+            first_session.id,
+        )
+        assert first_session.revoked_at is None
+        assert second_session.revoked_at is not None
+        assert (
+            svc.login("admin@example.com", "correct horse battery staple")["outcome"]
+            == AuthenticationOutcome.INVALID_CREDENTIALS
+        )
+        assert (
+            svc.login("admin@example.com", "new correct horse battery staple")["outcome"]
+            == AuthenticationOutcome.AUTHENTICATED
+        )
+
+
+def test_session_ownership_recovery_regeneration_and_mfa_disable() -> None:
+    with make_session() as session:
+        svc, admin_id = bootstrap(session)
+        login = svc.login("admin@example.com", "correct horse battery staple")
+        current = svc.session_for_refresh(str(login["refresh_token"]))
+        assert current is not None
+        begin = svc.begin_totp(admin_id)
+        cred = session.get(TotpCredentialModel, begin["credential_id"])
+        assert cred is not None
+        secret = FernetSecretEncryptor(
+            settings().identity_encryption_key, settings().identity_encryption_key_version
+        ).decrypt(EncryptedSecret(cred.key_version, cred.encrypted_secret))
+        first_code = pyotp.TOTP(secret).now()
+        recovery_codes = svc.confirm_totp(admin_id, cred.id, first_code)
+        regenerated = svc.regenerate_recovery_codes(
+            admin_id, "correct horse battery staple", recovery_codes[0]
+        )
+        assert regenerated and regenerated != recovery_codes
+        with pytest.raises(ValueError):
+            svc.regenerate_recovery_codes(
+                admin_id, "correct horse battery staple", recovery_codes[0]
+            )
+        svc.disable_totp(admin_id, "correct horse battery staple", regenerated[0], current.id)
+        assert cred.revoked_at is not None
+        assert svc.active_totp_credential(admin_id) is None
+        with pytest.raises(PermissionError):
+            svc.revoke_session("not-owner", current.id)

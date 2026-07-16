@@ -23,3 +23,7 @@ Identity secrets use reviewed primitives: Argon2id for administrator passwords, 
 Administrator passwords are policy checked before Argon2id hashing. Signed access tokens are short lived; refresh credentials are opaque, cookie-scoped, HttpOnly, and persisted only as hashes. CSRF state is derived per session. TOTP secrets use the existing key-versioned encrypted-secret abstraction, and recovery codes are one-time hashed values. Authentication audit/security metadata is sanitized and rejects secret-looking fields.
 
 Redis-backed distributed rate limiting is the production target; the Milestone 1B-A abstraction includes deterministic in-process tests and documents fail-closed expectations for production Redis outages.
+
+## Milestone 1B-B hardening
+
+The API now uses a reusable SQLAlchemy engine/session factory, structured generic errors, session-bound CSRF checks for refresh-cookie operations, production Redis rate-limiter abstraction with fail-closed behavior, and consistent refresh-cookie creation/deletion attributes. Password change, recovery-code regeneration, and MFA disablement require strong confirmation and avoid logging secrets.

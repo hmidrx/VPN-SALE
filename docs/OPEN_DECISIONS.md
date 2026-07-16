@@ -7,3 +7,5 @@ Milestone 0 infrastructure decision: commit the generated `package-lock.json` af
 Milestone 1A open decisions: final production identity encryption key storage/KMS, exact admin lockout thresholds, whether admin TOTP is mandatory at launch, audit/security event retention periods, IP/user-agent metadata minimization rules, and the Milestone 1B secure administrator bootstrap UX.
 
 Milestone 1B-A open decisions: final production Redis fail-closed SLO, exact admin TOTP mandatory rollout date, production signing-key storage/KMS, trusted-device policy, and formal browser CSRF header naming for the future admin UI.
+
+Milestone 1B-B open decisions: final KMS integration for admin signing/encryption keys, formal production Redis SLO and alert routing, whether TOTP becomes mandatory for every admin, and whether trusted-device labels should be user-editable beyond the current safe display model.

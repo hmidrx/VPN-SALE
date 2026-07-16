@@ -9,3 +9,7 @@ New controls reduce credential theft, session replay, privilege escalation, and 
 ## Milestone 1B-A administrator authentication threats
 
 New controls address administrator credential stuffing, account enumeration, stolen refresh-token replay, MFA replay, recovery-code reuse, CSRF on cookie-authenticated endpoints, and secret leakage through logs/audit metadata. Remaining risks include selecting production Redis availability posture, final KMS-backed identity encryption key storage, and operational signing-key rotation runbooks.
+
+## Milestone 1B-B updated controls
+
+CSRF attacks against refresh-cookie endpoints are mitigated with session-bound tokens. Cross-administrator session revocation is denied by ownership checks. Redis limiter outage in production-like environments is treated as a sensitive authentication failure rather than unlimited access. The admin frontend avoids localStorage/sessionStorage for access tokens.

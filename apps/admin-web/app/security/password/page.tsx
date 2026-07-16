@@ -1,0 +1,2 @@
+import { AuthShell, SecurityNav } from "../../../src/components/AuthShell";
+export default function PasswordPage(): React.ReactElement { return <AuthShell eyebrow="گذرواژه" title="تغییر گذرواژه"><SecurityNav/><form className="stack"><label className="field">گذرواژه فعلی<input className="ltr" type="password" /></label><label className="field">گذرواژه جدید<input className="ltr" type="password" /></label><button className="btn">ثبت تغییر و خروج نشست‌های دیگر</button></form></AuthShell>; }

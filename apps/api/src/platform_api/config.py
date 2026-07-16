@@ -51,3 +51,19 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_security_configuration(settings: Settings) -> None:
+    production_like = settings.environment.lower() in {"production", "prod", "staging"}
+    if production_like:
+        if not settings.identity_encryption_key:
+            raise ValueError("identity encryption key is required")
+        if (
+            not settings.admin_access_token_signing_key
+            or "change-me" in settings.admin_access_token_signing_key
+        ):
+            raise ValueError("admin access-token signing key is required")
+        if not settings.admin_csrf_secret or "change-me" in settings.admin_csrf_secret:
+            raise ValueError("admin CSRF secret is required")
+        if not settings.admin_refresh_cookie_secure:
+            raise ValueError("admin refresh cookie must be Secure in production")

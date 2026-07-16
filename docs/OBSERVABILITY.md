@@ -5,3 +5,7 @@ Observability includes structured logs, correlation/request/trace IDs, metrics, 
 ## Milestone 1B-A authentication events
 
 Administrator bootstrap, login success/failure/lockout/rate-limit, MFA enrollment/challenge/success/failure, recovery-code use/regeneration, session create/refresh/revoke, refresh reuse, and password change events are audit/security event candidates. Metadata must remain sanitized and free of passwords, token values, token hashes, TOTP values, recovery codes, and CSRF secrets.
+
+## Milestone 1B-B auth signals
+
+Structured audit/security events now include session revocation, password change, recovery-code regeneration, MFA disablement, refresh reuse, and CSRF/rate-limit rejection candidates. Metric labels must use safe event codes only and must not include email addresses, raw IPs, user agents, tokens, codes, or secrets.

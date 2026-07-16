@@ -409,6 +409,8 @@ class AdminAuthService:
             else None,
             user_agent_metadata={"present": bool(user_agent)},
         )
+        csrf_token = self.csrf_for(sid)
+        sess.csrf_token_hash = csrf_token
         self.session.add(sess)
         _event(
             self.session,
@@ -424,7 +426,7 @@ class AdminAuthService:
         return {
             "access_token": self.access.issue(admin_id=admin.id, session_id=sid, now=now),
             "refresh_token": raw,
-            "csrf_token": self.csrf_for(sid),
+            "csrf_token": csrf_token,
         }
 
     def csrf_for(self, session_id: str) -> str:
@@ -500,6 +502,13 @@ class AdminAuthService:
                 return True
         return False
 
+    def session_for_refresh(self, refresh_token: str) -> AdminSessionModel | None:
+        return self.session.scalar(
+            select(AdminSessionModel).where(
+                AdminSessionModel.refresh_token_hash == self.tokens.hash(refresh_token)
+            )
+        )
+
     def refresh(self, refresh_token: str, *, now: datetime | None = None) -> dict[str, str]:
         now = now or datetime.now(UTC)
         h = self.tokens.hash(refresh_token)
@@ -551,6 +560,7 @@ class AdminAuthService:
         )
         self.session.add(next_s)
         self.session.flush()
+        next_s.csrf_token_hash = self.csrf_for(next_s.id)
         _event(
             self.session,
             AuditLogModel,
@@ -564,7 +574,7 @@ class AdminAuthService:
                 admin_id=sess.admin_id, session_id=next_s.id, now=now
             ),
             "refresh_token": raw,
-            "csrf_token": self.csrf_for(next_s.id),
+            "csrf_token": next_s.csrf_token_hash or self.csrf_for(next_s.id),
         }
 
     def _revoke_family(self, family: str, now: datetime, reason: str) -> None:
@@ -650,3 +660,250 @@ class AdminAuthService:
             now=now,
         )
         return codes
+
+    def validate_csrf(self, session: AdminSessionModel, csrf_token: str | None) -> bool:
+        if not csrf_token or not session.csrf_token_hash:
+            return False
+        return hmac.compare_digest(csrf_token, session.csrf_token_hash)
+
+    def current_profile(self, admin_id: str, session_id: str) -> dict[str, object]:
+        admin = self.session.get(AdminModel, admin_id)
+        if admin is None:
+            raise ValueError(GENERIC_AUTH_ERROR)
+        mfa_enabled = (
+            self.session.scalar(
+                select(TotpCredentialModel).where(
+                    TotpCredentialModel.admin_id == admin_id,
+                    TotpCredentialModel.revoked_at.is_(None),
+                    TotpCredentialModel.confirmed_at.is_not(None),
+                )
+            )
+            is not None
+        )
+        role_rows = self.session.execute(
+            select(RoleModel.machine_name)
+            .join(AdminRoleAssignmentModel, AdminRoleAssignmentModel.role_id == RoleModel.id)
+            .where(AdminRoleAssignmentModel.admin_id == admin_id)
+        ).all()
+        return {
+            "admin_id": admin.id,
+            "email": admin.normalized_email,
+            "status": admin.status,
+            "mfa_enabled": mfa_enabled,
+            "roles": [row[0] for row in role_rows],
+            "current_session_id": session_id,
+            "password_changed_at": admin.password_changed_at.isoformat()
+            if admin.password_changed_at
+            else None,
+            "last_successful_login_at": admin.last_successful_login_at.isoformat()
+            if admin.last_successful_login_at
+            else None,
+        }
+
+    def list_sessions(self, admin_id: str, current_session_id: str) -> list[dict[str, object]]:
+        rows = self.session.scalars(
+            select(AdminSessionModel)
+            .where(AdminSessionModel.admin_id == admin_id)
+            .order_by(AdminSessionModel.created_at.desc())
+        ).all()
+        return [
+            {
+                "session_id": row.id,
+                "current": row.id == current_session_id,
+                "device_label": row.device_label,
+                "client": "شناسه مرورگر محفوظ",
+                "created_at": row.created_at.isoformat(),
+                "last_used_at": row.last_used_at.isoformat() if row.last_used_at else None,
+                "idle_expires_at": row.idle_expires_at.isoformat(),
+                "absolute_expires_at": row.absolute_expires_at.isoformat(),
+                "revoked": row.revoked_at is not None,
+            }
+            for row in rows
+        ]
+
+    def revoke_session(
+        self, admin_id: str, session_id: str, *, now: datetime | None = None
+    ) -> bool:
+        now = now or datetime.now(UTC)
+        sess = self.session.get(AdminSessionModel, session_id)
+        if sess is None or sess.admin_id != admin_id:
+            raise PermissionError(GENERIC_AUTH_ERROR)
+        if sess.revoked_at is None:
+            sess.revoked_at = now
+            sess.revocation_reason = "admin_requested"
+            sess.csrf_token_hash = None
+            _event(
+                self.session,
+                AuditLogModel,
+                "admin.session.revoked",
+                actor_id=admin_id,
+                target_id=session_id,
+                now=now,
+            )
+        return True
+
+    def revoke_sessions(
+        self,
+        admin_id: str,
+        *,
+        keep_session_id: str | None,
+        reason: str,
+        now: datetime | None = None,
+    ) -> int:
+        now = now or datetime.now(UTC)
+        rows = self.session.scalars(
+            select(AdminSessionModel).where(
+                AdminSessionModel.admin_id == admin_id,
+                AdminSessionModel.revoked_at.is_(None),
+            )
+        ).all()
+        count = 0
+        for row in rows:
+            if keep_session_id is not None and row.id == keep_session_id:
+                continue
+            row.revoked_at = now
+            row.revocation_reason = reason
+            row.csrf_token_hash = None
+            count += 1
+        _event(
+            self.session,
+            AuditLogModel,
+            "admin.sessions.revoked_all",
+            actor_id=admin_id,
+            metadata={"count": count, "mode": "others" if keep_session_id else "all"},
+            now=now,
+        )
+        return count
+
+    def change_password(
+        self,
+        admin_id: str,
+        current_password: str,
+        new_password: str,
+        current_session_id: str,
+        *,
+        now: datetime | None = None,
+    ) -> None:
+        now = now or datetime.now(UTC)
+        admin = self.session.get(AdminModel, admin_id)
+        if admin is None or admin.status != AdminStatus.ACTIVE.value:
+            raise ValueError(GENERIC_AUTH_ERROR)
+        if not self.hasher.verify(current_password, admin.password_hash):
+            raise ValueError(GENERIC_AUTH_ERROR)
+        if self.hasher.verify(new_password, admin.password_hash):
+            raise ValueError(GENERIC_AUTH_ERROR)
+        PasswordPolicy(
+            self.settings.admin_password_min_length, self.settings.admin_password_max_length
+        ).validate(new_password, email=admin.normalized_email)
+        admin.password_hash = self.hasher.hash(new_password)
+        admin.password_changed_at = now
+        self.session.execute(
+            update(MfaChallengeModel)
+            .where(MfaChallengeModel.admin_id == admin_id, MfaChallengeModel.consumed_at.is_(None))
+            .values(consumed_at=now)
+        )
+        self.revoke_sessions(
+            admin_id, keep_session_id=current_session_id, reason="password_changed", now=now
+        )
+        _event(
+            self.session,
+            AuditLogModel,
+            "admin.password.changed",
+            actor_id=admin_id,
+            target_id=admin_id,
+            now=now,
+        )
+        _event(
+            self.session, SecurityEventModel, "admin.password.changed", actor_id=admin_id, now=now
+        )
+
+    def active_totp_credential(self, admin_id: str) -> TotpCredentialModel | None:
+        return self.session.scalar(
+            select(TotpCredentialModel).where(
+                TotpCredentialModel.admin_id == admin_id,
+                TotpCredentialModel.revoked_at.is_(None),
+                TotpCredentialModel.confirmed_at.is_not(None),
+            )
+        )
+
+    def regenerate_recovery_codes(
+        self, admin_id: str, password: str, proof_code: str, *, now: datetime | None = None
+    ) -> list[str]:
+        now = now or datetime.now(UTC)
+        admin = self.session.get(AdminModel, admin_id)
+        cred = self.active_totp_credential(admin_id)
+        if admin is None or cred is None or not self.hasher.verify(password, admin.password_hash):
+            raise ValueError(GENERIC_AUTH_ERROR)
+        if not self._valid_totp_or_recovery(cred, proof_code, now=now):
+            raise ValueError(GENERIC_AUTH_ERROR)
+        for row in self.session.scalars(
+            select(RecoveryCodeModel).where(
+                RecoveryCodeModel.credential_id == cred.id, RecoveryCodeModel.used_at.is_(None)
+            )
+        ).all():
+            row.used_at = now
+        codes = [
+            "-".join([secrets.token_hex(3), secrets.token_hex(3), secrets.token_hex(3)]).upper()
+            for _ in range(self.settings.admin_recovery_code_count)
+        ]
+        for code in codes:
+            self.session.add(
+                RecoveryCodeModel(credential_id=cred.id, code_hash=self.tokens.hash(code))
+            )
+        _event(
+            self.session,
+            AuditLogModel,
+            "admin.recovery_codes.regenerated",
+            actor_id=admin_id,
+            target_id=cred.id,
+            now=now,
+        )
+        _event(
+            self.session,
+            SecurityEventModel,
+            "admin.recovery_codes.regenerated",
+            actor_id=admin_id,
+            now=now,
+        )
+        return codes
+
+    def disable_totp(
+        self,
+        admin_id: str,
+        password: str,
+        proof_code: str,
+        current_session_id: str,
+        *,
+        now: datetime | None = None,
+    ) -> None:
+        now = now or datetime.now(UTC)
+        admin = self.session.get(AdminModel, admin_id)
+        cred = self.active_totp_credential(admin_id)
+        if admin is None or cred is None or not self.hasher.verify(password, admin.password_hash):
+            raise ValueError(GENERIC_AUTH_ERROR)
+        if not self._valid_totp_or_recovery(cred, proof_code, now=now):
+            raise ValueError(GENERIC_AUTH_ERROR)
+        cred.revoked_at = now
+        for row in self.session.scalars(
+            select(RecoveryCodeModel).where(
+                RecoveryCodeModel.credential_id == cred.id, RecoveryCodeModel.used_at.is_(None)
+            )
+        ).all():
+            row.used_at = now
+        self.session.execute(
+            update(MfaChallengeModel)
+            .where(MfaChallengeModel.admin_id == admin_id, MfaChallengeModel.consumed_at.is_(None))
+            .values(consumed_at=now)
+        )
+        self.revoke_sessions(
+            admin_id, keep_session_id=current_session_id, reason="mfa_disabled", now=now
+        )
+        _event(
+            self.session,
+            AuditLogModel,
+            "admin.mfa.disabled",
+            actor_id=admin_id,
+            target_id=cred.id,
+            now=now,
+        )
+        _event(self.session, SecurityEventModel, "admin.mfa.disabled", actor_id=admin_id, now=now)
