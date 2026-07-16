@@ -20,9 +20,50 @@ class Settings(BaseSettings):
     opaque_token_hash_salt: str = "vpnsale-identity-token-v1"  # noqa: S105
     identity_encryption_key: str = ""
     identity_encryption_key_version: str = "dev-v1"
+    admin_access_token_signing_key: str = "dev-disposable-admin-access-token-signing-key-change-me"  # noqa: S105
+    admin_access_token_key_id: str = "dev-v1"  # noqa: S105
+    admin_access_token_issuer: str = "vpnsale-admin"  # noqa: S105
+    admin_access_token_audience: str = "vpnsale-admin-api"  # noqa: S105
+    admin_access_token_lifetime_seconds: int = 900
+    admin_access_token_clock_skew_seconds: int = 30
+    admin_session_idle_timeout_seconds: int = 1800
+    admin_session_absolute_lifetime_seconds: int = 2592000
+    admin_refresh_cookie_name: str = "vpnsale_admin_refresh"
+    admin_refresh_cookie_path: str = "/api/v1/admin/auth"
+    admin_refresh_cookie_domain: str = ""
+    admin_refresh_cookie_secure: bool = True
+    admin_refresh_cookie_samesite: str = "lax"
+    admin_csrf_secret: str = "dev-disposable-csrf-secret-change-me"  # noqa: S105
+    admin_lockout_threshold: int = 5
+    admin_lockout_duration_seconds: int = 900
+    admin_login_rate_limit: int = 10
+    admin_login_rate_limit_window_seconds: int = 300
+    admin_mfa_challenge_lifetime_seconds: int = 300
+    admin_totp_enrollment_lifetime_seconds: int = 600
+    admin_totp_issuer: str = "VPN-SALE Admin"
+    admin_totp_clock_window: int = 1
+    admin_recovery_code_count: int = 10
+    admin_password_min_length: int = 14
+    admin_password_max_length: int = 512
     model_config = SettingsConfigDict(env_file=".env", env_prefix="VPN_SALE_", extra="ignore")
 
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_security_configuration(settings: Settings) -> None:
+    production_like = settings.environment.lower() in {"production", "prod", "staging"}
+    if production_like:
+        if not settings.identity_encryption_key:
+            raise ValueError("identity encryption key is required")
+        if (
+            not settings.admin_access_token_signing_key
+            or "change-me" in settings.admin_access_token_signing_key
+        ):
+            raise ValueError("admin access-token signing key is required")
+        if not settings.admin_csrf_secret or "change-me" in settings.admin_csrf_secret:
+            raise ValueError("admin CSRF secret is required")
+        if not settings.admin_refresh_cookie_secure:
+            raise ValueError("admin refresh cookie must be Secure in production")

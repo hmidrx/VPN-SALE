@@ -5,7 +5,7 @@
   "scripts": {
     "lint": "node ../../scripts/lint-workspace.mjs .",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node ../../scripts/check-web-app.mjs .",
+    "test": "node src/tests/auth-client.test.mjs && node ../../scripts/check-web-app.mjs .",
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 3000"
   },
@@ -19,7 +19,7 @@
     "react-dom": "19.2.7"
   },
   "devDependencies": {
-    "@types/node": "22.20.1",
+    "@types/node": "26.1.1",
     "typescript": "5.7.2"
   }
 }

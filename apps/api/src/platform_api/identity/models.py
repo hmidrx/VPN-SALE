@@ -219,6 +219,8 @@ class AdminSessionModel(IdentityBase):
     user_agent_metadata: Mapped[dict[str, object] | None]
     device_label: Mapped[str | None] = mapped_column(String(120))
     reuse_detected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    csrf_token_hash: Mapped[str | None] = mapped_column(String(96))
     __table_args__ = (
         UniqueConstraint("refresh_token_hash", name="uq_admin_sessions_refresh_token_hash"),
         Index("ix_admin_sessions_admin_id", "admin_id"),
@@ -299,6 +301,9 @@ class TotpCredentialModel(IdentityBase):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    pending_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_accepted_time_step: Mapped[int | None] = mapped_column(Integer)
     __table_args__ = (Index("ix_totp_credentials_admin_id", "admin_id"),)
 
 
@@ -314,4 +319,24 @@ class RecoveryCodeModel(IdentityBase):
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
         UniqueConstraint("credential_id", "code_hash", name="uq_recovery_codes_credential_hash"),
+    )
+
+
+class MfaChallengeModel(IdentityBase):
+    __tablename__ = "admin_mfa_challenges"
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    admin_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("admins.id", ondelete="CASCADE"), nullable=False
+    )
+    challenge_hash: Mapped[str] = mapped_column(String(96), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ip_metadata: Mapped[dict[str, object] | None]
+    user_agent_metadata: Mapped[dict[str, object] | None]
+    __table_args__ = (
+        UniqueConstraint("challenge_hash", name="uq_admin_mfa_challenges_hash"),
+        Index("ix_admin_mfa_challenges_admin", "admin_id", "expires_at"),
     )

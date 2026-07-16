@@ -1,0 +1,2 @@
+import { AuthShell, SecurityNav } from "../../../src/components/AuthShell";
+export default function ProfilePage(): React.ReactElement { return <AuthShell eyebrow="امنیت حساب" title="پروفایل مدیر"><SecurityNav/><div className="grid"><section className="notice"><b>ایمیل</b><p className="ltr">admin@example.com</p></section><section className="notice"><b>وضعیت MFA</b><p className="ok">آماده اتصال به API واقعی /me</p></section></div></AuthShell>; }
