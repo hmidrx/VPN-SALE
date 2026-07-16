@@ -12,3 +12,5 @@ Structured audit/security events now include session revocation, password change
 
 ## Milestone 1C-A customer authentication note
 Customer Telegram Mini App authentication now verifies raw init data, links Telegram identities to internal customers, issues isolated customer access credentials, rotates opaque refresh-cookie sessions, enforces CSRF on cookie-authenticated state changes, rate limits sensitive operations, and records sanitized audit/security events. Commerce and customer UI remain out of scope.
+## Milestone 1C-B1 frontend diagnostics
+Customer frontend diagnostics are limited to safe state names, safe error codes, correlation IDs, and timings in development/test. Raw init data, access tokens, refresh tokens, CSRF tokens, Telegram payloads, Telegram IDs, names, and full API bodies are not logged.

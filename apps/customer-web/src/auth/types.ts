@@ -1,0 +1,5 @@
+export type CustomerAuthState = "INITIALIZING" | "TELEGRAM_DETECTED" | "AUTHENTICATING" | "AUTHENTICATED" | "REFRESHING" | "UNAUTHORIZED" | "EXPIRED" | "BLOCKED" | "SUSPENDED" | "DEACTIVATED" | "RATE_LIMITED" | "TELEGRAM_UNAVAILABLE" | "UNSUPPORTED_CLIENT" | "NETWORK_ERROR" | "SERVICE_UNAVAILABLE";
+export type CustomerProfile = { customer_id: string; account_status: string; telegram_user_id: number | null; username: string | null; first_name: string | null; last_name: string | null; language_code: string | null; created_at: string; last_seen_at: string | null; current_session_id: string };
+export type CustomerSession = { session_id: string; current: boolean; device_label: string | null; created_at: string; last_used_at: string | null; idle_expires_at: string; absolute_expires_at: string; revoked: boolean };
+export type AuthResponse = { access_token?: string | null; csrf_token?: string | null; session_id?: string | null };
+export type ApiErrorCode = "invalid_init_data" | "expired_init_data" | "rate_limited" | "unauthorized" | "expired" | "blocked" | "suspended" | "deactivated" | "csrf_failed" | "network_error" | "service_unavailable" | "malformed_response";

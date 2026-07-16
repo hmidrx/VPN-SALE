@@ -30,3 +30,5 @@ The API now uses a reusable SQLAlchemy engine/session factory, structured generi
 
 ## Milestone 1C-A customer controls
 Telegram init data is verified with HMAC-SHA256 according to the Mini Apps data-check-string design and constant-time signature comparison. Customer sessions use distinct issuer/audience/cookie/CSRF configuration from administrator sessions. Customer refresh cookies are HttpOnly, path-scoped to `/api/v1/customer/auth`, Secure in production, and never returned in URLs or browser storage. Rate-limit keys are HMAC-hardened and Redis outages fail closed in production-like environments.
+## Milestone 1C-B1 frontend token policy
+Customer access tokens, CSRF values, and session identifiers are held in JavaScript memory only and are cleared on logout, revoke-all, and refresh failure. The frontend never uses `initDataUnsafe`, never persists raw init data or tokens to Web Storage/IndexedDB/cookies, never places secrets in URLs, and exposes only public placeholders such as API base URL and bot username.
