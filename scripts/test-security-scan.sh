@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-fixture="security-scan-fixture.tmp"
+typed_fixture="security-scan-typed-fixture.tmp"
+secret_fixture="security-scan-secret-fixture.conf"
 cleanup() {
-  git rm -f --quiet "$fixture" >/dev/null 2>&1 || true
-  rm -f "$fixture" \
+  git rm -f --quiet "$typed_fixture" "$secret_fixture" >/dev/null 2>&1 || true
+  rm -f "$typed_fixture" "$secret_fixture" \
     scan-safe.out scan-safe.err \
     scan-typed.out scan-typed.err \
     scan-secret.out scan-secret.err \
@@ -23,34 +24,35 @@ if ! run_scan scan-safe.out scan-safe.err; then
   exit 1
 fi
 
-cat >"$fixture" <<'PY'
+cat >"$typed_fixture" <<'PY'
 from sqlalchemy.orm import Mapped
 
 password_hash: str
 encrypted_secret: Mapped[str]
 refresh_token_hash: str
+token = request.cookies.get("refresh")
 SENSITIVE_VALUE_RE = r"(password=|token=|secret=)"
 PY
-git add --intent-to-add "$fixture"
+git add --intent-to-add "$typed_fixture"
 
 if ! run_scan scan-typed.out scan-typed.err; then
-  echo "Expected typed secret-storage field names and scanner regex documentation to pass." >&2
+  echo "Expected typed secret-storage fields and runtime token assignments to pass." >&2
   cat scan-typed.err >&2
   exit 1
 fi
 
-git rm -f --quiet "$fixture"
+git rm -f --quiet "$typed_fixture"
 
 secret_value="fake_test_secret_value_123456789"
-printf 'api_key = %s\n' "$secret_value" >"$fixture"
-git add --intent-to-add "$fixture"
+printf 'api_key = %s\n' "$secret_value" >"$secret_fixture"
+git add --intent-to-add "$secret_fixture"
 
 if run_scan scan-secret.out scan-secret.err; then
   echo "Expected temporary fake secret fixture to fail security scan." >&2
   exit 1
 fi
 
-if ! grep -q "$fixture" scan-secret.err; then
+if ! grep -q "$secret_fixture" scan-secret.err; then
   echo "Expected security scan to report the fixture path." >&2
   cat scan-secret.err >&2
   exit 1
@@ -61,7 +63,7 @@ if rg --fixed-strings --quiet -- "$secret_value" scan-secret.out scan-secret.err
   exit 1
 fi
 
-git rm -f --quiet "$fixture"
+git rm -f --quiet "$secret_fixture"
 
 if ! run_scan scan-self.out scan-self.err; then
   echo "Expected scanner pattern definitions not to self-match." >&2

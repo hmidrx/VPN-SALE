@@ -21,14 +21,19 @@ fi
 report_match "Private key material" '-----BEGIN (RSA |EC |OPENSSH |DSA |PRIVATE )?PRIVATE KEY-----' .
 report_match "Subscription URL" '(vless://|vmess://|trojan://|subscription://)' .
 
-# Detect literal secret assignments without treating typed schema fields such as
-# `encrypted_secret: Mapped[str]` or regex documentation such as `password=|token=`
-# as credentials. Quoted literals are checked in all tracked text files; bare
-# literals are checked only after `=` (plus `:` in configuration-like files).
+# Detect hard-coded literals while avoiding runtime assignments such as
+# `token = request.cookies.get(...)` and typed fields such as `password: str`.
+# Quoted literals are meaningful in source code, while unquoted literals are
+# checked only in configuration and shell files where that syntax represents a
+# concrete configured value rather than a Python/TypeScript expression.
 sensitive_name='(api[_-]?key|secret|token|cookie|password)'
 report_match "Obvious assigned secret" "${sensitive_name}[[:space:]]*[:=][[:space:]]*[\"'][^\"']{8,}[\"']" .
-report_match "Obvious assigned secret" "${sensitive_name}[[:space:]]*=[[:space:]]*[A-Za-z0-9_./+:-]{8,}([[:space:]]|$)" .
-report_match "Obvious assigned secret" "${sensitive_name}[[:space:]]*:[[:space:]]*[A-Za-z0-9_./+:-]{8,}([[:space:]]|$)" '*.yaml' '*.yml' '*.toml' '*.ini' '*.conf' '*.properties'
+config_paths=(
+  '*.yaml' '*.yml' '*.toml' '*.ini' '*.conf' '*.properties'
+  '*.env' '*.env.*' '*.sh'
+)
+report_match "Obvious assigned secret" "${sensitive_name}[[:space:]]*=[[:space:]]*[A-Za-z0-9_./+:-]{8,}([[:space:]]|$)" "${config_paths[@]}"
+report_match "Obvious assigned secret" "${sensitive_name}[[:space:]]*:[[:space:]]*[A-Za-z0-9_./+:-]{8,}([[:space:]]|$)" "${config_paths[@]}"
 
 report_match "Panel credential marker" '(xui|pasarguard).*(password|secret|token|api[_-]?key)' .
 
