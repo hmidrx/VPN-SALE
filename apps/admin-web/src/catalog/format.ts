@@ -1,0 +1,9 @@
+export const BYTE_UNITS = { GB: 1024n ** 3n, TB: 1024n ** 4n } as const;
+export function formatRial(value: number | bigint): string { return `${BigInt(value).toLocaleString("fa-IR")} ریال`; }
+export function formatTomanFromRial(value: number | bigint): string { const rial = BigInt(value); return `${(rial / 10n).toLocaleString("fa-IR")} تومان${rial % 10n === 0n ? "" : " (با باقیمانده ریالی)"}`; }
+export function parseRialInput(value: string): bigint { if (!/^\d{1,18}$/.test(value.trim())) throw new Error("invalid_rial"); return BigInt(value); }
+export function toBytes(amount: string, unit: keyof typeof BYTE_UNITS): bigint { if (!/^\d{1,9}$/.test(amount.trim())) throw new Error("invalid_bytes"); return BigInt(amount) * BYTE_UNITS[unit]; }
+export function formatBytes(bytes: number | bigint): string { const b = BigInt(bytes); if (b % BYTE_UNITS.TB === 0n) return `${b / BYTE_UNITS.TB} TB (${b} bytes)`; if (b % BYTE_UNITS.GB === 0n) return `${b / BYTE_UNITS.GB} GB (${b} bytes)`; return `${b} bytes`; }
+export function durationLabel(days: number): string { return `${days.toLocaleString("fa-IR")} روز ثابت؛ ماه تقویمی نیست`; }
+export function hasTierOverlap(tiers: {lower_inclusive:number; upper_exclusive?:number|null}[]): boolean { const sorted = [...tiers].sort((a,b)=>a.lower_inclusive-b.lower_inclusive); return sorted.some((t,i)=> i > 0 && (sorted[i-1]?.upper_exclusive ?? Number.MAX_SAFE_INTEGER) > t.lower_inclusive); }
+export function validateRange(min: number, max: number, step: number, recommended: number[] = []): string[] { const e: string[] = []; if (min <= 0 || max <= 0 || step <= 0) e.push("zero"); if (min > max) e.push("min_gt_max"); if ((max - min) % step !== 0) e.push("invalid_step"); if (new Set(recommended).size !== recommended.length) e.push("duplicate_recommended"); if (recommended.some((v)=>v < min || v > max)) e.push("recommended_outside_bounds"); return e; }

@@ -1,0 +1,2 @@
+import { CatalogShell } from "../../../../src/components/CatalogShell"; import { CategoryForm } from "../../../../src/catalog/editors"; import { ConfirmBox } from "../../../../src/components/ManagementShell";
+export default function Page(): React.ReactElement { return <CatalogShell title="ویرایش دسته" required="catalog.update"><CategoryForm/><section className="panel"><h2>آرشیو امن</h2><p>دسته ارجاع‌شده حذف فیزیکی نمی‌شود و conflict نسخه باید reload یا reconciliation آگاهانه شود.</p><ConfirmBox action="آرشیو دسته"/></section></CatalogShell>; }

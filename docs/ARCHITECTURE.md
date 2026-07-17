@@ -28,3 +28,7 @@ Catalog routes depend on auth dependencies, catalog/pricing application code, fr
 
 ### Alembic historical isolation
 Normal Alembic upgrades must not import future feature ORM modules into shared metadata before old revisions run. Autogenerate may load current feature models, but historical revisions must execute against only the schema they owned.
+
+## Milestone 2-B1 catalog administration note
+
+Milestone 2-B1 adds an administrator-only catalog console in `apps/admin-web` that consumes the real Milestone 2-A catalog and pricing APIs. The backend remains authoritative for authorization, lifecycle transitions, publication validation, immutable published versions, price-list overlap, pricing validity, and concurrency conflicts. The frontend keeps access tokens in memory, sends CSRF headers for mutations, avoids storing draft API responses in browser storage, displays machine codes LTR, treats money as integer rial with explicit toman display, uses fixed-day duration labels, and keeps fulfillment requirements provider-neutral. Customer storefront, wallet/order/payment/provider/provisioning work remains out of scope.
