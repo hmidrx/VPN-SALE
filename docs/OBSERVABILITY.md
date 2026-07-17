@@ -42,3 +42,7 @@ Invitation tokens are displayed exactly once from ephemeral component state, are
 
 ## Milestone 2-A observability
 Catalog audit events record safe machine identifiers, integer amounts and currency for category/product/version/price-list/rule changes and quote issuance. Logs and audit metadata must not include raw request bodies or provider details.
+
+## Milestone 2-B1 catalog administration note
+
+Milestone 2-B1 adds an administrator-only catalog console in `apps/admin-web` that consumes the real Milestone 2-A catalog and pricing APIs. The backend remains authoritative for authorization, lifecycle transitions, publication validation, immutable published versions, price-list overlap, pricing validity, and concurrency conflicts. The frontend keeps access tokens in memory, sends CSRF headers for mutations, avoids storing draft API responses in browser storage, displays machine codes LTR, treats money as integer rial with explicit toman display, uses fixed-day duration labels, and keeps fulfillment requirements provider-neutral. Customer storefront, wallet/order/payment/provider/provisioning work remains out of scope.
