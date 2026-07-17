@@ -74,3 +74,8 @@ Customer-web now exposes wallet-funded commerce routes for quote checkout, order
 
 ## Milestone 3-B2B administrator order administration interface
 Admin-web now includes `/management/commerce`, order discovery/detail/snapshot/timeline/reconciliation, immutable invoice inspection, checkout-session inspection, wallet-payment and reservation inspection, reviewed administrator cancellation, refund-state presentation and sanitized fulfillment-outbox inspection. The interface consumes real admin commerce APIs, uses permission-aware navigation, keeps order/financial/fulfillment states separate, treats invoices and order snapshots as immutable, and stores no commerce responses, cancellation reasons or idempotency values in browser storage. Backend compatibility additions remain read-only or reviewed-command endpoints and do not add external payments, provider infrastructure, provisioning, subscriptions, QR/configuration delivery or analytics.
+
+## Payment open decisions after Milestone 4-A1
+- Reviewed operational policy for resolving late provider success after local expiry.
+- Exact real gateway API specifications, credentials boundary and certification requirements.
+- Whether partial refunds should be enabled beyond the safe foundation.
