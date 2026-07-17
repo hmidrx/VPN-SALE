@@ -1,0 +1,1 @@
+export class CheckoutIdempotencyController { private key: string | null = null; current(): string { this.key ??= `chk_${crypto.getRandomValues(new Uint32Array(4)).join("")}`; return this.key; } reset(): void { this.key = null; } }
