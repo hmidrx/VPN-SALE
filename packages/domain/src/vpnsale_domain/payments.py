@@ -284,3 +284,174 @@ def validate_verified_result(intent_amount: PaymentAmount, result: NormalizedPay
         )
     if result.status != ProviderPaymentStatus.SUCCEEDED:
         raise PaymentDomainError("PAYMENT_VERIFICATION_FAILED", "provider did not verify success")
+
+
+class RefundRequestStatus(StrEnum):
+    REQUESTED = "REQUESTED"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    APPROVED = "APPROVED"
+    PROVIDER_PENDING = "PROVIDER_PENDING"
+    VERIFICATION_PENDING = "VERIFICATION_PENDING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
+    RECONCILIATION_REQUIRED = "RECONCILIATION_REQUIRED"
+
+
+class ReconciliationScope(StrEnum):
+    PAYMENT_INTENT = "PAYMENT_INTENT"
+    PAYMENT_ATTEMPT = "PAYMENT_ATTEMPT"
+    PAYMENT_SETTLEMENT = "PAYMENT_SETTLEMENT"
+    WALLET_TOPUP = "WALLET_TOPUP"
+    EXTERNAL_ORDER_PAYMENT = "EXTERNAL_ORDER_PAYMENT"
+    REFUND = "REFUND"
+    WEBHOOK = "WEBHOOK"
+    LATE_SETTLEMENT = "LATE_SETTLEMENT"
+    UNAPPLIED_PAYMENT = "UNAPPLIED_PAYMENT"
+
+
+class RepairEligibility(StrEnum):
+    SAFE_DERIVED_STATE = "SAFE_DERIVED_STATE"
+    MANUAL_REVIEW_ONLY = "MANUAL_REVIEW_ONLY"
+    BLOCKED_CRITICAL = "BLOCKED_CRITICAL"
+
+
+@dataclass(frozen=True)
+class RefundEligibilityInput:
+    settlement_amount_rial: int
+    settlement_currency: str
+    already_refunded_rial: int
+    provider_supports_refund: bool
+    trusted_settlement: bool
+    purpose: PaymentPurpose
+    order_refundable: bool = False
+    wallet_cash_available_rial: int = 0
+    wallet_cash_reserved_rial: int = 0
+    wallet_cash_credit_from_topup_rial: int = 0
+
+
+@dataclass(frozen=True)
+class RefundEligibility:
+    eligible: bool
+    amount: PaymentAmount | None
+    reason_code: str | None
+    requires_approval: bool
+
+
+def calculate_refund_eligibility(
+    data: RefundEligibilityInput, *, high_risk_threshold_rial: int = 50_000_000
+) -> RefundEligibility:
+    amount = PaymentAmount(data.settlement_amount_rial, data.settlement_currency)
+    if not data.trusted_settlement:
+        return RefundEligibility(False, None, "SETTLEMENT_NOT_TRUSTED", False)
+    if not data.provider_supports_refund:
+        return RefundEligibility(False, None, "PROVIDER_REFUND_UNSUPPORTED", False)
+    remaining = data.settlement_amount_rial - data.already_refunded_rial
+    if remaining != data.settlement_amount_rial or remaining <= 0:
+        return RefundEligibility(False, None, "REFUND_ALREADY_EXISTS", False)
+    if data.purpose == PaymentPurpose.ORDER_PAYMENT:
+        if not data.order_refundable:
+            return RefundEligibility(False, None, "ORDER_NOT_REFUNDABLE", False)
+    elif data.purpose == PaymentPurpose.WALLET_TOPUP:
+        unreserved_cash = data.wallet_cash_available_rial - data.wallet_cash_reserved_rial
+        topup_cash = min(data.wallet_cash_credit_from_topup_rial, unreserved_cash)
+        if topup_cash < data.settlement_amount_rial:
+            return RefundEligibility(False, None, "INSUFFICIENT_UNRESERVED_CASH_COVERAGE", False)
+    else:  # pragma: no cover - future enum protection
+        return RefundEligibility(False, None, "UNSUPPORTED_REFUND_PURPOSE", False)
+    return RefundEligibility(True, amount, None, amount.amount_rial >= high_risk_threshold_rial)
+
+
+def require_creator_approver_separation(creator_admin_id: str, approver_admin_id: str) -> None:
+    if creator_admin_id == approver_admin_id:
+        raise PaymentDomainError("REFUND_SELF_APPROVAL_DENIED", "creator cannot approve refund")
+
+
+def validate_refund_provider_result(
+    expected: PaymentAmount,
+    original_provider_transaction_reference: str,
+    result_amount: PaymentAmount,
+    result_status: str,
+    result_original_reference: str | None = None,
+) -> None:
+    if result_status != "SUCCEEDED":
+        raise PaymentDomainError(
+            "REFUND_VERIFICATION_PENDING", "trusted refund success not verified"
+        )
+    if result_amount.amount_rial != expected.amount_rial:
+        raise PaymentDomainError("REFUND_AMOUNT_MISMATCH", "provider refund amount mismatch")
+    if result_amount.currency != expected.currency:
+        raise PaymentDomainError("REFUND_CURRENCY_MISMATCH", "provider refund currency mismatch")
+    if (
+        result_original_reference
+        and result_original_reference != original_provider_transaction_reference
+    ):
+        raise PaymentDomainError(
+            "REFUND_ORIGINAL_REFERENCE_MISMATCH", "provider original reference mismatch"
+        )
+
+
+@dataclass(frozen=True)
+class ReconciliationMismatch:
+    code: str
+    scope: ReconciliationScope
+    severity: ReconciliationSeverity
+    evidence: Mapping[str, str | int | bool]
+    stored_state: Mapping[str, str | int | bool]
+    expected_state: Mapping[str, str | int | bool]
+    repair: RepairEligibility
+    manual_review_required: bool
+
+
+SAFE_REPAIR_CODES = frozenset(
+    {
+        "DERIVED_PAYMENT_STATUS_STALE",
+        "PAID_INVOICE_PROJECTION_MISSING",
+        "MISSING_READY_FOR_FULFILLMENT_OUTBOX",
+        "WALLET_PROJECTION_MISMATCH",
+    }
+)
+
+CRITICAL_REPAIR_BLOCKED_CODES = frozenset(
+    {
+        "PROVIDER_AMOUNT_MISMATCH",
+        "PROVIDER_CURRENCY_MISMATCH",
+        "DUPLICATE_SETTLEMENT",
+        "DUPLICATE_REFUND_EFFECT",
+        "INVALID_SIGNATURE_WEBHOOK_FINANCIAL_EFFECT",
+        "UNBALANCED_SETTLEMENT_JOURNAL",
+        "PROVIDER_REFERENCE_REUSE",
+        "UNCERTAIN_LATE_SETTLEMENT",
+        "OWNERSHIP_MISMATCH",
+    }
+)
+
+
+def classify_repair(code: str) -> RepairEligibility:
+    if code in SAFE_REPAIR_CODES:
+        return RepairEligibility.SAFE_DERIVED_STATE
+    if code in CRITICAL_REPAIR_BLOCKED_CODES:
+        return RepairEligibility.BLOCKED_CRITICAL
+    return RepairEligibility.MANUAL_REVIEW_ONLY
+
+
+def make_mismatch(
+    code: str,
+    scope: ReconciliationScope,
+    severity: ReconciliationSeverity,
+    evidence: Mapping[str, str | int | bool],
+    stored_state: Mapping[str, str | int | bool],
+    expected_state: Mapping[str, str | int | bool],
+) -> ReconciliationMismatch:
+    repair = classify_repair(code)
+    return ReconciliationMismatch(
+        code,
+        scope,
+        severity,
+        MappingProxyType(dict(evidence)),
+        MappingProxyType(dict(stored_state)),
+        MappingProxyType(dict(expected_state)),
+        repair,
+        repair != RepairEligibility.SAFE_DERIVED_STATE,
+    )

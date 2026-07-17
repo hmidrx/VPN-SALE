@@ -1,10 +1,216 @@
 export type Page<T> = { items: T[]; next_cursor?: string | null };
-export type PaymentPermission = 'payment_methods.read'|'payment_methods.manage'|'payments.read'|'payment_webhooks.read'|'payment_webhooks.retry'|'audit.read'|'security_events.read'|'ledger.read';
-export type PaymentMethod = { code: string; method_reference?: string; provider_code: string; adapter_version: string; method_kind: string; status?: string; currency: string; supported_purposes: string[]; supported_channels: string[]; priority: number; public_config?: Record<string, unknown>; min_amount_rial?: number | null; max_amount_rial?: number | null; maintenance_mode?: boolean; credential_state?: string; adapter_registered?: boolean; updated_at?: string; version?: number };
-export type PaymentIntent = { payment_reference: string; customer?: { customer_reference?: string; telegram_id?: string; display_name?: string }; purpose: string; method_code?: string; provider_code?: string; adapter_version?: string; amount_rial: number; currency: string; status: string; latest_attempt_status?: string; settlement_state?: string; created_at: string; expires_at?: string; completed_at?: string|null; failed_at?: string|null; order_reference?: string; invoice_reference?: string; wallet_topup_reference?: string; correlation_id?: string };
-export type PaymentAttempt = { attempt_reference: string; payment_reference: string; attempt_number: number; method_code?: string; provider_code?: string; adapter_version?: string; status: string; redirect_expires_at?: string|null; provider_payment_reference?: string|null; returned_at?: string|null; verified_at?: string|null; verified_amount_rial?: number|null; verified_currency?: string|null; failure_category?: string|null; sanitized_metadata?: Record<string, unknown>; webhook_references?: string[]; amount_mismatch?: boolean; currency_mismatch?: boolean };
-export type Verification = { verification_reference: string; attempt_reference: string; status: string; verified_amount_rial?: number|null; verified_currency?: string|null; failure_category?: string|null; created_at?: string; sanitized_metadata?: Record<string, unknown> };
-export type Settlement = { settlement_reference: string; payment_reference: string; attempt_reference: string; purpose: string; settled_amount_rial: number; currency: string; status: string; ledger_journal_reference?: string|null; ledger_restricted?: boolean; result_type?: string; result_reference?: string; settled_at?: string; audit_references?: string[]; reconciliation_state?: string };
-export type Webhook = { webhook_reference: string; method_code?: string; provider_code: string; adapter_version: string; provider_event_reference?: string|null; payload_digest_prefix?: string; signature_state: string; processing_state: string; received_at: string; attempt_count: number; next_retry_at?: string|null; processed_at?: string|null; failure_category?: string|null; payment_reference?: string|null; attempt_reference?: string|null; correlation_id?: string; normalized_event_type?: string; sanitized_metadata?: Record<string, unknown>; retry_eligible?: boolean; dead_letter?: boolean; audit_references?: string[]; security_event_references?: string[] };
-export type MethodHealth = { method_reference: string; availability: string; policy_state: string; adapter_registered: boolean; credential_state: string; maintenance_mode: boolean; recent_failure_category?: string|null; webhook_backlog_state?: string; verification_backlog_state?: string; reconciliation_warning_state?: string; last_successful_operation_at?: string|null };
-export type AdapterCapability = { provider_code: string; adapter_version: string; registered: boolean; supported_method_kinds: string[]; supported_purposes: string[]; supported_currencies: string[]; supports_return: boolean; supports_webhook: boolean; supports_refund: boolean; supports_query: boolean; supports_health_check: boolean };
+export type PaymentPermission =
+  | "payment_methods.read"
+  | "payment_methods.manage"
+  | "payments.read"
+  | "payment_webhooks.read"
+  | "payment_webhooks.retry"
+  | "audit.read"
+  | "security_events.read"
+  | "ledger.read";
+export type PaymentMethod = {
+  code: string;
+  method_reference?: string;
+  provider_code: string;
+  adapter_version: string;
+  method_kind: string;
+  status?: string;
+  currency: string;
+  supported_purposes: string[];
+  supported_channels: string[];
+  priority: number;
+  public_config?: Record<string, unknown>;
+  min_amount_rial?: number | null;
+  max_amount_rial?: number | null;
+  maintenance_mode?: boolean;
+  credential_state?: string;
+  adapter_registered?: boolean;
+  updated_at?: string;
+  version?: number;
+};
+export type PaymentIntent = {
+  payment_reference: string;
+  customer?: {
+    customer_reference?: string;
+    telegram_id?: string;
+    display_name?: string;
+  };
+  purpose: string;
+  method_code?: string;
+  provider_code?: string;
+  adapter_version?: string;
+  amount_rial: number;
+  currency: string;
+  status: string;
+  latest_attempt_status?: string;
+  settlement_state?: string;
+  created_at: string;
+  expires_at?: string;
+  completed_at?: string | null;
+  failed_at?: string | null;
+  order_reference?: string;
+  invoice_reference?: string;
+  wallet_topup_reference?: string;
+  correlation_id?: string;
+};
+export type PaymentAttempt = {
+  attempt_reference: string;
+  payment_reference: string;
+  attempt_number: number;
+  method_code?: string;
+  provider_code?: string;
+  adapter_version?: string;
+  status: string;
+  redirect_expires_at?: string | null;
+  provider_payment_reference?: string | null;
+  returned_at?: string | null;
+  verified_at?: string | null;
+  verified_amount_rial?: number | null;
+  verified_currency?: string | null;
+  failure_category?: string | null;
+  sanitized_metadata?: Record<string, unknown>;
+  webhook_references?: string[];
+  amount_mismatch?: boolean;
+  currency_mismatch?: boolean;
+};
+export type Verification = {
+  verification_reference: string;
+  attempt_reference: string;
+  status: string;
+  verified_amount_rial?: number | null;
+  verified_currency?: string | null;
+  failure_category?: string | null;
+  created_at?: string;
+  sanitized_metadata?: Record<string, unknown>;
+};
+export type Settlement = {
+  settlement_reference: string;
+  payment_reference: string;
+  attempt_reference: string;
+  purpose: string;
+  settled_amount_rial: number;
+  currency: string;
+  status: string;
+  ledger_journal_reference?: string | null;
+  ledger_restricted?: boolean;
+  result_type?: string;
+  result_reference?: string;
+  settled_at?: string;
+  audit_references?: string[];
+  reconciliation_state?: string;
+};
+export type Webhook = {
+  webhook_reference: string;
+  method_code?: string;
+  provider_code: string;
+  adapter_version: string;
+  provider_event_reference?: string | null;
+  payload_digest_prefix?: string;
+  signature_state: string;
+  processing_state: string;
+  received_at: string;
+  attempt_count: number;
+  next_retry_at?: string | null;
+  processed_at?: string | null;
+  failure_category?: string | null;
+  payment_reference?: string | null;
+  attempt_reference?: string | null;
+  correlation_id?: string;
+  normalized_event_type?: string;
+  sanitized_metadata?: Record<string, unknown>;
+  retry_eligible?: boolean;
+  dead_letter?: boolean;
+  audit_references?: string[];
+  security_event_references?: string[];
+};
+export type MethodHealth = {
+  method_reference: string;
+  availability: string;
+  policy_state: string;
+  adapter_registered: boolean;
+  credential_state: string;
+  maintenance_mode: boolean;
+  recent_failure_category?: string | null;
+  webhook_backlog_state?: string;
+  verification_backlog_state?: string;
+  reconciliation_warning_state?: string;
+  last_successful_operation_at?: string | null;
+};
+export type AdapterCapability = {
+  provider_code: string;
+  adapter_version: string;
+  registered: boolean;
+  supported_method_kinds: string[];
+  supported_purposes: string[];
+  supported_currencies: string[];
+  supports_return: boolean;
+  supports_webhook: boolean;
+  supports_refund: boolean;
+  supports_query: boolean;
+  supports_health_check: boolean;
+};
+export type Refund = {
+  refund_reference: string;
+  settlement_reference: string;
+  status: string;
+  amount_rial: number;
+  currency: string;
+  requires_approval: boolean;
+  creator_admin_reference: string;
+  approver_admin_reference?: string | null;
+  provider_refund_reference?: string | null;
+  compensation_journal_reference?: string | null;
+  reconciliation_state: string;
+  version: number;
+  created_at: string;
+};
+export type ReconciliationMismatch = {
+  mismatch_reference: string;
+  code: string;
+  scope: string;
+  severity: string;
+  immutable_evidence: Record<string, unknown>;
+  stored_state: Record<string, unknown>;
+  expected_state: Record<string, unknown>;
+  repair_eligible: boolean;
+  repair_kind: string;
+  manual_review_required: boolean;
+  security_event_reference?: string | null;
+};
+export type ReconciliationRun = {
+  run_reference: string;
+  status: string;
+  mismatch_count: number;
+  critical_count: number;
+  safe_repair_count: number;
+  mismatches: ReconciliationMismatch[];
+  created_at: string;
+};
+export type LateSettlementCase = {
+  case_reference: string;
+  payment_reference: string;
+  provider_transaction_reference: string;
+  amount_rial: number;
+  currency: string;
+  reason_code: string;
+  status: string;
+  eligible_actions: string[];
+  security_event_reference?: string | null;
+  version: number;
+  created_at: string;
+};
+export type UnappliedPayment = {
+  unapplied_reference: string;
+  payment_reference: string;
+  opaque_provider_reference: string;
+  amount_rial: number;
+  currency: string;
+  customer_reference: string;
+  related_resource_reference?: string | null;
+  reason_code: string;
+  status: string;
+  liability_reference?: string | null;
+  resolution_reference?: string | null;
+  version: number;
+  created_at: string;
+};
