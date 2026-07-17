@@ -370,6 +370,38 @@ def _customer_from_token(
     return sess.user_id
 
 
+def _customer_transaction_view(db: Session, row: JournalEntryModel) -> dict[str, Any]:
+    posting = db.scalar(
+        select(LedgerPostingModel)
+        .join(LedgerAccountModel, LedgerPostingModel.ledger_account_id == LedgerAccountModel.id)
+        .where(
+            LedgerPostingModel.journal_entry_id == row.id,
+            LedgerAccountModel.wallet_id == row.wallet_id,
+        )
+        .order_by(LedgerPostingModel.posting_order)
+    )
+    amount = posting.amount_rial if posting else None
+    direction = (
+        "INCOMING"
+        if posting and posting.direction == "CREDIT"
+        else "OUTGOING"
+        if posting and posting.direction == "DEBIT"
+        else "NEUTRAL"
+    )
+    return {
+        "transaction_reference": row.id,
+        "type": row.operation_code,
+        "direction": direction,
+        "amount_rial": amount,
+        "currency": row.currency,
+        "occurred_at": row.occurred_at.isoformat(),
+        "posted_at": row.posted_at.isoformat(),
+        "status": row.status,
+        "safe_description_code": row.description_code,
+        "reversal_of_reference": row.reversal_of_id,
+    }
+
+
 @customer_router.get("")
 def customer_wallet(
     customer_id: Annotated[str, Depends(_customer_from_token)],
@@ -390,6 +422,12 @@ def customer_policy(db: Annotated[Session, Depends(get_db_session)]) -> dict[str
         "currency": p.currency,
         "minimum_topup_amount_rial": p.minimum_topup_amount_rial,
         "maximum_topup_amount_rial": p.maximum_topup_amount_rial,
+        "maximum_wallet_balance_rial": p.maximum_wallet_balance_rial,
+        "default_reservation_lifetime_seconds": p.default_reservation_lifetime_seconds,
+        "maximum_reservation_lifetime_seconds": p.maximum_reservation_lifetime_seconds,
+        "promotional_credit_expiration_days": p.promotional_credit_expiration_days,
+        "referral_credit_expiration_days": p.referral_credit_expiration_days,
+        "gift_credit_expiration_days": p.gift_credit_expiration_days,
         "customer_wallet_operations_enabled": p.customer_wallet_operations_enabled,
         "max_transaction_history_page_size": p.max_transaction_history_page_size,
     }
@@ -409,17 +447,7 @@ def customer_transactions(
         .limit(min(max(limit, 1), 100))
     ).all()
     return {
-        "items": [
-            {
-                "transaction_reference": r.id,
-                "type": r.operation_code,
-                "currency": r.currency,
-                "occurred_at": r.occurred_at.isoformat(),
-                "status": r.status,
-                "safe_description_code": r.description_code,
-            }
-            for r in rows
-        ],
+        "items": [_customer_transaction_view(db, r) for r in rows],
         "next_cursor": None,
     }
 
@@ -435,14 +463,7 @@ def customer_transaction(
     row = db.get(JournalEntryModel, transaction_reference)
     if not row or row.wallet_id != wallet.id:
         raise _err(404, request, "WALLET_NOT_FOUND")
-    return {
-        "transaction_reference": row.id,
-        "type": row.operation_code,
-        "currency": row.currency,
-        "occurred_at": row.occurred_at.isoformat(),
-        "status": row.status,
-        "safe_description_code": row.description_code,
-    }
+    return _customer_transaction_view(db, row)
 
 
 @customer_router.get("/credits")
@@ -461,9 +482,12 @@ def customer_credits(
             {
                 "credit_reference": r.id,
                 "bucket_type": r.bucket_type,
+                "original_amount_rial": r.original_amount_rial,
                 "remaining_amount_rial": r.remaining_amount_rial,
+                "issued_at": r.issued_at.isoformat(),
                 "expires_at": r.expires_at.isoformat() if r.expires_at else None,
                 "status": r.status,
+                "source_operation": r.source_operation,
             }
             for r in rows
         ]
@@ -489,7 +513,11 @@ def customer_reservations(
                 "currency": r.currency,
                 "status": r.status,
                 "purpose_code": r.purpose_code,
+                "created_at": r.created_at.isoformat(),
                 "expires_at": r.expires_at.isoformat(),
+                "released_at": r.released_at.isoformat() if r.released_at else None,
+                "captured_at": r.captured_at.isoformat() if r.captured_at else None,
+                "related_reference": r.opaque_reference,
             }
             for r in rows
         ]
@@ -863,6 +891,9 @@ def get_policy(
         "default_reservation_lifetime_seconds": p.default_reservation_lifetime_seconds,
         "maximum_reservation_lifetime_seconds": p.maximum_reservation_lifetime_seconds,
         "spending_bucket_priority": p.spending_bucket_priority.split(","),
+        "promotional_credit_expiration_days": p.promotional_credit_expiration_days,
+        "referral_credit_expiration_days": p.referral_credit_expiration_days,
+        "gift_credit_expiration_days": p.gift_credit_expiration_days,
         "customer_wallet_operations_enabled": p.customer_wallet_operations_enabled,
         "max_transaction_history_page_size": p.max_transaction_history_page_size,
         "version": p.version,

@@ -59,3 +59,6 @@ Wallet accounting is backend-only. API routes authenticate and authorize, then c
 - Two-person approval for high-risk wallet deductions is deferred; this milestone requires narrowly privileged immediate posting.
 - Database triggers for immutability are deferred in favor of repository/application append-only controls and reversal-only correction.
 - Future order/payment capture semantics will be finalized when order, invoice, and payment modules are designed.
+
+## Milestone 3-A2A customer wallet interface
+Customer-web now exposes the read-only customer wallet route family (`/wallet`, `/wallet/transactions`, transaction detail, `/wallet/credits`, `/wallet/reservations`, `/wallet/policy`) backed by the Milestone 3-A1 customer wallet APIs. Balances remain backend-authoritative integer rial values; the browser only validates safe response shape and formats explicitly labelled rial/toman displays. Wallet, auth, CSRF and Telegram initData values remain memory/cookie scoped according to the existing customer authentication model and are not stored in browser storage or URLs. The UI shows frozen/closed wallet states, safe account-status errors, bucket labels, credit expiration, reservations and future top-up policy, while payment, checkout, order, invoice, provider, provisioning and admin financial-console work remain deferred.

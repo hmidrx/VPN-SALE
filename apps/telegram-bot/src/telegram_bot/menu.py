@@ -55,6 +55,9 @@ def default_menu_registry() -> MenuRegistry:
         MenuItem("security", "security", MenuTarget.MINI_APP, 30, route=MiniAppRoute.SECURITY)
     )
     registry.register(
+        MenuItem("wallet", "wallet", MenuTarget.MINI_APP, 35, route=MiniAppRoute.WALLET)
+    )
+    registry.register(
         MenuItem("help", "help_button", MenuTarget.CALLBACK, 40, action=CallbackAction.HELP)
     )
     registry.register(

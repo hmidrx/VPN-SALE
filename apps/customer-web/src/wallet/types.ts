@@ -1,0 +1,13 @@
+export type WalletStatus = "ACTIVE" | "FROZEN" | "CLOSED";
+export type WalletBucket = "CASH" | "REFUND" | "PROMOTIONAL" | "REFERRAL" | "GIFT" | "ADMIN_GRANT" | string;
+export type TransactionDirection = "INCOMING" | "OUTGOING" | "NEUTRAL";
+export type CreditStatus = "ACTIVE" | "EXHAUSTED" | "EXPIRED" | "REVERSED" | string;
+export type ReservationStatus = "ACTIVE" | "RELEASED" | "EXPIRED" | "CAPTURED" | "CANCELLED" | string;
+export type WalletBucketBalance = { bucket_type: WalletBucket; balance_rial: number; expires_at?: string | null; spendable?: boolean };
+export type WalletSummary = { wallet_reference?: string; customer_id?: string; currency: "IRR"; status: WalletStatus; posted_balance_rial: number; reserved_balance_rial: number; available_balance_rial: number; buckets: WalletBucketBalance[]; updated_at?: string | null; next_expiring_credit?: CreditLot | null };
+export type WalletPolicy = { currency: "IRR"; minimum_topup_amount_rial: number; maximum_topup_amount_rial: number; maximum_wallet_balance_rial?: number; customer_wallet_operations_enabled: boolean; max_transaction_history_page_size: number; default_reservation_lifetime_seconds?: number; maximum_reservation_lifetime_seconds?: number; promotional_credit_expiration_days?: number; referral_credit_expiration_days?: number; gift_credit_expiration_days?: number };
+export type Transaction = { transaction_reference: string; type: string; direction?: TransactionDirection; amount_rial?: number; currency: "IRR"; occurred_at: string; posted_at?: string | null; status: string; safe_description_code?: string | null; resulting_available_balance_rial?: number | null; related_reference?: string | null; reversal_of_reference?: string | null };
+export type CreditLot = { credit_reference: string; bucket_type: WalletBucket; original_amount_rial?: number; remaining_amount_rial: number; issued_at?: string | null; expires_at: string | null; status: CreditStatus; source_operation?: string | null };
+export type Reservation = { reservation_reference: string; amount_rial: number; currency: "IRR"; status: ReservationStatus; purpose_code?: string | null; created_at?: string | null; expires_at: string; released_at?: string | null; captured_at?: string | null; related_reference?: string | null };
+export type Page<T> = { items: T[]; next_cursor: string | null };
+export type WalletError = { code: string; message: string; correlationId?: string; retryAfter?: string | null };
