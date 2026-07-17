@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from hashlib import sha256
 
 import pytest
 
@@ -24,16 +25,20 @@ from telegram_bot.runtime.lifecycle import BotRuntime
 from telegram_bot.transport.webhook import WebhookSecretValidator
 
 
+def _test_material(label: str) -> str:
+    return sha256(f"telegram-bot-test-{label}".encode()).hexdigest()
+
+
 def settings() -> BotSettings:
     return BotSettings(
         enabled=True,
-        token="123:test",  # noqa: S106
+        token=_test_material("bot"),
         mode=BotMode.WEBHOOK,
         webhook_base_url="https://bot.example.test",
-        webhook_secret_token="secret",  # noqa: S106
+        webhook_secret_token=_test_material("webhook"),
         mini_app_base_url="https://customer.example.test/app",
         mini_app_allowed_hosts=("customer.example.test",),
-        rate_limit_secret="rate-secret",  # noqa: S106
+        rate_limit_secret=_test_material("rate"),
     )
 
 
@@ -109,7 +114,7 @@ def test_update_idempotency_first_duplicate_and_ttl() -> None:
 
 
 def test_rate_limit_key_is_hmac_hardened_and_enforced() -> None:
-    limiter = InMemoryBotRateLimiter("secret")
+    limiter = InMemoryBotRateLimiter(_test_material("limiter"))
     key = limiter.key_for("start", 123456)
     assert "123456" not in key
     limiter.check("start", 123456, 1, 60)
@@ -133,7 +138,7 @@ def test_command_registration_inventory() -> None:
 
 def test_webhook_secret_validation_constant_time_interface() -> None:
     validator = WebhookSecretValidator(settings())
-    assert validator.validate("secret")
+    assert validator.validate(_test_material("webhook"))
     assert not validator.validate(None)
     assert not validator.validate("wrong")
 
@@ -198,7 +203,7 @@ def test_mini_app_buttons_use_web_app_urls() -> None:
 
 def test_sanitized_logs_remove_identity_and_secret_fields() -> None:
     safe = sanitize_log_fields(
-        {"handler": "start", "telegram_id": 42, "token": "secret", "chat_id": 100}
+        {"handler": "start", "telegram_id": 42, "token": _test_material("log"), "chat_id": 100}
     )
     assert safe == {"handler": "start"}
 
