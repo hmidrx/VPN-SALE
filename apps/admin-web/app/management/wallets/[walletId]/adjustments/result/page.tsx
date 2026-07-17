@@ -1,0 +1,2 @@
+import { BalanceCards, FinanceShell } from '../../../../../../src/components/FinanceShell'; import { Tech } from '../../../../../../src/components/ManagementShell';
+export default function Page(): React.ReactElement { return <FinanceShell title="نتیجه تعدیل"><section className="panel"><h2>ثبت سرور موفق</h2><p>ژورنال: <Tech>journal_reference</Tech></p><p>قابلیت برگشت فقط طبق API نمایش داده می‌شود.</p></section><BalanceCards balance={{posted_balance_rial:0,reserved_balance_rial:0,available_balance_rial:0}}/></FinanceShell>; }

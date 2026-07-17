@@ -1,0 +1,2 @@
+import { FinanceShell, Money } from '../../../../src/components/FinanceShell'; import { Tech, StatusBadge } from '../../../../src/components/ManagementShell';
+export default function Page(): React.ReactElement { return <FinanceShell title="رزروهای کیف‌پول" required="wallets.read"><section className="panel"><StatusBadge value="ACTIVE"/> <Tech>reservation_reference</Tech> <Money value={0}/><p>رزرو سفارش یا پرداخت نامیده نمی‌شود؛ ایجاد و capture در این UI وجود ندارد.</p></section></FinanceShell>; }

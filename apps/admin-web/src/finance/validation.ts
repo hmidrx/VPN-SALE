@@ -1,0 +1,5 @@
+import type { Journal, Wallet } from './types';
+export function isSafeCurrency(c: string): boolean { return c === 'IRR'; }
+export function validateWallet(w: Wallet): string[] { const e:string[]=[]; if(!isSafeCurrency(w.currency)) e.push('INVALID_CURRENCY'); for (const k of ['posted_balance_rial','reserved_balance_rial','available_balance_rial'] as const) if(!Number.isSafeInteger(w[k])) e.push('INVALID_MONEY'); if(w.available_balance_rial !== w.posted_balance_rial - w.reserved_balance_rial) e.push('PROJECTION_MISMATCH'); return e; }
+export function journalTotals(j: Journal): {debit:number;credit:number;balanced:boolean} { const p=j.postings??[]; const debit=p.filter(x=>x.direction==='DEBIT').reduce((s,x)=>s+x.amount_rial,0); const credit=p.filter(x=>x.direction==='CREDIT').reduce((s,x)=>s+x.amount_rial,0); return {debit,credit,balanced:debit===credit}; }
+export function safeMetadataEntries(input: Record<string, unknown> = {}): [string,string][] { return Object.entries(input).filter(([k])=>!/token|secret|password|csrf|fingerprint|key|credential/i.test(k)).map(([k,v])=>[k, String(v).slice(0,160)]); }

@@ -1,0 +1,2 @@
+import { FinanceShell } from '../../../../../src/components/FinanceShell'; import { Tech, StatusBadge } from '../../../../../src/components/ManagementShell';
+export default async function Page({ params }: { params: Promise<{ walletId: string }> }): Promise<React.ReactElement> { const resolved = await params; return <FinanceShell title="تاریخچه تراکنش کیف‌پول" required="wallets.read"><section className="panel"><h2><Tech>{resolved.walletId}</Tech></h2><p>ژورنال‌های مرتبط immutable و read-only هستند.</p><StatusBadge value="cursor"/></section></FinanceShell>; }

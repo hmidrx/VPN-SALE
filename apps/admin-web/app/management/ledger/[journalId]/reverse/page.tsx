@@ -1,0 +1,2 @@
+import { FinanceShell } from '../../../../../src/components/FinanceShell'; import { ConfirmBox, Tech } from '../../../../../src/components/ManagementShell';
+export default async function Page({ params }: { params: Promise<{ journalId: string }> }): Promise<React.ReactElement> { const resolved = await params; return <FinanceShell title="برگشت جبرانی" required="wallets.adjust"><section className="panel"><p>برگشت، ژورنال جدید می‌سازد و سند اصلی <Tech>{resolved.journalId}</Tech> بدون تغییر می‌ماند.</p><ConfirmBox action="تأیید برگشت"/></section></FinanceShell>; }

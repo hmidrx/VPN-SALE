@@ -1,0 +1,2 @@
+import { FinanceShell } from '../../../../../src/components/FinanceShell'; import { ConfirmBox } from '../../../../../src/components/ManagementShell';
+export default function Page(): React.ReactElement { return <FinanceShell title="مسدودسازی کیف‌پول" required="wallets.freeze"><section className="panel"><p>این عملیات کیف‌پول را محدود می‌کند، تعلیق حساب مشتری نیست و تاریخچه باقی می‌ماند.</p><ConfirmBox action="تأیید مسدودسازی"/></section></FinanceShell>; }

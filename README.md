@@ -204,3 +204,6 @@ Milestone 3-A1 adds backend-only wallet/accounting foundations: one IRR wallet p
 
 ## Milestone 3-A2A customer wallet interface
 Milestone 3-A2A adds customer-web wallet routes for `/wallet`, `/wallet/transactions`, transaction detail, `/wallet/credits`, `/wallet/reservations`, and `/wallet/policy`. The interface consumes the real Milestone 3-A1 customer wallet APIs, displays posted/reserved/available integer-rial balances with explicitly labelled derived toman text, maps cash and non-cash buckets safely, shows expiring credits, immutable transaction history, read-only reservations, wallet status, and future top-up policy. It intentionally adds no wallet charging, payment, checkout, orders, invoices, providers, provisioning, subscriptions, or admin financial console.
+
+## Milestone 3-A2B administrator financial console
+The admin web app now includes management routes for wallet discovery, wallet detail, immutable ledger inspection, manual credit/debit workflows, reversals, wallet freeze/unfreeze, credit lots, reservations, wallet policy, and reconciliation. The UI consumes the Milestone 3-A1 financial APIs, keeps rial as canonical money, labels derived toman values, stores no financial responses in browser storage, and adds no checkout, order, payment, provider, provisioning, subscription, or analytics functionality.
