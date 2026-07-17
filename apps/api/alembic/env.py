@@ -24,6 +24,8 @@ def _target_metadata() -> MetaData:
     cmd_opts = getattr(config, "cmd_opts", None)
     if bool(getattr(cmd_opts, "autogenerate", False)):
         import platform_api.catalog_models  # noqa: F401
+        import platform_api.order_models  # noqa: F401
+        import platform_api.wallet_models  # noqa: F401
     return IdentityBase.metadata
 
 

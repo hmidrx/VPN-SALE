@@ -207,3 +207,6 @@ Milestone 3-A2A adds customer-web wallet routes for `/wallet`, `/wallet/transact
 
 ## Milestone 3-A2B administrator financial console
 The admin web app now includes management routes for wallet discovery, wallet detail, immutable ledger inspection, manual credit/debit workflows, reversals, wallet freeze/unfreeze, credit lots, reservations, wallet policy, and reconciliation. The UI consumes the Milestone 3-A1 financial APIs, keeps rial as canonical money, labels derived toman values, stores no financial responses in browser storage, and adds no checkout, order, payment, provider, provisioning, subscription, or analytics functionality.
+
+## Milestone 3-B1 order and checkout backend
+Milestone 3-B1 adds backend-only order, checkout and invoice foundations. A customer can convert one active quote into one wallet-funded order, reserve wallet funds, confirm capture through the double-entry ledger, receive an immutable invoice snapshot, cancel before fulfillment with reservation release or compensating refund, and expose normalized ready-for-fulfillment outbox events. No customer/admin order UI, external payment gateway, provider allocation, service creation, subscriptions or QR/config delivery is implemented.
