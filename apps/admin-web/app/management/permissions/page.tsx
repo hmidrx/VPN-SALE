@@ -1,0 +1,2 @@
+import { ManagementShell, Tech } from "../../../src/components/ManagementShell";
+export default function Page(): React.ReactElement { const groups=["admins","roles","users","sessions","audit","security"]; return <ManagementShell title="کاتالوگ مجوزها" required="roles.read"><section className="panel stack"><input placeholder="جستجوی کد مجوز" />{groups.map((g)=><article key={g} className="notice"><h2><Tech>{g}</Tech></h2><p><Tech>{g}.read</Tech> — توضیح امن از backend؛ ایجاد arbitrary permission وجود ندارد.</p></article>)}</section></ManagementShell>; }

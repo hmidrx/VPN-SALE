@@ -1,0 +1,10 @@
+export type PermissionCode = `${string}.${string}`;
+export type Page<T> = { items: T[]; next_cursor?: string | null };
+export type RoleSummary = { id: string; machine_name: string; display_name: string; description?: string | null; built_in?: boolean; active?: boolean };
+export type AdminRecord = { id: string; email: string; status: string; roles: RoleSummary[]; mfa_enabled: boolean; created_at: string; updated_at: string; password_changed_at?: string | null; last_successful_login_at?: string | null; last_failed_login_at?: string | null; failed_login_count?: number; lock_until?: string | null; active_session_count: number };
+export type ManagementSession = { session_id: string; current?: boolean; device_label?: string | null; client?: string | null; created_at: string; last_used_at?: string | null; idle_expires_at?: string | null; absolute_expires_at?: string | null; revoked: boolean };
+export type Permission = { id: string; code: PermissionCode; description: string; namespace?: string; roles?: RoleSummary[] };
+export type Customer = { id: string; status: string; created_at: string; updated_at: string; profile: { display_name?: string | null; locale?: string | null }; telegram: { telegram_user_id?: number | null; username?: string | null; first_name?: string | null; last_name?: string | null; language_code?: string | null; first_seen_at?: string | null; last_seen_at?: string | null; bot_started?: boolean | null; blocked_bot?: boolean | null }; active_session_count: number };
+export type AuditEvent = { id: string; actor_type: string; actor_id?: string | null; target_type?: string | null; target_id?: string | null; event_code: string; occurred_at: string; correlation_id?: string | null; metadata?: Record<string, unknown> | null };
+export type SecurityEvent = AuditEvent & { severity: string; status: string; acknowledged_at?: string | null; resolved_at?: string | null; resolution_note?: string | null };
+export type ManagementError = { status: number; code: string; messageKey: string; correlationId?: string; retryAfter?: string | null };
