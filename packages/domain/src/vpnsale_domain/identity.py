@@ -8,7 +8,7 @@ from typing import Any, cast
 from uuid import UUID
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-PERMISSION_CODE_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")
+PERMISSION_CODE_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
 SENSITIVE_KEY_RE = re.compile(
     r"(password|secret|token|credential|hash|init[_-]?data|recovery|totp)", re.I
 )

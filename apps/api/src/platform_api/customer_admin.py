@@ -35,8 +35,11 @@ from platform_api.identity.models import (
     UserModel,
 )
 from platform_api.management import require_perm
-from platform_api.wallet import _ensure_wallet, _post_adjustment
-from platform_api.wallet import _view as wallet_view
+from platform_api.wallet import (
+    build_wallet_admin_view,
+    ensure_customer_wallet,
+    post_admin_wallet_adjustment,
+)
 from platform_api.wallet_models import JournalEntryModel, WalletModel, WalletReservationModel
 
 router = APIRouter(prefix="/api/v1/admin/customers", tags=["admin-customers"])
@@ -198,6 +201,39 @@ def _mask_telegram(v: int | None) -> str | None:
     return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "***"
 
 
+def _filter_text(filters: dict[str, object], key: str) -> str | None:
+    value = filters.get(key)
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    return None
+
+
+def _filter_positive_int(filters: dict[str, object], key: str) -> int | None:
+    value = filters.get(key)
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.isdecimal():
+        parsed = int(value)
+        return parsed if parsed > 0 else None
+    return None
+
+
+def _iso_datetime(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _journal_view(row: JournalEntryModel) -> dict[str, str | None]:
+    return {
+        "journal_entry_reference": row.id,
+        "operation_code": row.operation_code,
+        "posted_at": _iso_datetime(row.posted_at),
+        "ledger_link": f"/api/v1/admin/management/ledger/journals/{row.id}",
+    }
+
+
 def _customer_row(db: Session, u: UserModel, can_security: bool = False) -> dict[str, Any]:
     p = db.get(CustomerProfileModel, u.id)
     tg = db.scalar(select(TelegramAccountModel).where(TelegramAccountModel.user_id == u.id))
@@ -218,7 +254,7 @@ def _customer_row(db: Session, u: UserModel, can_security: bool = False) -> dict
         )
         or 0
     )
-    warnings = []
+    warnings: list[str] = []
     if u.status in {"SUSPENDED", "BLOCKED"}:
         warnings.append("account_restricted")
     if wallet and wallet.status == "FROZEN":
@@ -241,7 +277,7 @@ def _customer_row(db: Session, u: UserModel, can_security: bool = False) -> dict
             )
             or None,
         },
-        "wallet": wallet_view(db, wallet) if wallet else None,
+        "wallet": build_wallet_admin_view(db, wallet) if wallet else None,
         "active_session_count": sessions,
         "tags": [{"code": c, "name_i18n": n, "color_token": color} for c, n, color in tags],
         "risk_indicators": warnings,
@@ -250,31 +286,35 @@ def _customer_row(db: Session, u: UserModel, can_security: bool = False) -> dict
 
 def _filter_stmt(db: Session, filters: dict[str, object]) -> Any:
     stmt = select(UserModel).where(UserModel.status.in_([s.value for s in UserStatus]))
-    if ref := filters.get("customer_reference"):
-        stmt = stmt.where(UserModel.id == str(ref))
-    if status := filters.get("account_status"):
-        stmt = stmt.where(UserModel.status == str(status))
-    if tg_id := filters.get("telegram_id"):
+    ref = _filter_text(filters, "customer_reference")
+    if ref is not None:
+        stmt = stmt.where(UserModel.id == ref)
+    status = _filter_text(filters, "account_status")
+    if status is not None:
+        stmt = stmt.where(UserModel.status == status)
+    tg_id = _filter_positive_int(filters, "telegram_id")
+    if tg_id is not None:
         stmt = stmt.join(TelegramAccountModel, TelegramAccountModel.user_id == UserModel.id).where(
-            TelegramAccountModel.telegram_user_id == int(tg_id)
+            TelegramAccountModel.telegram_user_id == tg_id
         )
-    if username := filters.get("telegram_username"):
+    username = _filter_text(filters, "telegram_username")
+    if username is not None:
         stmt = stmt.join(TelegramAccountModel, TelegramAccountModel.user_id == UserModel.id).where(
-            TelegramAccountModel.username == str(username).removeprefix("@").casefold()
+            TelegramAccountModel.username == username.removeprefix("@").casefold()
         )
-    if name := filters.get("display_name"):
+    name = _filter_text(filters, "display_name")
+    if name is not None:
         stmt = stmt.join(CustomerProfileModel, CustomerProfileModel.user_id == UserModel.id).where(
-            CustomerProfileModel.display_name.ilike(f"%{str(name)[:80]}%")
+            CustomerProfileModel.display_name.ilike(f"%{name[:80]}%")
         )
-    if tag := filters.get("tag"):
+    tag = _filter_text(filters, "tag")
+    if tag is not None:
         stmt = (
             stmt.join(
                 CustomerTagAssignmentModel, CustomerTagAssignmentModel.customer_id == UserModel.id
             )
             .join(CustomerTagModel, CustomerTagModel.id == CustomerTagAssignmentModel.tag_id)
-            .where(
-                CustomerTagModel.code == str(tag), CustomerTagAssignmentModel.removed_at.is_(None)
-            )
+            .where(CustomerTagModel.code == tag, CustomerTagAssignmentModel.removed_at.is_(None))
         )
     return stmt
 
@@ -326,29 +366,34 @@ def customer_detail(
     if not u:
         raise HTTPException(404)
     wallet = db.scalar(select(WalletModel).where(WalletModel.customer_id == customer_id))
-    sessions = db.scalars(
-        select(CustomerSessionModel)
-        .where(CustomerSessionModel.user_id == customer_id)
-        .order_by(CustomerSessionModel.created_at.desc())
-        .limit(100)
-    ).all()
-    journals = (
+    sessions: list[CustomerSessionModel] = list(
         db.scalars(
-            select(JournalEntryModel)
-            .where(JournalEntryModel.wallet_id == wallet.id)
-            .order_by(JournalEntryModel.posted_at.desc())
-            .limit(50)
+            select(CustomerSessionModel)
+            .where(CustomerSessionModel.user_id == customer_id)
+            .order_by(CustomerSessionModel.created_at.desc())
+            .limit(100)
         ).all()
-        if wallet
-        else []
     )
-    notes = db.scalars(
-        select(CustomerNoteModel)
-        .where(
-            CustomerNoteModel.customer_id == customer_id, CustomerNoteModel.archived_at.is_(None)
+    journals: list[JournalEntryModel] = []
+    if wallet is not None:
+        journals = list(
+            db.scalars(
+                select(JournalEntryModel)
+                .where(JournalEntryModel.wallet_id == wallet.id)
+                .order_by(JournalEntryModel.posted_at.desc())
+                .limit(50)
+            ).all()
         )
-        .order_by(CustomerNoteModel.pinned.desc(), CustomerNoteModel.created_at.desc())
-    ).all()
+    notes: list[CustomerNoteModel] = list(
+        db.scalars(
+            select(CustomerNoteModel)
+            .where(
+                CustomerNoteModel.customer_id == customer_id,
+                CustomerNoteModel.archived_at.is_(None),
+            )
+            .order_by(CustomerNoteModel.pinned.desc(), CustomerNoteModel.created_at.desc())
+        ).all()
+    )
     _audit(db, admin.id, "customer.profile_viewed", "customer", customer_id, request)
     return {
         "overview": _customer_row(db, u, can_security=True),
@@ -367,16 +412,8 @@ def customer_detail(
                 for s in sessions
             ]
         },
-        "wallet": wallet_view(db, wallet) if wallet else None,
-        "transactions": [
-            {
-                "journal_entry_reference": j.id,
-                "operation_code": j.operation_code,
-                "posted_at": j.posted_at.isoformat(),
-                "ledger_link": f"/api/v1/admin/management/ledger/journals/{j.id}",
-            }
-            for j in journals
-        ],
+        "wallet": build_wallet_admin_view(db, wallet) if wallet else None,
+        "transactions": [_journal_view(j) for j in journals],
         "reservations": [
             {"reservation_reference": r.id, "amount_rial": r.amount_rial, "status": r.status}
             for r in db.scalars(
@@ -539,7 +576,7 @@ def freeze_wallet(
     admin: Annotated[AdminModel, Depends(require_perm("customer_wallets.freeze"))],
     request: Request,
 ) -> dict[str, Any]:
-    wallet = _ensure_wallet(db, customer_id)
+    wallet = ensure_customer_wallet(db, customer_id)
     wallet.status = "FROZEN"
     wallet.updated_at = datetime.now(UTC)
     _audit(
@@ -551,7 +588,7 @@ def freeze_wallet(
         request,
         {"reason_code": body.reason_code},
     )
-    return wallet_view(db, wallet)
+    return build_wallet_admin_view(db, wallet)
 
 
 @router.post("/{customer_id}/wallet/unfreeze")
@@ -562,7 +599,7 @@ def unfreeze_wallet(
     admin: Annotated[AdminModel, Depends(require_perm("customer_wallets.freeze"))],
     request: Request,
 ) -> dict[str, Any]:
-    wallet = _ensure_wallet(db, customer_id)
+    wallet = ensure_customer_wallet(db, customer_id)
     wallet.status = "ACTIVE"
     wallet.updated_at = datetime.now(UTC)
     _audit(
@@ -574,7 +611,7 @@ def unfreeze_wallet(
         request,
         {"reason_code": body.reason_code},
     )
-    return wallet_view(db, wallet)
+    return build_wallet_admin_view(db, wallet)
 
 
 @router.post("/{customer_id}/adjustments")
@@ -589,7 +626,7 @@ def request_adjustment(
     if body.bucket_type == "CASH":
         # Cash adjustments are high-risk and remain pending for approval.
         pass
-    wallet = _ensure_wallet(db, customer_id)
+    wallet = ensure_customer_wallet(db, customer_id)
     high = body.amount_rial >= 50_000_000 or body.bucket_type == "CASH" or wallet.status == "FROZEN"
     adj = db.scalar(
         select(CustomerAdjustmentRequestModel).where(
@@ -617,7 +654,7 @@ def request_adjustment(
     db.add(adj)
     db.flush()
     if not high:
-        je = _post_adjustment(
+        je = post_admin_wallet_adjustment(
             db,
             wallet,
             "ADMIN_CREDIT" if body.direction == "CREDIT" else "ADMIN_DEBIT",
@@ -681,7 +718,7 @@ def approve_adjustment(
             "status": adj.status,
             "journal_entry_reference": adj.journal_entry_id,
         }
-    je = _post_adjustment(
+    je = post_admin_wallet_adjustment(
         db,
         wallet,
         "ADMIN_CREDIT" if adj.direction == "CREDIT" else "ADMIN_DEBIT",
