@@ -43,3 +43,6 @@ Milestone 1D-A introduces backend-only management APIs protected by database-res
 The administrator frontend adds permission-aware identity management pages for administrators, invitations, roles, permissions, customers, sessions, audit logs, and security events. The UI consumes the existing management APIs, reuses memory-only access tokens, HttpOnly refresh cookies, CSRF headers, and single-flight refresh, and never becomes the authoritative authorization layer. Direct unauthorized routes must show controlled forbidden states while backend permission checks remain decisive.
 
 Invitation tokens are displayed exactly once from ephemeral component state, are never placed in URLs, localStorage, sessionStorage, logs, or analytics, and are cleared after acknowledgment. Audit metadata rendering is defensive and suppresses secret-like keys. Session pages show only normalized safe metadata returned by the backend. The security center supports acknowledgment/resolution language without implying that acknowledgment removes the underlying event.
+
+## Milestone 2-A catalog threats
+Mitigations cover client price tampering, stale price-list selection, quote replay across customers, provider detail leakage and unsafe administrator rule execution. Pricing rules are typed data, not scripts or SQL expressions.

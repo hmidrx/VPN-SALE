@@ -166,6 +166,15 @@ def _current(
     return sess
 
 
+def current_customer_session_dependency(
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    request: Request,
+    authorization: Annotated[str | None, Header()] = None,
+) -> CustomerSessionModel:
+    return _current(authorization, db, settings, request)
+
+
 @router.post("/telegram-mini-app", response_model=AuthResponse)
 async def telegram_login(
     body: TelegramLoginRequest,

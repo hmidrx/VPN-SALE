@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from alembic import context
-from sqlalchemy import Connection, pool
+from sqlalchemy import Connection, MetaData, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from platform_api.identity.models import IdentityBase
@@ -16,7 +16,18 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-target_metadata = IdentityBase.metadata
+
+def _target_metadata() -> MetaData:
+    # Historical revisions must not see future ORM tables during normal upgrade
+    # execution. Import feature model modules only for Alembic autogenerate so
+    # developer workflows still compare against the full current metadata.
+    cmd_opts = getattr(config, "cmd_opts", None)
+    if bool(getattr(cmd_opts, "autogenerate", False)):
+        import platform_api.catalog_models  # noqa: F401
+    return IdentityBase.metadata
+
+
+target_metadata = _target_metadata()
 
 database_url = os.environ.get("VPN_SALE_DATABASE_URL")
 if database_url:

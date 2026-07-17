@@ -22,3 +22,9 @@ flowchart LR
   View --> Future[Future commerce/provisioning abstraction]
   Future --> Provider[Versioned provider adapters]
 ```
+
+## Milestone 2-A catalog boundary
+Catalog routes depend on auth dependencies, catalog/pricing application code, framework-independent domain objects and repository-backed SQLAlchemy persistence. Pricing never calls Telegram, frontend, wallet, order, payment or provider code. Product definitions contain provider-neutral fulfillment requirements only.
+
+### Alembic historical isolation
+Normal Alembic upgrades must not import future feature ORM modules into shared metadata before old revisions run. Autogenerate may load current feature models, but historical revisions must execute against only the schema they owned.
