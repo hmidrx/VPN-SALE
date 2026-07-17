@@ -1,0 +1,2 @@
+import type { PaymentAction } from "./types";
+export function validateRedirectAction(action: PaymentAction, origin = globalThis.location?.origin ?? "http://localhost"): URL { if (action.action_type !== "REDIRECT" || !action.action_url) throw new Error("invalid_redirect_action"); const url = new URL(action.action_url, origin); if (!["https:","http:"].includes(url.protocol)) throw new Error("unsafe_redirect_protocol"); if (action.allowed_hosts?.length && !action.allowed_hosts.includes(url.host)) throw new Error("unsafe_redirect_host"); return url; }

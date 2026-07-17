@@ -79,3 +79,6 @@ Admin-web now includes `/management/commerce`, order discovery/detail/snapshot/t
 - Reviewed operational policy for resolving late provider success after local expiry.
 - Exact real gateway API specifications, credentials boundary and certification requirements.
 - Whether partial refunds should be enabled beyond the safe foundation.
+
+## Milestone 4-A2A open decisions
+Future milestones still need administrator payment operations, real gateway adapters, richer customer-safe settlement payloads and deterministic full E2E fixture orchestration. Card-to-card, crypto, mixed payments and provisioning remain out of scope.

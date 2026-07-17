@@ -56,3 +56,6 @@ Admin-web now includes `/management/commerce`, order discovery/detail/snapshot/t
 
 ## Milestone 4-A1 payment dependency direction
 Payment routes are thin and delegate to payment application/domain code, versioned adapter ports, repositories/unit-of-work, wallet/ledger/order ports and the transactional outbox. Provider-native payloads remain at the adapter boundary, and adapters cannot mutate wallet, ledger, invoice or order tables directly.
+
+## Milestone 4-A2A customer payment interface
+Customer payment UI modules are thin clients over backend payment, wallet, order and invoice APIs. Runtime validation, idempotency, redirect validation, return recovery and money formatting are separated from React rendering. The frontend never settles payments, credits wallets, marks invoices paid or provisions services.

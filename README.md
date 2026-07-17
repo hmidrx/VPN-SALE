@@ -219,3 +219,6 @@ Admin-web now includes `/management/commerce`, order discovery/detail/snapshot/t
 
 ### Milestone 4-A1 payment core
 The backend includes a provider-neutral payment core foundation with versioned adapter contracts, deterministic fake-adapter tests, payment method registry schema, webhook inbox schema, settlement/refund/reconciliation foundations and customer/admin API shells. It does not include real payment gateways, customer/admin payment UI or VPN provisioning.
+
+## Milestone 4-A2A customer payment interface
+Customer-web now exposes customer payment routes for wallet top-up, external order payment, secure payment return, and payment history/detail. The UI consumes the provider-neutral Milestone 4-A1 backend, keeps rial as canonical integer money, labels derived toman display, validates redirect actions, and never treats browser return parameters as proof of payment.

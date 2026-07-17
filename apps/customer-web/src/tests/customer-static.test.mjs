@@ -55,3 +55,18 @@ assert.match(source("components/Commerce.tsx"), /role=\"dialog\"/);
 assert.match(source("components/Commerce.tsx"), /پرداخت فعلاً فقط از کیف پول/);
 assert.doesNotMatch(source("components/Commerce.tsx"), /card-number|crypto|gateway|server ip|inbound|subscription URL/i);
 assert.doesNotMatch(source("commerce/api.ts"), /localStorage|sessionStorage|indexedDB|initDataUnsafe/i);
+
+assert.match(source("payments/api.ts"), /\/api\/v1\/customer\/payments/);
+assert.match(source("payments/api.ts"), /Idempotency-Key/);
+assert.match(source("payments/api.ts"), /cache:"no-store"/);
+assert.doesNotMatch(source("payments/api.ts"), /localStorage|sessionStorage|indexedDB|initDataUnsafe/i);
+assert.match(source("payments/format.ts"), /\^\[0-9\]\+\$/);
+assert.match(source("payments/format.ts"), /formatTomanFromRial/);
+assert.match(source("payments/redirect.ts"), /javascript|unsafe_redirect_protocol|allowed_hosts/);
+assert.match(source("payments/idempotency.ts"), /crypto\.randomUUID/);
+assert.doesNotMatch(source("payments/idempotency.ts"), /localStorage|sessionStorage|indexedDB/i);
+assert.match(source("components/Payments.tsx"), /پارامترهای مرورگر اثبات پرداخت نیستند/);
+assert.match(source("components/Payments.tsx"), /مبلغ فاکتور غیرقابل ویرایش/);
+assert.match(source("components/Payments.tsx"), /هیچ سرویس، QR یا لینک پیکربندی/);
+assert.doesNotMatch(source("components/Payments.tsx"), /force.*success|fake.*success|card-number|CVV|crypto|subscription URL/i);
+assert.match(source("components/CustomerApp.tsx"), /href="\/payments"/);
