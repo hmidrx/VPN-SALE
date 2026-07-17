@@ -70,3 +70,6 @@ Admin-web now includes `/management/commerce`, order discovery/detail/snapshot/t
 
 ## Payment observability
 Payment metrics and events should use safe references, status codes and mismatch codes only. They must not include credentials, idempotency keys, webhook signatures, raw webhook bodies, customer tokens, card data or full provider responses.
+
+## Milestone 4-A2A payment observability
+Allowed frontend diagnostics are low-cardinality route, purpose, method kind, status category and safe outcome codes. Payment references, provider references, order/invoice references, amounts, redirect URLs, idempotency values, tokens and initData must not be logged.

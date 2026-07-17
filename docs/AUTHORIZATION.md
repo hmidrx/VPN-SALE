@@ -44,3 +44,6 @@ Admin-web now includes `/management/commerce`, order discovery/detail/snapshot/t
 
 ## Payment permissions
 Milestone 4-A1 seeds stable payment permissions: `payment_methods.read`, `payment_methods.manage`, `payments.read`, `payments.reconcile`, `payment_webhooks.read`, `payment_webhooks.retry`, `payment_refunds.read` and `payment_refunds.manage`. Mutation permissions must not be assigned to low-privilege roles by default.
+
+## Milestone 4-A2A payment authorization
+Customer payment history, detail, wallet top-up and order-payment endpoints remain backend-authoritative for ownership, account status, invoice eligibility and method visibility. The frontend displays only customer-safe fields returned by those APIs.

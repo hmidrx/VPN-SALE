@@ -1,0 +1,1 @@
+export class PaymentOperationController { private key: string | null = null; startNew(): string { this.key = crypto.randomUUID(); return this.key; } current(): string { return this.key ?? this.startNew(); } reset(): void { this.key = null; } }

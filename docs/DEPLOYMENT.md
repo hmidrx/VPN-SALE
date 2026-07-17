@@ -82,3 +82,6 @@ Admin-web now includes `/management/commerce`, order discovery/detail/snapshot/t
 
 ## Payment deployment
 Production must not activate the fake payment adapter. Real adapters require explicit provider code, adapter version, secret-reference configuration and documented operational runbooks before activation.
+
+## Milestone 4-A2A payment deployment
+No gateway credentials or public fake-success controls are required for customer-web deployment. Authenticated payment API responses should not be cached by service workers or shared proxies.

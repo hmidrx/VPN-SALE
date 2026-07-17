@@ -94,3 +94,6 @@ Admin-web now includes `/management/commerce`, order discovery/detail/snapshot/t
 
 ## Payment testing
 Payment tests use the deterministic fake adapter contract. Required coverage includes adapter-version registration, production fake-adapter rejection, state machines, exact amount/currency verification, webhook signature/replay behavior, idempotent settlement, compensating refunds and dry-run reconciliation mismatch detection.
+
+## Milestone 4-A2A payment tests
+Frontend payment tests cover integer-rial parsing, toman derivation, safe redirect validation, unsafe redirect rejection and idempotency key stability without storing auth/payment data in browser persistence. End-to-end fake adapter settlement remains deterministic test fixture scope only.

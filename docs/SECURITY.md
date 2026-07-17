@@ -88,3 +88,6 @@ Admin-web now includes `/management/commerce`, order discovery/detail/snapshot/t
 
 ## Payment-secret and webhook boundaries
 Payment methods store secret references, credential state and credential version only. Credentials, webhook signatures and raw webhook bodies must not be returned from APIs, logged, audited or emitted in outbox payloads. Webhook ingestion uses bounded body size, digest-based replay protection and sanitized header retention.
+
+## Milestone 4-A2A payment UI security
+Payment pages keep idempotency values, payment intents, redirect actions, wallet summaries, invoices and Telegram initData in memory only. Redirects are parsed and protocol-checked before navigation, and return query parameters are untrusted until backend payment detail is fetched.

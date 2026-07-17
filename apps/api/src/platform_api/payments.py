@@ -11,10 +11,10 @@ from sqlalchemy.orm import Session
 from vpnsale_domain.payments import PaymentAmount, PaymentDomainError
 
 from .database import get_db_session
-from .payment_models import PaymentMethodModel
+from .payment_models import PaymentMethodModel, PaymentMethodPolicyModel
 
-customer_router = APIRouter(prefix="/api/customer/payments", tags=["customer-payments"])
-admin_router = APIRouter(prefix="/api/admin/payments", tags=["admin-payments"])
+customer_router = APIRouter(prefix="/api/v1/customer/payments", tags=["customer-payments"])
+admin_router = APIRouter(prefix="/api/v1/admin/payments", tags=["admin-payments"])
 webhook_router = APIRouter(prefix="/api/payment-webhooks", tags=["payment-webhooks"])
 DB_SESSION_DEPENDENCY = Depends(get_db_session)
 MAX_WEBHOOK_BODY_BYTES = 64 * 1024
@@ -30,6 +30,11 @@ class PublicPaymentMethod(BaseModel):
     supported_channels: list[str]
     priority: int
     public_config: dict[str, object]
+    display_name: str | None = None
+    description: str | None = None
+    min_amount_rial: int | None = None
+    max_amount_rial: int | None = None
+    maintenance_mode: bool = False
 
 
 class CreateWalletTopupIntentRequest(BaseModel):
@@ -77,29 +82,52 @@ def _safe_error(exc: PaymentDomainError) -> HTTPException:
 
 @customer_router.get("/methods", response_model=list[PublicPaymentMethod])
 async def list_available_payment_methods(
+    purpose: str | None = None,
     session: Session = DB_SESSION_DEPENDENCY,
 ) -> list[PublicPaymentMethod]:
     rows = session.execute(
         select(PaymentMethodModel)
-        .where(
-            PaymentMethodModel.status == "ACTIVE", PaymentMethodModel.maintenance_mode.is_(False)
-        )
+        .where(PaymentMethodModel.status == "ACTIVE")
         .order_by(PaymentMethodModel.priority)
     ).scalars()
-    return [
-        PublicPaymentMethod(
-            code=row.code,
-            provider_code=row.provider_code,
-            adapter_version=row.adapter_version,
-            method_kind=row.method_kind,
-            currency=row.currency,
-            supported_purposes=row.supported_purposes,
-            supported_channels=row.supported_channels,
-            priority=row.priority,
-            public_config=row.public_config,
+    out: list[PublicPaymentMethod] = []
+    for row in rows:
+        if purpose and purpose not in row.supported_purposes:
+            continue
+        policies = (
+            session.execute(
+                select(PaymentMethodPolicyModel).where(
+                    PaymentMethodPolicyModel.payment_method_id == row.id
+                )
+            )
+            .scalars()
+            .all()
         )
-        for row in rows
-    ]
+        policy = next(
+            (p for p in policies if p.purpose == purpose), policies[0] if policies else None
+        )
+        public = row.public_config or {}
+        out.append(
+            PublicPaymentMethod(
+                code=row.code,
+                provider_code=row.provider_code,
+                adapter_version=row.adapter_version,
+                method_kind=row.method_kind,
+                currency=row.currency,
+                supported_purposes=row.supported_purposes,
+                supported_channels=row.supported_channels,
+                priority=row.priority,
+                public_config=public,
+                display_name=str(public.get("display_name"))
+                if public.get("display_name")
+                else None,
+                description=str(public.get("description")) if public.get("description") else None,
+                min_amount_rial=policy.min_amount_rial if policy else None,
+                max_amount_rial=policy.max_amount_rial if policy else None,
+                maintenance_mode=row.maintenance_mode,
+            )
+        )
+    return out
 
 
 @customer_router.post(
@@ -142,14 +170,19 @@ async def create_order_payment_intent(
     )
 
 
+@customer_router.get("/intents")
+async def list_payment_intents() -> dict[str, object]:
+    return {"items": [], "next_cursor": None}
+
+
 @customer_router.get("/intents/{intent_reference}")
-async def get_payment_intent(intent_reference: str) -> dict[str, str]:
-    return {"reference": intent_reference, "status": "REQUIRES_VERIFICATION"}
+async def get_payment_intent(intent_reference: str) -> dict[str, object]:
+    return {"reference": intent_reference, "status": "REQUIRES_VERIFICATION", "currency": "IRR"}
 
 
 @customer_router.post("/intents/{intent_reference}/cancel")
-async def cancel_payment_intent(intent_reference: str) -> dict[str, str]:
-    return {"reference": intent_reference, "status": "CANCELLED"}
+async def cancel_payment_intent(intent_reference: str) -> dict[str, object]:
+    return {"reference": intent_reference, "status": "CANCELLED", "currency": "IRR"}
 
 
 @customer_router.get("/return/{intent_reference}")
