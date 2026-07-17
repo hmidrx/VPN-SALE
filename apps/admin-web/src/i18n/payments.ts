@@ -1,0 +1,1 @@
+export const payFa = { nav:{overview:'عملیات پرداخت',methods:'روش‌های پرداخت',intents:'نیت‌های پرداخت',webhooks:'صندوق وبهوک'}, states:{unauthorized:'دسترسی غیرمجاز',unavailable:'سرویس پرداخت در دسترس نیست',error:'خطای امن پرداخت',notFound:'رکورد یافت نشد'}, invariant:'بدون ثبت پرداخت دستی، اجبار موفقیت، ساخت تسویه، refund یا نمایش raw body/signature/credential' };

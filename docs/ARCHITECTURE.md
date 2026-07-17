@@ -59,3 +59,6 @@ Payment routes are thin and delegate to payment application/domain code, version
 
 ## Milestone 4-A2A customer payment interface
 Customer payment UI modules are thin clients over backend payment, wallet, order and invoice APIs. Runtime validation, idempotency, redirect validation, return recovery and money formatting are separated from React rendering. The frontend never settles payments, credits wallets, marks invoices paid or provisions services.
+
+## Milestone 4-A2B1 note
+Administrator payment operations are represented in admin-web as a safe operations console for payment methods, intents, attempts, verifications, settlements and webhook inbox records. The console preserves payment immutability, credential boundaries, backend-authoritative authorization, no browser persistence for payment data, sanitized webhook rendering, and no refund/reconciliation-repair or real-gateway scope.

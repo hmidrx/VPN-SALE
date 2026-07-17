@@ -85,3 +85,6 @@ Production must not activate the fake payment adapter. Real adapters require exp
 
 ## Milestone 4-A2A payment deployment
 No gateway credentials or public fake-success controls are required for customer-web deployment. Authenticated payment API responses should not be cached by service workers or shared proxies.
+
+## Milestone 4-A2B1 note
+Administrator payment operations are represented in admin-web as a safe operations console for payment methods, intents, attempts, verifications, settlements and webhook inbox records. The console preserves payment immutability, credential boundaries, backend-authoritative authorization, no browser persistence for payment data, sanitized webhook rendering, and no refund/reconciliation-repair or real-gateway scope.

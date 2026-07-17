@@ -1,0 +1,4 @@
+import { PaymentOpsShell } from '../../../src/components/PaymentOpsShell';
+import { WebhookTable } from '../../../src/payments/components';
+import { paymentPermissions } from '../../../src/payments/policy';
+export default function Page(): React.ReactElement { return <PaymentOpsShell title="صندوق وبهوک پرداخت" required={paymentPermissions.webhooksRead}><form className="filters" aria-label="فیلتر وبهوک"><input placeholder="webhook reference" dir="ltr"/><input placeholder="provider" dir="ltr"/><select><option>processing status</option></select><select><option>signature state</option><option>VALID</option><option>INVALID</option></select><input type="date"/><input type="date"/><button className="btn secondary" type="submit">اعمال</button></form><WebhookTable items={[]} /><p className="notice">raw body، raw signature، Authorization/Cookie headers و payload کامل هرگز render نمی‌شود.</p></PaymentOpsShell>; }

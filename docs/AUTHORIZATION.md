@@ -47,3 +47,6 @@ Milestone 4-A1 seeds stable payment permissions: `payment_methods.read`, `paymen
 
 ## Milestone 4-A2A payment authorization
 Customer payment history, detail, wallet top-up and order-payment endpoints remain backend-authoritative for ownership, account status, invoice eligibility and method visibility. The frontend displays only customer-safe fields returned by those APIs.
+
+## Payment administration permissions
+Payment operations use backend-defined permissions: `payment_methods.read`, `payment_methods.manage`, `payments.read`, `payment_webhooks.read`, `payment_webhooks.retry`, `audit.read`, `security_events.read`, and `ledger.read`. Read permissions do not grant mutation permissions, webhook read does not grant retry, and payment-method management does not grant settlement mutation.

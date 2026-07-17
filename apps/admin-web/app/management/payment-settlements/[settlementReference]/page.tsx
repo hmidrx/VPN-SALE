@@ -1,0 +1,4 @@
+import { PaymentOpsShell } from '../../../../src/components/PaymentOpsShell';
+import { SettlementDetail } from '../../../../src/payments/components';
+import { paymentPermissions } from '../../../../src/payments/policy';
+export default async function Page({params}:{params:Promise<{settlementReference:string}>}): Promise<React.ReactElement> { const { settlementReference } = await params; return <PaymentOpsShell title="جزئیات settlement read-only" required={paymentPermissions.paymentsRead}><SettlementDetail s={{settlement_reference:settlementReference,payment_reference:'restricted',attempt_reference:'restricted',purpose:'ORDER_PAYMENT',settled_amount_rial:100000,currency:'IRR',status:'POSTED',ledger_restricted:true,result_type:'order-payment result',result_reference:'restricted'}}/><p className="notice">بدون mutation، delete، creation، journal editing، direct wallet credit یا invoice update.</p></PaymentOpsShell>; }
