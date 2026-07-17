@@ -3,6 +3,7 @@ export type NavItem = { href: string; label: string; permissions: string[] };
 export const managementNav: NavItem[] = [
   { href: "/management", label: "نمای کلی", permissions: ["admins.read", "users.read", "audit.read", "security.read"] },
   { href: "/catalog", label: "کاتالوگ", permissions: ["catalog.read", "pricing.read", "quotes.read"] },
+  { href: "/management/finance", label: "مالی", permissions: ["wallets.read", "ledger.read", "ledger.reconcile"] },
   { href: "/management/admins", label: "مدیران", permissions: ["admins.read"] },
   { href: "/management/roles", label: "نقش‌ها و مجوزها", permissions: ["roles.read"] },
   { href: "/management/customers", label: "مشتریان", permissions: ["users.read"] },
@@ -11,6 +12,6 @@ export const managementNav: NavItem[] = [
   { href: "/management/security-events", label: "مرکز امنیت", permissions: ["security.read"] },
   { href: "/security/profile", label: "امنیت شخصی", permissions: [] }
 ];
-export function effectivePermissions(profile?: Partial<AdminProfile> & { effective_permissions?: string[] }): Set<string> { return new Set(profile?.effective_permissions ?? profile?.roles?.flatMap((r) => r === "super_admin" ? ["admins.read","admins.invite","admins.update","admins.disable","admins.unlock","admins.roles.manage","roles.read","roles.create","roles.update","roles.permissions.manage","users.read","users.activate","users.suspend","users.block","users.deactivate","sessions.read","sessions.revoke","audit.read","security.read","security.acknowledge","security.manage","catalog.read","catalog.create","catalog.update","catalog.publish","pricing.read","pricing.manage","quotes.read"] : []) ?? []); }
+export function effectivePermissions(profile?: Partial<AdminProfile> & { effective_permissions?: string[] }): Set<string> { return new Set(profile?.effective_permissions ?? profile?.roles?.flatMap((r) => r === "super_admin" ? ["admins.read","admins.invite","admins.update","admins.disable","admins.unlock","admins.roles.manage","roles.read","roles.create","roles.update","roles.permissions.manage","users.read","users.activate","users.suspend","users.block","users.deactivate","sessions.read","sessions.revoke","audit.read","security.read","security.acknowledge","security.manage","catalog.read","catalog.create","catalog.update","catalog.publish","pricing.read","pricing.manage","quotes.read","wallets.read","wallets.adjust","wallets.freeze","wallets.policy.manage","ledger.read","ledger.reconcile"] : []) ?? []); }
 export function can(perms: Set<string>, required: string[]): boolean { return required.length === 0 || required.some((p) => perms.has(p)); }
 export function visibleNav(perms: Set<string>): NavItem[] { return managementNav.filter((item) => can(perms, item.permissions)); }

@@ -1,0 +1,5 @@
+export const MAX_RIAL = 9_007_199_254_740_991;
+export function parseRial(input:string): number { if(!/^[0-9]+$/.test(input.trim())) throw new Error('INVALID_RIAL_INTEGER'); const n=Number(input); if(!Number.isSafeInteger(n)||n<=0||n>MAX_RIAL) throw new Error('INVALID_RIAL_RANGE'); return n; }
+export function formatRial(value:number, locale='fa-IR'): string { if(!Number.isSafeInteger(value)) return 'مقدار نامعتبر'; return `${new Intl.NumberFormat(locale).format(value)} ریال`; }
+export function formatToman(value:number, locale='fa-IR'): string { if(!Number.isSafeInteger(value)) return 'تومان نامعتبر'; return `${new Intl.NumberFormat(locale).format(Math.trunc(value/10))} تومان (نمایشی)`; }
+export function validateBalance(b:{posted_balance_rial:number;reserved_balance_rial:number;available_balance_rial:number}): boolean { return [b.posted_balance_rial,b.reserved_balance_rial,b.available_balance_rial].every(Number.isSafeInteger) && b.available_balance_rial === b.posted_balance_rial - b.reserved_balance_rial; }

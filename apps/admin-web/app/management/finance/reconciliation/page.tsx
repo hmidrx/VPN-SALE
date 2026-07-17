@@ -1,0 +1,2 @@
+import { FinanceShell } from '../../../../src/components/FinanceShell'; import { Tech, StatusBadge } from '../../../../src/components/ManagementShell';
+export default function Page(): React.ReactElement { return <FinanceShell title="تطبیق و تعمیر پروجکشن" required="ledger.reconcile"><section className="panel"><h2>Dry-run</h2><p>stored projection، مقادیر ledger-derived و رزرو فعال مقایسه می‌شوند. repair فقط projection را تغییر می‌دهد.</p><Tech>POST /wallets/:id/reconcile?repair=false</Tech><StatusBadge value="MISMATCH/MATCH"/></section></FinanceShell>; }
