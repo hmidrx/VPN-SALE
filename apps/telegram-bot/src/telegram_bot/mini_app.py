@@ -9,12 +9,14 @@ class MiniAppRoute(StrEnum):
     HOME = "home"
     PROFILE = "profile"
     SECURITY = "security"
+    WALLET = "wallet"
 
 
 ROUTE_PATHS = {
     MiniAppRoute.HOME: "/",
     MiniAppRoute.PROFILE: "/profile",
     MiniAppRoute.SECURITY: "/security",
+    MiniAppRoute.WALLET: "/wallet",
 }
 FORBIDDEN_QUERY = {
     "token",

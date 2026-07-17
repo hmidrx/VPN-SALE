@@ -66,6 +66,7 @@ def test_mini_app_builder_allows_only_safe_routes_hosts_and_queries() -> None:
         "https://customer.example.test/app", ("customer.example.test",), True
     )
     assert builder.build(MiniAppRoute.PROFILE) == "https://customer.example.test/app/profile"
+    assert builder.build(MiniAppRoute.WALLET) == "https://customer.example.test/app/wallet"
     with pytest.raises(ValueError):
         MiniAppUrlBuilder("https://evil.example/app", ("customer.example.test",), True).build(
             MiniAppRoute.HOME
@@ -83,8 +84,17 @@ def test_mini_app_builder_allows_only_safe_routes_hosts_and_queries() -> None:
 def test_menu_registry_contains_working_items_only() -> None:
     registry = default_menu_registry()
     ids = [item.item_id for item in registry.visible(AccountStatus.ACTIVE)]
-    assert ids == ["home", "profile", "security", "help", "language", "privacy", "refresh"]
-    assert "wallet" not in ids and "products" not in ids
+    assert ids == [
+        "home",
+        "profile",
+        "security",
+        "wallet",
+        "help",
+        "language",
+        "privacy",
+        "refresh",
+    ]
+    assert "products" not in ids
 
 
 def test_locale_resolution_and_fallback() -> None:

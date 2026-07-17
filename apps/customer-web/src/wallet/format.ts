@@ -1,0 +1,15 @@
+import { formatDate } from "../i18n/fa";
+import type { CreditStatus, ReservationStatus, TransactionDirection, WalletBucket, WalletStatus } from "./types";
+export function assertSafeRial(value: unknown, field = "amount"): number { if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new Error(`invalid_${field}`); return value; }
+export function formatRial(value: number, locale = "fa-IR"): string { assertSafeRial(value); return `${new Intl.NumberFormat(locale).format(value)} ریال`; }
+export function formatTomanFromRial(value: number, locale = "fa-IR"): string { assertSafeRial(value); const toman = Math.trunc(value / 10); const rem = value % 10; return `${new Intl.NumberFormat(locale).format(toman)} تومان مشتق‌شده${rem ? ` (با ${new Intl.NumberFormat(locale).format(rem)} ریال باقی‌مانده)` : ""}`; }
+export function formatTechnicalId(value: string): string { return value.replace(/[^A-Za-z0-9:_-]/g, "").slice(0, 120) || "—"; }
+const bucketFa: Record<string, [string, string]> = { CASH: ["نقدی", "موجودی نقدی کیف پول"], REFUND: ["اعتبار بازگشت وجه", "اعتبار ناشی از بازگشت وجه"], PROMOTIONAL: ["اعتبار تبلیغاتی", "اعتبار غیرنقدی و غیرقابل برداشت"], REFERRAL: ["اعتبار معرفی", "اعتبار غیرنقدی معرفی"], GIFT: ["هدیه", "اعتبار هدیه غیرنقدی"], ADMIN_GRANT: ["اعتبار اداری", "اعتبار ثبت‌شده توسط عملیات مجاز"] };
+export function bucketLabel(code: WalletBucket): string { return bucketFa[code]?.[0] ?? "اعتبار ناشناخته"; }
+export function bucketHelp(code: WalletBucket): string { return bucketFa[code]?.[1] ?? "این دسته بدون نمایش جزئیات داخلی حسابداری نشان داده می‌شود."; }
+export function walletStatusLabel(status: WalletStatus): string { return status === "ACTIVE" ? "فعال" : status === "FROZEN" ? "یخ‌زده / محدود" : "بسته"; }
+export function transactionDirectionLabel(direction?: TransactionDirection): string { return direction === "INCOMING" ? "افزایش از دید مشتری" : direction === "OUTGOING" ? "کاهش از دید مشتری" : "بدون تغییر مستقیم"; }
+export function creditStatusLabel(status: CreditStatus): string { return status === "ACTIVE" ? "فعال" : status === "EXHAUSTED" ? "مصرف‌شده" : status === "EXPIRED" ? "منقضی" : status === "REVERSED" ? "برگشت‌خورده" : "وضعیت ناشناخته"; }
+export function reservationStatusLabel(status: ReservationStatus): string { return status === "ACTIVE" ? "فعال" : status === "RELEASED" ? "آزادشده" : status === "EXPIRED" ? "منقضی" : status === "CAPTURED" ? "برداشت‌شده" : status === "CANCELLED" ? "لغوشده" : "وضعیت ناشناخته"; }
+export function transactionTypeLabel(type: string): string { return ({ ADMIN_CREDIT: "اعتبار اداری", ADMIN_DEBIT: "کاهش اداری", REFUND_CREDIT: "بازگشت وجه", PROMOTIONAL_CREDIT: "اعتبار تبلیغاتی", REFERRAL_CREDIT: "اعتبار معرفی", GIFT_CREDIT: "هدیه", CREDIT_EXPIRATION: "انقضای اعتبار", RESERVATION_CREATED: "ایجاد رزرو", RESERVATION_RELEASED: "آزادسازی رزرو", RESERVATION_EXPIRED: "انقضای رزرو", RESERVATION_CAPTURED: "برداشت رزرو", REVERSAL: "برگشت تراکنش" } as Record<string,string>)[type] ?? "تراکنش کیف پول"; }
+export const displayDate = formatDate;
