@@ -188,3 +188,6 @@ Milestone 1D-A adds backend-only administrator, role/permission, customer, audit
 
 ## Milestone 1D-B identity administration frontend
 The admin web app now includes a Persian RTL management console under `/management` for identity and security operations backed by the Milestone 1D-A management APIs. It covers administrators, one-time invitations, roles, permissions, customers, administrator/customer sessions, audit logs, and security events. Navigation and actions are permission-aware, but the backend remains authoritative for every authorization check. Invitation plaintext is displayed once from ephemeral component memory only and is not stored in browser storage or URLs. Commerce, provider, wallet, payment, provisioning, reseller, and analytics features remain out of scope.
+
+## Milestone 2-A catalog and pricing backend
+Milestone 2-A adds backend catalog categories/products, immutable product versions, fixed/custom plan option snapshots, provider-neutral fulfillment requirements, versioned integer-rial pricing rules, customer price quotes with expiration/idempotency, and permission-protected admin catalog APIs. It intentionally does not add wallet, orders, payments, providers, provisioning or catalog frontend.

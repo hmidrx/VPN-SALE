@@ -74,6 +74,19 @@ class Settings(BaseSettings):
     customer_refresh_rate_limit_window_seconds: int = 300
     customer_session_revocation_rate_limit: int = 30
     customer_session_revocation_rate_limit_window_seconds: int = 300
+
+    catalog_quote_lifetime_seconds: int = Field(default=900, ge=60, le=86400)
+    catalog_quote_idempotency_lifetime_seconds: int = Field(default=86400, ge=300, le=604800)
+    catalog_quote_idempotency_key_max_length: int = Field(default=120, ge=16, le=240)
+    catalog_default_currency: str = "IRR"
+    catalog_money_unit: str = "rial"
+    catalog_default_locale: str = "fa"
+    catalog_max_page_size: int = Field(default=100, ge=1, le=250)
+    catalog_max_custom_traffic_bytes: int = Field(default=10995116277760, gt=0)
+    catalog_max_custom_duration_days: int = Field(default=3650, gt=0)
+    catalog_max_device_count: int = Field(default=10000, gt=0)
+    catalog_max_pricing_components: int = Field(default=64, ge=1, le=256)
+    catalog_max_pricing_tiers: int = Field(default=128, ge=1, le=512)
     model_config = SettingsConfigDict(env_file=".env", env_prefix="VPN_SALE_", extra="ignore")
 
 

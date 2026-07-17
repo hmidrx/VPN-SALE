@@ -10,6 +10,7 @@ from alembic import context
 from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import platform_api.catalog_models  # noqa: F401
 from platform_api.identity.models import IdentityBase
 
 config = context.config

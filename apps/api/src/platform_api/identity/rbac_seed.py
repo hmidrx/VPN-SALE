@@ -30,6 +30,13 @@ INITIAL_PERMISSIONS: tuple[tuple[str, str], ...] = (
     ("users.deactivate", "Deactivate users"),
     ("security.read", "Read security events"),
     ("security.acknowledge", "Acknowledge security events"),
+    ("catalog.read", "Read catalog administration data"),
+    ("catalog.create", "Create catalog administration data"),
+    ("catalog.update", "Update catalog administration data"),
+    ("catalog.publish", "Publish catalog product versions"),
+    ("pricing.read", "Read pricing previews and rules"),
+    ("pricing.manage", "Manage price lists and pricing rules"),
+    ("quotes.read", "Read customer quote records"),
 )
 INITIAL_ROLES: tuple[tuple[str, str], ...] = (
     ("super_admin", "Super Admin"),
