@@ -348,6 +348,71 @@ def product_options(
     }
 
 
+def _price_preview(
+    body: QuoteRequest, request: Request, db: Session, now: datetime
+) -> dict[str, object]:
+    p = db.get(ProductModel, body.product_id)
+    if not p or p.status != "ACTIVE" or not p.current_version_id:
+        raise _err(422, request, "product_unavailable")
+    v = db.get(ProductVersionModel, p.current_version_id)
+    plv = _active_price_list(db, now)
+    if not v or v.status != "PUBLISHED" or not plv:
+        raise _err(422, request, "pricing_unavailable")
+    selection = _selection(body)
+    try:
+        from platform_api.catalog_mapping import domain_price_list, domain_product_version
+
+        pricing = PricingEngine().quote(
+            domain_product_version(v), domain_price_list(db, plv), selection, body.operation, now
+        )
+    except CatalogError as exc:
+        raise _err(422, request, "invalid_selection", {"selection": str(exc)}) from exc
+    return {
+        "binding": False,
+        "persisted": False,
+        "product_id": p.id,
+        "product_version_id": v.id,
+        "operation": body.operation.value,
+        "selected_options": selection.fingerprint(),
+        "price_list_version_id": plv.id,
+        "currency": pricing.currency,
+        "subtotal_minor": pricing.subtotal.amount,
+        "components": [
+            {
+                "code": c.code,
+                "label": c.label,
+                "amount_minor": c.amount.amount,
+                "order": i,
+            }
+            for i, c in enumerate(pricing.components, start=1)
+        ],
+        "final_amount_minor": pricing.final.amount,
+        "pricing_engine_version": CATALOG_PRICING_ENGINE_VERSION,
+        "server_time": now.isoformat(),
+        "selection_fingerprint": request_fingerprint(body.model_dump(mode="json")),
+    }
+
+
+@customer_router.post("/quotes/preview")
+def preview_quote(
+    body: QuoteRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db_session)],
+    session: Annotated[CustomerSessionModel, Depends(current_catalog_customer_session)],
+) -> dict[str, object]:
+    _audit(
+        db,
+        "customer",
+        session.user_id,
+        "catalog.quote.preview_requested",
+        "product",
+        body.product_id,
+        request,
+        {"operation": body.operation.value},
+    )
+    return _price_preview(body, request, db, datetime.now(UTC))
+
+
 @customer_router.post("/quotes")
 def create_quote(
     body: QuoteRequest,
@@ -384,22 +449,16 @@ def create_quote(
                         ).scalars()
                     )
                     return _quote_view(q, lines, now)
+    preview = _price_preview(body, request, db, now)
+    preview_components = cast(list[dict[str, str | int]], preview["components"])
+    preview_subtotal = cast(int, preview["subtotal_minor"])
+    preview_final = cast(int, preview["final_amount_minor"])
     p = db.get(ProductModel, body.product_id)
-    if not p or p.status != "ACTIVE" or not p.current_version_id:
-        raise _err(422, request, "product_unavailable")
-    v = db.get(ProductVersionModel, p.current_version_id)
-    plv = _active_price_list(db, now)
-    if not v or v.status != "PUBLISHED" or not plv:
+    v = db.get(ProductVersionModel, preview["product_version_id"])
+    plv = db.get(PriceListVersionModel, preview["price_list_version_id"])
+    if not p or not v or not plv:
         raise _err(422, request, "pricing_unavailable")
     selection = _selection(body)
-    try:
-        from platform_api.catalog_mapping import domain_price_list, domain_product_version
-
-        pricing = PricingEngine().quote(
-            domain_product_version(v), domain_price_list(db, plv), selection, body.operation, now
-        )
-    except CatalogError as exc:
-        raise _err(422, request, "invalid_selection", {"selection": str(exc)}) from exc
     quote = CustomerPriceQuoteModel(
         product_id=p.id,
         product_version_id=v.id,
@@ -410,9 +469,9 @@ def create_quote(
         operation=body.operation.value,
         selected_options=selection.fingerprint(),
         price_list_version_id=plv.id,
-        currency=pricing.currency,
-        subtotal_minor=pricing.subtotal.amount,
-        final_amount_minor=pricing.final.amount,
+        currency=str(preview["currency"]),
+        subtotal_minor=preview_subtotal,
+        final_amount_minor=preview_final,
         pricing_engine_version=CATALOG_PRICING_ENGINE_VERSION,
         status="ACTIVE",
         issued_at=now,
@@ -424,12 +483,12 @@ def create_quote(
     lines = [
         CustomerPriceQuoteLineModel(
             quote_id=quote.id,
-            component_code=c.code,
-            label=c.label,
-            amount_minor=c.amount.amount,
-            display_order=i,
+            component_code=str(c["code"]),
+            label=str(c["label"]),
+            amount_minor=cast(int, c["amount_minor"]),
+            display_order=cast(int, c["order"]),
         )
-        for i, c in enumerate(pricing.components, start=1)
+        for c in preview_components
     ]
     db.add_all(lines)
     if idempotency_key:
@@ -750,7 +809,7 @@ def create_rule(
 
 
 @admin_router.post("/preview")
-def preview_quote(
+def admin_preview_quote(
     body: QuoteRequest,
     request: Request,
     db: Annotated[Session, Depends(get_db_session)],

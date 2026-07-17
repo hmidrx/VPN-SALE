@@ -126,3 +126,6 @@ Milestone 1D-A introduces backend-only management APIs protected by database-res
 The administrator frontend adds permission-aware identity management pages for administrators, invitations, roles, permissions, customers, sessions, audit logs, and security events. The UI consumes the existing management APIs, reuses memory-only access tokens, HttpOnly refresh cookies, CSRF headers, and single-flight refresh, and never becomes the authoritative authorization layer. Direct unauthorized routes must show controlled forbidden states while backend permission checks remain decisive.
 
 Invitation tokens are displayed exactly once from ephemeral component state, are never placed in URLs, localStorage, sessionStorage, logs, or analytics, and are cleared after acknowledgment. Audit metadata rendering is defensive and suppresses secret-like keys. Session pages show only normalized safe metadata returned by the backend. The security center supports acknowledgment/resolution language without implying that acknowledgment removes the underlying event.
+
+## Milestone 2-B2 customer storefront authentication
+Storefront browsing runs after the existing Mini App bootstrap. Protected preview and quote creation require the existing customer access token, refresh single-flight and CSRF lifecycle. Browser fallback remains explicit; no fake login or auth bypass is introduced.
