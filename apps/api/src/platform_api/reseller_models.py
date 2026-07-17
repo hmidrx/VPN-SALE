@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -19,6 +20,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_api.identity.models import IdentityBase
 
+# Register referenced tables for SQLite metadata-based tests and Alembic autogenerate.
+__import__("platform_api.catalog_models")
+__import__("platform_api.order_models")
+__import__("platform_api.wallet_models")
+
+JSON_TYPE = JSON().with_variant(JSONB, "postgresql")
+
 
 class ResellerTierModel(IdentityBase):
     __tablename__ = "reseller_tiers"
@@ -27,7 +35,7 @@ class ResellerTierModel(IdentityBase):
     )
     code: Mapped[str] = mapped_column(String(40), nullable=False)
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
-    limits: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    limits: Mapped[dict[str, object]] = mapped_column(JSON_TYPE, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     __table_args__ = (UniqueConstraint("code", name="uq_reseller_tiers_code"),)
@@ -51,9 +59,13 @@ class ResellerAccountModel(IdentityBase):
     settlement_mode: Mapped[str] = mapped_column(String(32), nullable=False)
     price_book_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False))
     financial_account_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False))
-    credit_terms: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
-    quota_overrides: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
-    remark_policy: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    credit_terms: Mapped[dict[str, object]] = mapped_column(JSON_TYPE, nullable=False, default=dict)
+    quota_overrides: Mapped[dict[str, object]] = mapped_column(
+        JSON_TYPE, nullable=False, default=dict
+    )
+    remark_policy: Mapped[dict[str, object]] = mapped_column(
+        JSON_TYPE, nullable=False, default=dict
+    )
     parent_reseller_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("reseller_accounts.id", ondelete="RESTRICT")
     )
@@ -109,7 +121,7 @@ class ResellerPricingRuleModel(IdentityBase):
         UUID(as_uuid=False), ForeignKey("products.id", ondelete="RESTRICT")
     )
     category_id: Mapped[str | None] = mapped_column(
-        UUID(as_uuid=False), ForeignKey("categories.id", ondelete="RESTRICT")
+        UUID(as_uuid=False), ForeignKey("product_categories.id", ondelete="RESTRICT")
     )
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
     amount_rial: Mapped[int | None] = mapped_column(BigInteger)
@@ -119,9 +131,40 @@ class ResellerPricingRuleModel(IdentityBase):
     effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
+        CheckConstraint(
+            (
+                "(scope = 'PRODUCT' and product_id is not null and category_id is null) or "
+                "(scope = 'CATEGORY' and category_id is not null and product_id is null) or "
+                "(scope in ('TIER','DEFAULT') and product_id is null and category_id is null)"
+            ),
+            name="ck_reseller_pricing_rule_scope_target",
+        ),
+        CheckConstraint(
+            "rule_kind in ('EXACT','PERCENT_DISCOUNT','FIXED_DISCOUNT','TIER_DISCOUNT')",
+            name="ck_reseller_pricing_rule_kind",
+        ),
+        CheckConstraint(
+            "scope in ('PRODUCT','CATEGORY','TIER','DEFAULT')",
+            name="ck_reseller_pricing_rule_scope",
+        ),
+        CheckConstraint("priority >= 0", name="ck_reseller_pricing_rule_priority"),
+        CheckConstraint(
+            "amount_rial is null or amount_rial >= 0",
+            name="ck_reseller_pricing_rule_amount",
+        ),
+        CheckConstraint(
+            "percent_bps is null or (percent_bps >= 0 and percent_bps <= 10000)",
+            name="ck_reseller_pricing_rule_percent",
+        ),
+        CheckConstraint(
+            "minimum_price_rial >= 0 and minimum_margin_rial >= 0",
+            name="ck_reseller_pricing_rule_floors",
+        ),
         Index(
             "ix_reseller_pricing_effective", "price_book_id", "scope", "effective_at", "expires_at"
         ),
+        Index("ix_reseller_pricing_product", "product_id"),
+        Index("ix_reseller_pricing_category", "category_id"),
     )
 
 
@@ -138,7 +181,9 @@ class ResellerCustomerRelationshipModel(IdentityBase):
     )
     label: Mapped[str] = mapped_column(String(120), nullable=False)
     state: Mapped[str] = mapped_column(String(32), nullable=False)
-    visible_profile: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    visible_profile: Mapped[dict[str, object]] = mapped_column(
+        JSON_TYPE, nullable=False, default=dict
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -192,7 +237,9 @@ class ResellerOrderAttributionModel(IdentityBase):
     )
     wholesale_amount_rial: Mapped[int] = mapped_column(BigInteger, nullable=False)
     retail_amount_rial: Mapped[int | None] = mapped_column(BigInteger)
-    pricing_snapshot: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
-    remark_snapshot: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    pricing_snapshot: Mapped[dict[str, object]] = mapped_column(JSON_TYPE, nullable=False)
+    remark_snapshot: Mapped[dict[str, object]] = mapped_column(
+        JSON_TYPE, nullable=False, default=dict
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     __table_args__ = (UniqueConstraint("order_id", name="uq_reseller_order_attribution_order"),)

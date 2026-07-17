@@ -172,7 +172,7 @@ def upgrade() -> None:
         sa.Column("scope", sa.String(24), nullable=False),
         sa.Column("rule_kind", sa.String(32), nullable=False),
         sa.Column("product_id", uuid, sa.ForeignKey("products.id", ondelete="RESTRICT")),
-        sa.Column("category_id", uuid, sa.ForeignKey("categories.id", ondelete="RESTRICT")),
+        sa.Column("category_id", uuid, sa.ForeignKey("product_categories.id", ondelete="RESTRICT")),
         sa.Column("priority", sa.Integer(), nullable=False),
         sa.Column("amount_rial", sa.BigInteger()),
         sa.Column("percent_bps", sa.Integer()),
@@ -182,12 +182,43 @@ def upgrade() -> None:
             "effective_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
         sa.Column("expires_at", sa.DateTime(timezone=True)),
+        sa.CheckConstraint(
+            (
+                "(scope = 'PRODUCT' and product_id is not null and category_id is null) or "
+                "(scope = 'CATEGORY' and category_id is not null and product_id is null) or "
+                "(scope in ('TIER','DEFAULT') and product_id is null and category_id is null)"
+            ),
+            name="ck_reseller_pricing_rule_scope_target",
+        ),
+        sa.CheckConstraint(
+            "rule_kind in ('EXACT','PERCENT_DISCOUNT','FIXED_DISCOUNT','TIER_DISCOUNT')",
+            name="ck_reseller_pricing_rule_kind",
+        ),
+        sa.CheckConstraint(
+            "scope in ('PRODUCT','CATEGORY','TIER','DEFAULT')",
+            name="ck_reseller_pricing_rule_scope",
+        ),
+        sa.CheckConstraint("priority >= 0", name="ck_reseller_pricing_rule_priority"),
+        sa.CheckConstraint(
+            "amount_rial is null or amount_rial >= 0",
+            name="ck_reseller_pricing_rule_amount",
+        ),
+        sa.CheckConstraint(
+            "percent_bps is null or (percent_bps >= 0 and percent_bps <= 10000)",
+            name="ck_reseller_pricing_rule_percent",
+        ),
+        sa.CheckConstraint(
+            "minimum_price_rial >= 0 and minimum_margin_rial >= 0",
+            name="ck_reseller_pricing_rule_floors",
+        ),
     )
     op.create_index(
         "ix_reseller_pricing_effective",
         "reseller_pricing_rules",
         ["price_book_id", "scope", "effective_at", "expires_at"],
     )
+    op.create_index("ix_reseller_pricing_product", "reseller_pricing_rules", ["product_id"])
+    op.create_index("ix_reseller_pricing_category", "reseller_pricing_rules", ["category_id"])
     op.create_table(
         "reseller_customer_relationships",
         sa.Column("id", uuid, primary_key=True),
