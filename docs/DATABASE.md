@@ -34,3 +34,6 @@ Milestone 1D-A introduces backend-only management APIs protected by database-res
 
 ## Milestone 2-A catalog schema
 Revision `0006_milestone_2a_catalog` creates `product_categories`, `products`, `product_versions`, `price_lists`, `price_list_versions`, `pricing_rules`, `pricing_tiers`, `customer_price_quotes`, `customer_price_quote_lines` and `quote_idempotency_records`. Money is integer minor units, traffic and tiers use BigInteger, and no sample products or prices are seeded.
+
+### Milestone 2-A migration compatibility fix
+The root cause of the duplicate `product_categories` table was revision `0002_milestone_1a_identity` using `IdentityBase.metadata.create_all()` while Alembic `env.py` imported current catalog ORM models into the same mutable metadata before historical upgrades ran. Normal migration execution now keeps future ORM tables out of historical revisions; catalog model imports are reserved for autogenerate metadata comparison. Revision `0006_milestone_2a_catalog` explicitly detects none/all/partial catalog table sets, adopts the known complete metadata-leak schema only after validation, and rejects unknown partial schemas.
