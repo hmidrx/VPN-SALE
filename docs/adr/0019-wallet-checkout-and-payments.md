@@ -14,3 +14,6 @@ Checkout idempotency is scoped by customer, quote, operation and payment method.
 
 ## Future integration
 `order.ready_for_fulfillment.v1` is written to the transactional outbox in the same transaction as the paid/ready transition. The payload contains normalized identifiers and safe requirements only. Allocation, provider choice, external gateways and provisioning consumers are future milestones.
+
+## Milestone 3-B2B admin cancellation note
+Administrator cancellation uses the reviewed backend cancellation command with stable memory-only idempotency. Reservation release and compensating wallet refund consequences are backend-authored; original captures remain immutable and no direct wallet balance setter or arbitrary refund control is exposed.

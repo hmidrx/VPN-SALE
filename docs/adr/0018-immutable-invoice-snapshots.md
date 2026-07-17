@@ -14,3 +14,6 @@ Checkout idempotency is scoped by customer, quote, operation and payment method.
 
 ## Future integration
 `order.ready_for_fulfillment.v1` is written to the transactional outbox in the same transaction as the paid/ready transition. The payload contains normalized identifiers and safe requirements only. Allocation, provider choice, external gateways and provisioning consumers are future milestones.
+
+## Milestone 3-B2B admin invoice note
+Administrator invoice pages are immutable inspection surfaces. Runtime validation blocks misleading success presentation when invoice totals or line totals are malformed; administrators cannot edit amounts, mark invoices paid or mutate ledger postings from the invoice UI.

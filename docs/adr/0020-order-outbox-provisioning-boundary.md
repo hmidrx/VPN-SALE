@@ -14,3 +14,6 @@ Checkout idempotency is scoped by customer, quote, operation and payment method.
 
 ## Future integration
 `order.ready_for_fulfillment.v1` is written to the transactional outbox in the same transaction as the paid/ready transition. The payload contains normalized identifiers and safe requirements only. Allocation, provider choice, external gateways and provisioning consumers are future milestones.
+
+## Milestone 3-B2B admin inspection note
+Administrator outbox pages may inspect only sanitized normalized fulfillment command fields: opaque event reference, type/version, order reference, product-version reference, selected-option summary, schema version, status, attempts, timestamps, correlation ID and safe failure category. Provider-native details, panel URLs, server IPs, inbound IDs, credentials, tokens, subscription URIs and stack traces remain outside the browser boundary.

@@ -9,7 +9,14 @@ from .dependencies import check_database, check_redis
 from .logging import configure_logging
 from .management import public_router as admin_invitation_router
 from .management import router as management_router
-from .orders import admin_invoice_router
+from .orders import (
+    admin_checkout_router,
+    admin_commerce_router,
+    admin_invoice_router,
+    admin_outbox_router,
+    admin_wallet_payment_router,
+    admin_wallet_reservation_router,
+)
 from .orders import admin_router as admin_order_router
 from .orders import customer_router as order_router
 from .wallet import admin_ledger_router, admin_wallet_router
@@ -27,6 +34,11 @@ app.include_router(wallet_router)
 app.include_router(order_router)
 app.include_router(admin_order_router)
 app.include_router(admin_invoice_router)
+app.include_router(admin_checkout_router)
+app.include_router(admin_wallet_payment_router)
+app.include_router(admin_wallet_reservation_router)
+app.include_router(admin_outbox_router)
+app.include_router(admin_commerce_router)
 app.include_router(admin_wallet_router)
 app.include_router(admin_ledger_router)
 app.include_router(admin_invitation_router)

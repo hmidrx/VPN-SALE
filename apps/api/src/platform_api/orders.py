@@ -50,6 +50,21 @@ admin_router = APIRouter(prefix="/api/v1/admin/management/orders", tags=["admin-
 admin_invoice_router = APIRouter(
     prefix="/api/v1/admin/management/invoices", tags=["admin-invoices"]
 )
+admin_checkout_router = APIRouter(
+    prefix="/api/v1/admin/management/checkout", tags=["admin-checkout"]
+)
+admin_wallet_payment_router = APIRouter(
+    prefix="/api/v1/admin/management/wallet-payments", tags=["admin-wallet-payments"]
+)
+admin_wallet_reservation_router = APIRouter(
+    prefix="/api/v1/admin/management/wallet-reservations", tags=["admin-wallet-reservations"]
+)
+admin_outbox_router = APIRouter(
+    prefix="/api/v1/admin/management/fulfillment-outbox", tags=["admin-fulfillment-outbox"]
+)
+admin_commerce_router = APIRouter(
+    prefix="/api/v1/admin/management/commerce", tags=["admin-commerce"]
+)
 
 
 class ApiError(BaseModel):
@@ -171,19 +186,45 @@ def _order_view(db: Session, order: OrderModel) -> dict[str, Any]:
     checkout = db.scalar(
         select(CheckoutSessionModel).where(CheckoutSessionModel.order_id == order.id)
     )
+    payment = db.scalar(select(WalletPaymentModel).where(WalletPaymentModel.order_id == order.id))
+    reservation = db.get(WalletReservationModel, payment.reservation_id) if payment else None
     return {
         "order_reference": order.reference,
+        "quote_reference": order.quote_reference,
         "checkout_reference": checkout.reference if checkout else None,
         "invoice_reference": inv.reference if inv else None,
+        "wallet_payment_reference": payment.reference if payment else None,
+        "reservation_reference": reservation.opaque_reference if reservation else None,
+        "customer": {"customer_id": order.customer_id},
         "status": order.status,
         "financial_status": order.financial_status,
         "fulfillment_status": order.fulfillment_status,
+        "subtotal_rial": order.subtotal_rial,
+        "adjustment_total_rial": order.adjustment_total_rial,
         "final_amount_rial": order.final_amount_rial,
+        "paid_total_rial": inv.paid_total_rial if inv else 0,
+        "refunded_total_rial": payment.amount_rial
+        if payment and payment.status == "REFUNDED"
+        else 0,
+        "payment_method": order.payment_method,
         "currency": order.currency,
         "created_at": order.created_at.isoformat(),
         "paid_at": order.paid_at.isoformat() if order.paid_at else None,
         "cancelled_at": order.cancelled_at.isoformat() if order.cancelled_at else None,
+        "version": order.version,
         "snapshot": order.snapshot,
+        "cancellation_eligibility": {
+            "cancellable": order.fulfillment_status != "SUCCEEDED"
+            and order.status not in {"CANCELLED", "REFUNDED"},
+            "consequence": "compensating_wallet_refund"
+            if payment and payment.status == "CAPTURED"
+            else "reservation_release",
+            "active_reservation_amount_rial": reservation.amount_rial
+            if reservation and reservation.status == "ACTIVE"
+            else 0,
+            "reason_codes": ["CUSTOMER_REQUEST", "RISK_REVIEW", "OPERATOR_CORRECTION"],
+        },
+        "reconciliation_health": "UNKNOWN",
     }
 
 
@@ -196,6 +237,7 @@ def _invoice_view(db: Session, invoice: InvoiceModel) -> dict[str, Any]:
     return {
         "invoice_reference": invoice.reference,
         "order_reference": db.get(OrderModel, invoice.order_id).reference,
+        "customer": {"customer_id": invoice.customer_id},
         "status": invoice.status,
         "currency": invoice.currency,
         "subtotal_rial": invoice.subtotal_rial,
@@ -208,6 +250,11 @@ def _invoice_view(db: Session, invoice: InvoiceModel) -> dict[str, Any]:
         "due_at": invoice.due_at.isoformat(),
         "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
         "cancelled_at": invoice.cancelled_at.isoformat() if invoice.cancelled_at else None,
+        "refunded_at": invoice.cancelled_at.isoformat()
+        if invoice.status == "REFUNDED" and invoice.cancelled_at
+        else None,
+        "invoice_version": invoice.invoice_version,
+        "reconciliation_health": "UNKNOWN",
         "lines": [
             {
                 "line_type": line.line_type,
@@ -216,6 +263,9 @@ def _invoice_view(db: Session, invoice: InvoiceModel) -> dict[str, Any]:
                 "unit_amount_rial": line.unit_amount_rial,
                 "line_subtotal_rial": line.line_subtotal_rial,
                 "position": line.position,
+                "product_id": line.product_id,
+                "product_version_id": line.product_version_id,
+                "safe_metadata": line.safe_metadata,
             }
             for line in lines
         ],
@@ -812,6 +862,8 @@ def order_timeline(
                 "event_code": r.event_code,
                 "occurred_at": r.occurred_at.isoformat(),
                 "actor_type": r.actor_type,
+                "actor_reference": r.actor_reference,
+                "correlation_id": r.correlation_id,
                 "metadata": r.safe_metadata,
             }
             for r in rows
@@ -897,6 +949,8 @@ def admin_order_timeline(
                 "event_code": r.event_code,
                 "occurred_at": r.occurred_at.isoformat(),
                 "actor_type": r.actor_type,
+                "actor_reference": r.actor_reference,
+                "correlation_id": r.correlation_id,
                 "metadata": r.safe_metadata,
             }
             for r in rows
@@ -929,6 +983,71 @@ def admin_cancel_order(
     }
 
 
+@admin_router.post("/{order_reference}/reconciliation")
+def admin_order_reconciliation(
+    order_reference: str,
+    _: Annotated[object, Depends(require_perm("ledger.reconcile"))],
+    db: Annotated[Session, Depends(get_db_session)],
+    request: Request,
+) -> dict[str, Any]:
+    order = db.scalar(select(OrderModel).where(OrderModel.reference == order_reference))
+    if not order:
+        raise _err(404, request, "ORDER_NOT_FOUND")
+    invoice = db.scalar(select(InvoiceModel).where(InvoiceModel.order_id == order.id))
+    payment = db.scalar(select(WalletPaymentModel).where(WalletPaymentModel.order_id == order.id))
+    outbox = db.scalar(
+        select(TransactionalOutboxModel).where(
+            TransactionalOutboxModel.event_key == f"order.ready:{order.id}"
+        )
+    )
+    mismatches: list[str] = []
+    if invoice and invoice.payable_total_rial != order.final_amount_rial:
+        mismatches.append("ORDER_INVOICE_AMOUNT_MISMATCH")
+    if order.financial_status == "PAID" and (not payment or payment.status != "CAPTURED"):
+        mismatches.append("PAID_ORDER_MISSING_CAPTURE")
+    if order.fulfillment_status == "READY" and not outbox:
+        mismatches.append("READY_ORDER_MISSING_OUTBOX")
+    return {
+        "order_reference": order.reference,
+        "severity": "CRITICAL" if mismatches else "CLEAN",
+        "checked_at": datetime.now(UTC).isoformat(),
+        "mismatch_codes": mismatches,
+        "recommended_action": "inspect_audit_security" if mismatches else "no_action",
+        "order_payable_total_rial": order.final_amount_rial,
+        "invoice_payable_total_rial": invoice.payable_total_rial if invoice else None,
+        "invoice_paid_total_rial": invoice.paid_total_rial if invoice else None,
+        "wallet_capture_amount_rial": payment.amount_rial
+        if payment and payment.status == "CAPTURED"
+        else 0,
+        "wallet_refund_amount_rial": payment.amount_rial
+        if payment and payment.status == "REFUNDED"
+        else 0,
+        "order_status": order.status,
+        "financial_status": order.financial_status,
+        "fulfillment_status": order.fulfillment_status,
+        "outbox_readiness_state": outbox.status if outbox else "MISSING",
+    }
+
+
+@admin_invoice_router.get("")
+def admin_invoices(
+    _: Annotated[object, Depends(require_perm("invoices.read"))],
+    db: Annotated[Session, Depends(get_db_session)],
+    status: str | None = None,
+    order_reference: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    stmt = (
+        select(InvoiceModel).order_by(InvoiceModel.issued_at.desc()).limit(min(max(limit, 1), 100))
+    )
+    if status:
+        stmt = stmt.where(InvoiceModel.status == status)
+    if order_reference:
+        order = db.scalar(select(OrderModel).where(OrderModel.reference == order_reference))
+        stmt = stmt.where(InvoiceModel.order_id == (order.id if order else ""))
+    return {"items": [_invoice_view(db, r) for r in db.scalars(stmt).all()], "next_cursor": None}
+
+
 @admin_invoice_router.get("/{invoice_reference}")
 def admin_invoice_detail(
     invoice_reference: str,
@@ -940,3 +1059,227 @@ def admin_invoice_detail(
     if not inv:
         raise _err(404, request, "INVOICE_NOT_FOUND")
     return _invoice_view(db, inv)
+
+
+@admin_commerce_router.get("/overview")
+def admin_commerce_overview(
+    _: Annotated[object, Depends(require_perm("orders.read"))],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, Any]:
+    return {
+        "supported_metrics": {
+            "reserved_payment_orders": db.scalar(
+                select(func.count())
+                .select_from(OrderModel)
+                .where(OrderModel.financial_status == "RESERVED")
+            )
+            or 0,
+            "paid_orders": db.scalar(
+                select(func.count())
+                .select_from(OrderModel)
+                .where(OrderModel.financial_status == "PAID")
+            )
+            or 0,
+            "ready_for_fulfillment_orders": db.scalar(
+                select(func.count())
+                .select_from(OrderModel)
+                .where(OrderModel.fulfillment_status == "READY")
+            )
+            or 0,
+            "cancelled_orders": db.scalar(
+                select(func.count()).select_from(OrderModel).where(OrderModel.status == "CANCELLED")
+            )
+            or 0,
+            "refunded_orders": db.scalar(
+                select(func.count())
+                .select_from(OrderModel)
+                .where(OrderModel.financial_status == "REFUNDED")
+            )
+            or 0,
+            "failed_fulfillment_outbox_events": db.scalar(
+                select(func.count())
+                .select_from(TransactionalOutboxModel)
+                .where(TransactionalOutboxModel.status == "FAILED")
+            )
+            or 0,
+        }
+    }
+
+
+@admin_checkout_router.get("/{checkout_reference}")
+def admin_checkout_detail(
+    checkout_reference: str,
+    _: Annotated[object, Depends(require_perm("checkout.read"))],
+    db: Annotated[Session, Depends(get_db_session)],
+    request: Request,
+) -> dict[str, Any]:
+    checkout = db.scalar(
+        select(CheckoutSessionModel).where(CheckoutSessionModel.reference == checkout_reference)
+    )
+    if not checkout:
+        raise _err(404, request, "CHECKOUT_NOT_FOUND")
+    order = db.get(OrderModel, checkout.order_id)
+    reservation = (
+        db.get(WalletReservationModel, checkout.wallet_reservation_id)
+        if checkout.wallet_reservation_id
+        else None
+    )
+    return {
+        "checkout_reference": checkout.reference,
+        "customer": {"customer_id": checkout.customer_id},
+        "quote_reference": order.quote_reference if order else None,
+        "order_reference": order.reference if order else None,
+        "payment_method": checkout.payment_method,
+        "status": checkout.status,
+        "amount_rial": checkout.amount_rial,
+        "currency": checkout.currency,
+        "reservation_reference": reservation.opaque_reference if reservation else None,
+        "created_at": checkout.created_at.isoformat(),
+        "expires_at": checkout.expires_at.isoformat(),
+        "completed_at": checkout.completed_at.isoformat() if checkout.completed_at else None,
+        "cancelled_at": checkout.cancelled_at.isoformat() if checkout.cancelled_at else None,
+        "version": checkout.version,
+        "failure_code": None,
+        "idempotency_outcome": "stored_without_raw_key",
+    }
+
+
+@admin_wallet_payment_router.get("/{payment_reference}")
+def admin_wallet_payment_detail(
+    payment_reference: str,
+    _: Annotated[object, Depends(require_perm("wallets.read"))],
+    db: Annotated[Session, Depends(get_db_session)],
+    request: Request,
+) -> dict[str, Any]:
+    payment = db.scalar(
+        select(WalletPaymentModel).where(WalletPaymentModel.reference == payment_reference)
+    )
+    if not payment:
+        raise _err(404, request, "WALLET_PAYMENT_NOT_FOUND")
+    order = db.get(OrderModel, payment.order_id)
+    invoice = db.get(InvoiceModel, payment.invoice_id)
+    reservation = db.get(WalletReservationModel, payment.reservation_id)
+    return {
+        "wallet_payment_reference": payment.reference,
+        "order_reference": order.reference if order else None,
+        "invoice_reference": invoice.reference if invoice else None,
+        "customer": {"customer_id": order.customer_id if order else None},
+        "payment_method": "WALLET",
+        "amount_rial": payment.amount_rial,
+        "currency": payment.currency,
+        "status": payment.status,
+        "reservation_reference": reservation.opaque_reference if reservation else None,
+        "capture_journal_reference": payment.capture_journal_id,
+        "refund_journal_reference": payment.refund_journal_id,
+        "created_at": payment.created_at.isoformat(),
+        "completed_at": payment.completed_at.isoformat() if payment.completed_at else None,
+        "refunded_at": payment.completed_at.isoformat()
+        if payment.status == "REFUNDED" and payment.completed_at
+        else None,
+        "failure_code": None,
+        "idempotency_outcome": "not_exposed",
+    }
+
+
+@admin_wallet_reservation_router.get("/{reservation_reference}")
+def admin_wallet_reservation_detail(
+    reservation_reference: str,
+    _: Annotated[object, Depends(require_perm("wallets.read"))],
+    db: Annotated[Session, Depends(get_db_session)],
+    request: Request,
+) -> dict[str, Any]:
+    reservation = db.scalar(
+        select(WalletReservationModel).where(
+            WalletReservationModel.opaque_reference == reservation_reference
+        )
+    )
+    if not reservation:
+        reservation = db.get(WalletReservationModel, reservation_reference)
+    if not reservation:
+        raise _err(404, request, "RESERVATION_NOT_ACTIVE")
+    order = db.scalar(
+        select(OrderModel).where(OrderModel.reference == reservation.opaque_reference)
+    )
+    checkout = db.scalar(
+        select(CheckoutSessionModel).where(
+            CheckoutSessionModel.wallet_reservation_id == reservation.id
+        )
+    )
+    return {
+        "reservation_reference": reservation.opaque_reference,
+        "order_reference": order.reference if order else None,
+        "checkout_reference": checkout.reference if checkout else None,
+        "customer": {"customer_id": reservation.customer_id},
+        "amount_rial": reservation.amount_rial,
+        "currency": reservation.currency,
+        "status": reservation.status,
+        "purpose_code": reservation.purpose_code,
+        "created_at": reservation.created_at.isoformat(),
+        "expires_at": reservation.expires_at.isoformat(),
+        "released_at": reservation.released_at.isoformat() if reservation.released_at else None,
+        "captured_at": reservation.captured_at.isoformat() if reservation.captured_at else None,
+        "reserved_balance_contribution_rial": reservation.amount_rial
+        if reservation.status == "ACTIVE"
+        else 0,
+    }
+
+
+@admin_outbox_router.get("")
+def admin_outbox(
+    _: Annotated[object, Depends(require_perm("orders.read"))],
+    db: Annotated[Session, Depends(get_db_session)],
+    status: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    stmt = (
+        select(TransactionalOutboxModel)
+        .order_by(TransactionalOutboxModel.created_at.desc())
+        .limit(min(max(limit, 1), 100))
+    )
+    if status:
+        stmt = stmt.where(TransactionalOutboxModel.status == status)
+    return {"items": [_outbox_view(db, r) for r in db.scalars(stmt).all()], "next_cursor": None}
+
+
+def _outbox_view(db: Session, event: TransactionalOutboxModel) -> dict[str, Any]:
+    payload = sanitize_metadata(event.payload or {})
+    order = db.scalar(
+        select(OrderModel).where(OrderModel.reference == payload.get("order_reference"))
+    )
+    return {
+        "event_reference": event.id,
+        "event_type": event.event_type,
+        "event_version": payload.get("event_version"),
+        "order_reference": payload.get("order_reference"),
+        "product_version_id": payload.get("product_version_id"),
+        "status": event.status,
+        "attempt_count": event.attempt_count,
+        "available_at": event.available_at.isoformat(),
+        "claimed_at": event.claimed_at.isoformat() if event.claimed_at else None,
+        "processed_at": event.processed_at.isoformat() if event.processed_at else None,
+        "last_failure_category": event.failure_category,
+        "created_at": event.created_at.isoformat(),
+        "correlation_id": payload.get("correlation_id"),
+        "normalized_payload": {
+            "order_reference": payload.get("order_reference"),
+            "product_version_id": payload.get("product_version_id"),
+            "selected_options": payload.get("selected_options"),
+            "fulfillment_requirement_schema_version": payload.get(
+                "fulfillment_requirement_schema_version"
+            ),
+        },
+        "_order_exists": bool(order),
+    }
+
+
+@admin_outbox_router.get("/{event_reference}")
+def admin_outbox_detail(
+    event_reference: str,
+    _: Annotated[object, Depends(require_perm("orders.read"))],
+    db: Annotated[Session, Depends(get_db_session)],
+    request: Request,
+) -> dict[str, Any]:
+    event = db.get(TransactionalOutboxModel, event_reference)
+    if not event:
+        raise _err(404, request, "OUTBOX_EVENT_NOT_FOUND")
+    return _outbox_view(db, event)
