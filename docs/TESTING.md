@@ -100,3 +100,7 @@ Frontend payment tests cover integer-rial parsing, toman derivation, safe redire
 
 ## Milestone 4-A2B1 payment operations testing
 Admin-web includes deterministic behavioral coverage for payment navigation, route inventory, permission strings, runtime validation, safe metadata redaction, immutable inspection pages, webhook retry safeguards, RTL/LTR rendering and absence of forbidden controls. E2E setup must use explicit fake adapter test configuration and must not call real payment or VPN providers.
+
+## Configuration tests
+
+Configuration tests cover lifecycle, validation, publishing, rollback, feature rollout, template escaping, safe navigation, Telegram action registries, media validation, runtime APIs, ETags, permissions and migration head constraints.

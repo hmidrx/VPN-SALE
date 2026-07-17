@@ -85,3 +85,7 @@ Future milestones still need administrator payment operations, real gateway adap
 
 ## Milestone 4-A2B1 note
 Administrator payment operations are represented in admin-web as a safe operations console for payment methods, intents, attempts, verifications, settlements and webhook inbox records. The console preserves payment immutability, credential boundaries, backend-authoritative authorization, no browser persistence for payment data, sanitized webhook rendering, and no refund/reconciliation-repair or real-gateway scope.
+
+## Milestone 5-A open decisions
+
+Future decisions: choose S3-compatible production storage, finalize status-page URL policy, and add SVG only after a mature sanitizer and regression suite exist.

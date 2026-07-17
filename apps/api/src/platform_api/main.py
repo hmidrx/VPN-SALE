@@ -4,6 +4,8 @@ from .admin_auth.routes import router as admin_auth_router
 from .catalog import admin_router as admin_catalog_router
 from .catalog import customer_router as catalog_router
 from .config import get_settings, validate_security_configuration
+from .configuration import admin_router as admin_configuration_router
+from .configuration import public_router as runtime_configuration_router
 from .customer_auth.routes import router as customer_auth_router
 from .dependencies import check_database, check_redis
 from .logging import configure_logging
@@ -48,6 +50,8 @@ app.include_router(payment_webhook_router)
 app.include_router(admin_wallet_router)
 app.include_router(admin_ledger_router)
 app.include_router(admin_invitation_router)
+app.include_router(runtime_configuration_router)
+app.include_router(admin_configuration_router)
 
 
 @app.get("/health")

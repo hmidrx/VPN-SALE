@@ -229,3 +229,7 @@ Administrator payment operations are represented in admin-web as a safe operatio
 
 ### Milestone 4-A2B2 payment recovery operations
 Milestone 4-A2B2 adds production-grade recovery controls around provider-neutral payments: refund eligibility, high-risk two-person refund approval, provider-verified refund attempts, compensating ledger boundaries, typed reconciliation, safe derived-state repair planning, late-settlement cases, unapplied payment liabilities and webhook dead-letter recovery. The implementation remains fake-adapter deterministic and does not add real gateways or direct financial mutation controls. See `docs/milestones/MILESTONE_4_A2B2_PLAN.md`.
+
+## Milestone 5-A runtime configuration
+
+VPN-SALE now includes a typed runtime configuration and branding platform with safe defaults, drafts, validation, previews, immutable releases, rollback, public runtime APIs, feature flags, navigation and Telegram menu registries, and media asset governance. See `docs/milestones/MILESTONE_5_A_PLAN.md` and `docs/adr/0024-runtime-configuration-platform.md`.
