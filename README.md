@@ -225,3 +225,7 @@ Customer-web now exposes customer payment routes for wallet top-up, external ord
 
 ## Milestone 4-A2B1 note
 Administrator payment operations are represented in admin-web as a safe operations console for payment methods, intents, attempts, verifications, settlements and webhook inbox records. The console preserves payment immutability, credential boundaries, backend-authoritative authorization, no browser persistence for payment data, sanitized webhook rendering, and no refund/reconciliation-repair or real-gateway scope.
+
+
+### Milestone 4-A2B2 payment recovery operations
+Milestone 4-A2B2 adds production-grade recovery controls around provider-neutral payments: refund eligibility, high-risk two-person refund approval, provider-verified refund attempts, compensating ledger boundaries, typed reconciliation, safe derived-state repair planning, late-settlement cases, unapplied payment liabilities and webhook dead-letter recovery. The implementation remains fake-adapter deterministic and does not add real gateways or direct financial mutation controls. See `docs/milestones/MILESTONE_4_A2B2_PLAN.md`.
