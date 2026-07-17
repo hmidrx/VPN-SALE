@@ -51,3 +51,11 @@ Milestone 2-B1 adds an administrator-only catalog console in `apps/admin-web` th
 - Exact future checkout handoff is intentionally unresolved.
 - Richer backend catalog filtering and cursor pagination can replace current safe client query parameters when API support expands.
 - Public browser catalog browsing remains governed by customer authentication policy and may be revisited separately.
+
+## Milestone 3-A1 wallet and ledger backend
+Wallet accounting is backend-only. API routes authenticate and authorize, then call typed wallet operations that post balanced integer-rial ledger entries and update projections transactionally. Customer wallet reads require customer sessions and expose only customer-facing references; administrator wallet and ledger routes require `wallets.*` or `ledger.*` permissions. Audit/security metadata is sanitized and must not contain raw tokens, idempotency keys, payment details, provider credentials, Telegram initData, or full request bodies. Reconciliation can detect projection mismatches and repair projections without mutating immutable journals or postings. Reservations protect available balance for future checkout but create no order, payment, provider call, or provisioning side effect.
+
+### Milestone 3-A1 unresolved decisions
+- Two-person approval for high-risk wallet deductions is deferred; this milestone requires narrowly privileged immediate posting.
+- Database triggers for immutability are deferred in favor of repository/application append-only controls and reversal-only correction.
+- Future order/payment capture semantics will be finalized when order, invoice, and payment modules are designed.

@@ -9,6 +9,8 @@ from .dependencies import check_database, check_redis
 from .logging import configure_logging
 from .management import public_router as admin_invitation_router
 from .management import router as management_router
+from .wallet import admin_ledger_router, admin_wallet_router
+from .wallet import customer_router as wallet_router
 
 configure_logging()
 validate_security_configuration(get_settings())
@@ -18,6 +20,9 @@ app.include_router(customer_auth_router)
 app.include_router(management_router)
 app.include_router(catalog_router)
 app.include_router(admin_catalog_router)
+app.include_router(wallet_router)
+app.include_router(admin_wallet_router)
+app.include_router(admin_ledger_router)
 app.include_router(admin_invitation_router)
 
 
