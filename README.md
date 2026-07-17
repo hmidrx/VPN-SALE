@@ -240,3 +240,7 @@ VPN-SALE now includes a typed runtime configuration and branding platform with s
 The admin platform now includes a Milestone 5-B customer administration area for cursor-paginated discovery, customer 360 profiles, legal lifecycle commands, session revocation, wallet inspection/freezing, ledger-backed adjustment requests with high-risk approval separation, internal notes, tags, saved views, short-lived allowlisted exports and bounded bulk operations. The implementation reuses existing identity, session, wallet, ledger, order/payment, audit and Security Center invariants and does not add reseller, VPN-provider, provisioning, subscription-delivery, support-chat, coupon, referral, marketing or impersonation scope.
 
 See `docs/milestones/MILESTONE_5_B_PLAN.md` and ADRs 0025-0028 for diagrams, rollback notes and security decisions.
+
+## Milestone 5-C reseller core
+
+Milestone 5-C adds backend reseller account lifecycle, tier/limit policy, wholesale pricing, managed-customer ownership, reseller-funded order attribution, prepaid wallet and controlled credit foundations, safe remark templates, admin-web management routes and reseller-facing API foundations. It does not add reseller-web portal screens, VPN provisioning, panel adapters, provider data, coupons, referrals or real payment gateways.
