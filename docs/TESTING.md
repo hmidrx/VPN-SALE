@@ -73,3 +73,6 @@ Milestone 2-B1 adds an administrator-only catalog console in `apps/admin-web` th
 
 ## Milestone 2-B2 storefront tests
 Customer storefront tests cover typed formatting/validation, query normalization, comparison limits, preview cancellation/latest-wins behavior, quote idempotency conflict mapping, expiration display, Telegram Back/Main button hooks, RTL/LTR rendering conventions, and storage safety. Repository E2E should seed catalog fixtures and verify no wallet, order, payment or provider side effects.
+
+## Milestone 3-A1 wallet and ledger backend
+Wallet accounting is backend-only. API routes authenticate and authorize, then call typed wallet operations that post balanced integer-rial ledger entries and update projections transactionally. Customer wallet reads require customer sessions and expose only customer-facing references; administrator wallet and ledger routes require `wallets.*` or `ledger.*` permissions. Audit/security metadata is sanitized and must not contain raw tokens, idempotency keys, payment details, provider credentials, Telegram initData, or full request bodies. Reconciliation can detect projection mismatches and repair projections without mutating immutable journals or postings. Reservations protect available balance for future checkout but create no order, payment, provider call, or provisioning side effect.

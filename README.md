@@ -198,3 +198,6 @@ The admin web app now includes a Persian RTL catalog-management console at `/cat
 
 ## Milestone 2-B2 customer storefront
 The customer Mini App now includes a catalog storefront for real backend categories/products, fixed-plan selection, custom-plan building, non-persisted server price preview, immutable quote creation/detail, quote expiration/recalculation and bounded plan comparison. It does not implement checkout, wallet, orders, payments, providers, provisioning or subscription delivery.
+
+## Milestone 3-A1 wallet and ledger backend
+Milestone 3-A1 adds backend-only wallet/accounting foundations: one IRR wallet per customer, immutable balanced double-entry journal entries, integer-rial balance projections, buckets, expiring credit lots, reservations, administrative adjustments/reversals, freeze controls, wallet policy, customer wallet read APIs, administrator wallet/ledger APIs, and reconciliation. It intentionally does not add wallet frontend pages, checkout, orders, invoices, payment gateways, provider integrations, provisioning, subscriptions, QR/config delivery, withdrawals, coupons, referrals, or financial dashboards.

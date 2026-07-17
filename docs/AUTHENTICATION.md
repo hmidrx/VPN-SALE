@@ -129,3 +129,6 @@ Invitation tokens are displayed exactly once from ephemeral component state, are
 
 ## Milestone 2-B2 customer storefront authentication
 Storefront browsing runs after the existing Mini App bootstrap. Protected preview and quote creation require the existing customer access token, refresh single-flight and CSRF lifecycle. Browser fallback remains explicit; no fake login or auth bypass is introduced.
+
+## Milestone 3-A1 wallet and ledger backend
+Wallet accounting is backend-only. API routes authenticate and authorize, then call typed wallet operations that post balanced integer-rial ledger entries and update projections transactionally. Customer wallet reads require customer sessions and expose only customer-facing references; administrator wallet and ledger routes require `wallets.*` or `ledger.*` permissions. Audit/security metadata is sanitized and must not contain raw tokens, idempotency keys, payment details, provider credentials, Telegram initData, or full request bodies. Reconciliation can detect projection mismatches and repair projections without mutating immutable journals or postings. Reservations protect available balance for future checkout but create no order, payment, provider call, or provisioning side effect.
