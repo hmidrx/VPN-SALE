@@ -182,3 +182,6 @@ flowchart LR
   View --> Future[Future commerce/provisioning abstraction]
   Future --> Provider[Versioned provider adapters]
 ```
+
+## Milestone 1D-A identity administration backend
+Milestone 1D-A adds backend-only administrator, role/permission, customer, audit-log, and security-event management APIs under `/api/v1/admin/management/...`. Authorization is permission-based and resolved from the database on every protected request so role and permission changes take effect without waiting for token expiry. Administrator invitation returns the plaintext invitation token once and stores only its hash. The management frontend, commerce, provider, wallet, payment, provisioning, analytics, reseller, and support features remain out of scope.

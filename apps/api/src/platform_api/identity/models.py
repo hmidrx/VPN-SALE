@@ -94,6 +94,10 @@ class AdminModel(IdentityBase):
     last_successful_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_failed_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invitation_token_hash: Mapped[str | None] = mapped_column(String(96))
+    invitation_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invitation_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invitation_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -127,7 +131,19 @@ class RoleModel(IdentityBase):
     )
     machine_name: Mapped[str] = mapped_column(String(80), nullable=False)
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
-    __table_args__ = (UniqueConstraint("machine_name", name="uq_roles_machine_name"),)
+    description: Mapped[str | None] = mapped_column(String(240))
+    built_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint("machine_name", name="uq_roles_machine_name"),
+        Index("ix_roles_active", "active"),
+    )
 
 
 class RolePermissionModel(IdentityBase):
@@ -263,7 +279,21 @@ class SecurityEventModel(IdentityBase):
     metadata_: Mapped[dict[str, object]] = mapped_column(
         "metadata", JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict
     )
-    __table_args__ = (Index("ix_security_events_code_time", "event_code", "occurred_at"),)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, default="INFO")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="OPEN")
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acknowledged_by_admin_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("admins.id", ondelete="RESTRICT")
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by_admin_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("admins.id", ondelete="RESTRICT")
+    )
+    resolution_note: Mapped[str | None] = mapped_column(String(500))
+    __table_args__ = (
+        Index("ix_security_events_code_time", "event_code", "occurred_at"),
+        Index("ix_security_events_status", "status"),
+    )
 
 
 class AuditLogModel(IdentityBase):

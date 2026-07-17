@@ -23,6 +23,13 @@ INITIAL_PERMISSIONS: tuple[tuple[str, str], ...] = (
     ("sessions.revoke", "Revoke sessions"),
     ("audit.read", "Read audit logs"),
     ("security.manage", "Manage security settings"),
+    ("admins.invite", "Invite administrators"),
+    ("admins.unlock", "Unlock administrators"),
+    ("users.block", "Block users"),
+    ("users.activate", "Activate users"),
+    ("users.deactivate", "Deactivate users"),
+    ("security.read", "Read security events"),
+    ("security.acknowledge", "Acknowledge security events"),
 )
 INITIAL_ROLES: tuple[tuple[str, str], ...] = (
     ("super_admin", "Super Admin"),
@@ -41,5 +48,9 @@ def seed_initial_rbac(session: Session) -> None:
     for machine_name, display_name in INITIAL_ROLES:
         existing = session.scalar(select(RoleModel).where(RoleModel.machine_name == machine_name))
         if existing is None:
-            session.add(RoleModel(machine_name=machine_name, display_name=display_name))
+            session.add(
+                RoleModel(
+                    machine_name=machine_name, display_name=display_name, built_in=True, active=True
+                )
+            )
     session.flush()
