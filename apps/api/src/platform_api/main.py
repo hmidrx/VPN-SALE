@@ -25,6 +25,8 @@ from .orders import customer_router as order_router
 from .payments import admin_router as admin_payment_router
 from .payments import customer_router as payment_router
 from .payments import webhook_router as payment_webhook_router
+from .resellers import admin_router as admin_reseller_router
+from .resellers import reseller_router
 from .wallet import admin_ledger_router, admin_wallet_router
 from .wallet import customer_router as wallet_router
 
@@ -47,6 +49,8 @@ app.include_router(admin_wallet_reservation_router)
 app.include_router(admin_outbox_router)
 app.include_router(admin_commerce_router)
 app.include_router(admin_payment_router)
+app.include_router(admin_reseller_router)
+app.include_router(reseller_router)
 app.include_router(payment_webhook_router)
 app.include_router(admin_wallet_router)
 app.include_router(admin_customer_router)
