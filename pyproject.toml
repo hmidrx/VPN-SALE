@@ -14,7 +14,7 @@ ignore = ["S101"]
 
 [tool.pytest.ini_options]
 pythonpath = ["apps/api/src", "apps/telegram-bot/src", "apps/worker/src", "packages/domain/src", "packages/panel-adapters/src", "packages/payment-adapters/src"]
-testpaths = ["apps/api/tests"]
+testpaths = ["apps/api/tests", "apps/telegram-bot/tests"]
 
 [tool.pyright]
 include = ["apps/api/src", "apps/api/tests", "apps/telegram-bot/src", "apps/worker/src", "packages"]
