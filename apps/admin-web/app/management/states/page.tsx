@@ -1,0 +1,2 @@
+import { ManagementShell, EmptyState } from "../../../src/components/ManagementShell";
+export default function Page(): React.ReactElement { return <ManagementShell title="وضعیت‌های ایمن مدیریت"><div className="grid"><EmptyState title="403" body="مسیر مستقیم غیرمجاز به صفحه کنترل‌شده هدایت می‌شود."/><EmptyState title="503" body="قطع سرویس بدون نمایش raw exception."/><EmptyState title="خطای عمومی" body="کد خطا و correlation ID امن نمایش داده می‌شود."/></div></ManagementShell>; }

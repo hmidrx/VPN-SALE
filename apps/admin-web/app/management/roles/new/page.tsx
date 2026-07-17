@@ -1,0 +1,2 @@
+import { ManagementShell } from "../../../../src/components/ManagementShell";
+export default function Page(): React.ReactElement { return <ManagementShell title="ایجاد نقش سفارشی" required="roles.create"><form className="panel stack"><label className="field">نام ماشینی<input className="ltr" pattern="^[a-z][a-z0-9_]{1,78}$" /></label><label className="field">نام نمایشی<input /></label><label className="field">توضیح<textarea maxLength={240}/></label><button className="btn" type="button">ایجاد از طریق API</button></form></ManagementShell>; }

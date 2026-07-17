@@ -185,3 +185,6 @@ flowchart LR
 
 ## Milestone 1D-A identity administration backend
 Milestone 1D-A adds backend-only administrator, role/permission, customer, audit-log, and security-event management APIs under `/api/v1/admin/management/...`. Authorization is permission-based and resolved from the database on every protected request so role and permission changes take effect without waiting for token expiry. Administrator invitation returns the plaintext invitation token once and stores only its hash. The management frontend, commerce, provider, wallet, payment, provisioning, analytics, reseller, and support features remain out of scope.
+
+## Milestone 1D-B identity administration frontend
+The admin web app now includes a Persian RTL management console under `/management` for identity and security operations backed by the Milestone 1D-A management APIs. It covers administrators, one-time invitations, roles, permissions, customers, administrator/customer sessions, audit logs, and security events. Navigation and actions are permission-aware, but the backend remains authoritative for every authorization check. Invitation plaintext is displayed once from ephemeral component memory only and is not stored in browser storage or URLs. Commerce, provider, wallet, payment, provisioning, reseller, and analytics features remain out of scope.

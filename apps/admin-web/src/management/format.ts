@@ -1,0 +1,5 @@
+const SECRET_RE = /(password|token|secret|hash|credential|totp|recovery|csrf|init_data|cookie|authorization)/i;
+export function ltr(value: string | number | null | undefined): string { return value === null || value === undefined || value === "" ? "—" : String(value); }
+export function formatDate(value?: string | null): string { return value ? new Intl.DateTimeFormat("fa-IR-u-ca-gregory", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(value)) : "—"; }
+export function metadataEntries(input?: Record<string, unknown> | null): [string, string][] { if (!input) return []; return Object.entries(input).filter(([k,v]) => !SECRET_RE.test(k) && !SECRET_RE.test(String(v))).map(([k,v]) => [k, typeof v === "object" ? JSON.stringify(v) : String(v)] as [string, string]).slice(0, 24); }
+export function groupByNamespace<T extends { code: string }>(items: T[]): Record<string, T[]> { return items.reduce<Record<string,T[]>>((acc,item) => { const ns = item.code.split(".",1)[0] || "general"; (acc[ns] ??= []).push(item); return acc; }, {}); }
