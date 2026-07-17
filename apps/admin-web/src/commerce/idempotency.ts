@@ -1,0 +1,1 @@
+export class CommerceIdempotencyController { private key: string | null = null; begin(): string { this.key ??= crypto.randomUUID(); return this.key; } current(): string | null { return this.key; } clear(): void { this.key = null; } }
