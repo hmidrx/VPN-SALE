@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -343,6 +343,43 @@ def _post_adjustment(
         )
     db.flush()
     return je
+
+
+def ensure_customer_wallet(db: Session, customer_id: str) -> WalletModel:
+    """Return the customer's IRR wallet, creating the standard projection rows if needed."""
+    return _ensure_wallet(db, customer_id)
+
+
+def build_wallet_admin_view(db: Session, wallet: WalletModel) -> dict[str, object]:
+    """Build the public wallet summary shape used by admin/customer APIs."""
+    return _view(db, wallet)
+
+
+def post_admin_wallet_adjustment(
+    db: Session,
+    wallet: WalletModel,
+    operation_code: Literal["ADMIN_CREDIT", "ADMIN_DEBIT", "REVERSAL"],
+    amount_rial: int,
+    bucket_type: str,
+    actor_id: str,
+    request: Request,
+    reason_code: str,
+    idem: WalletFinancialIdempotencyModel | None = None,
+    reversal_of_id: str | None = None,
+) -> JournalEntryModel:
+    """Post a balanced administrative wallet adjustment journal."""
+    return _post_adjustment(
+        db,
+        wallet,
+        operation_code,
+        amount_rial,
+        bucket_type,
+        actor_id,
+        request,
+        reason_code,
+        idem,
+        reversal_of_id,
+    )
 
 
 def _customer_from_token(

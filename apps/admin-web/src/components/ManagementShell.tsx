@@ -1,3 +1,4 @@
+import React from "react";
 import { fa } from "../i18n/management";
 import { managementNav } from "../management/permissions";
 type Props = { title: string; eyebrow?: string; children?: React.ReactNode; required?: string };

@@ -1,0 +1,5 @@
+"use client";
+import React from "react";
+import { ManagementShell } from "../../../src/components/ManagementShell";
+import { createExport } from "../../../src/customers/api";
+export default function CustomerExportsPage(): React.ReactElement { const [job,setJob]=React.useState<{export_reference:string;download_reference:string;expires_at:string}|null>(null); return <ManagementShell title="خروجی امن مشتریان"><section className="panel"><h2>خروجی CSV کوتاه‌عمر</h2><p>فقط فیلدهای allowlist و مجوز جاری مدیر استفاده می‌شود؛ فرمول‌های CSV خنثی می‌شوند.</p><button className="btn" onClick={()=>createExport(["customer_reference","display_name","account_status","telegram_username","created_at","wallet_status","tags"]).then(setJob)}>ایجاد خروجی</button>{job && <p className="notice">آماده تا <bdi className="tech">{job.expires_at}</bdi><br/><a className="tech" href={`/api/v1/admin/customers/exports/${job.export_reference}/download?download_reference=${job.download_reference}`}>download</a></p>}</section></ManagementShell>; }
