@@ -1,0 +1,6 @@
+export const GIB = 1024 ** 3;
+export function formatRial(amount: number, locale = "fa-IR"): string { if (!Number.isSafeInteger(amount) || amount < 0) throw new Error("invalid_money"); return `${new Intl.NumberFormat(locale).format(amount)} ریال`; }
+export function formatTomanFromRial(amount: number, locale = "fa-IR"): string { if (!Number.isSafeInteger(amount) || amount < 0) throw new Error("invalid_money"); return `${new Intl.NumberFormat(locale).format(Math.trunc(amount / 10))} تومان`; }
+export function formatTraffic(bytes: number, locale = "fa-IR"): string { if (!Number.isSafeInteger(bytes) || bytes < 0) throw new Error("invalid_traffic"); const gib = Math.trunc(bytes / GIB); return gib >= 1024 ? `${new Intl.NumberFormat(locale).format(Math.trunc(gib / 1024))} TB` : `${new Intl.NumberFormat(locale).format(gib)} GB`; }
+export function formatDays(days: number, locale = "fa-IR"): string { if (!Number.isSafeInteger(days) || days <= 0) throw new Error("invalid_duration"); return `${new Intl.NumberFormat(locale).format(days)} روز`; }
+export function validateComponentSum(subtotal: number, components: { amount_minor: number }[]): boolean { return components.reduce((sum, c) => sum + c.amount_minor, 0) === subtotal; }

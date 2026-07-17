@@ -1,0 +1,13 @@
+export type Locale = "fa" | "en";
+export type ProductType = "FIXED_PLAN" | "CUSTOM_PLAN";
+export type OperationType = "NEW_PURCHASE" | "RENEWAL" | "TRAFFIC_ADDON" | "DURATION_EXTENSION";
+export type Category = { id: string; slug: string; display_order: number; name?: string; description?: string };
+export type ProductSummary = { id: string; category_id: string; machine_code: string; display_order: number; name?: string; description?: string };
+export type ProductDetail = ProductSummary & { availability?: Record<string, unknown>; status?: string };
+export type RangeConstraint = { minimum: number; maximum: number; step: number; recommended?: number[]; allow_unlimited?: boolean };
+export type Option = { code: string; labels?: Record<string, string> | { locale: string; value: string }[]; enabled?: boolean; description?: string };
+export type ProductOptions = { product_id: string; product_version_id: string; product_type: ProductType; options: { traffic: RangeConstraint; duration_days: RangeConstraint; devices: RangeConstraint; location_options: Option[]; quality_options: Option[]; fixed_traffic_bytes?: number; fixed_duration_days?: number; fixed_device_count?: number } };
+export type QuoteSelection = { product_id: string; operation: OperationType; traffic_bytes: number; duration_days: number; device_count: number; location_code: string; quality_code: string };
+export type PriceComponent = { code: string; label: string; amount_minor: number; order: number };
+export type PricePreview = { binding: false; persisted: false; product_id: string; product_version_id: string; operation: OperationType; selected_options: Record<string, string | number | boolean>; price_list_version_id: string; currency: string; subtotal_minor: number; components: PriceComponent[]; final_amount_minor: number; pricing_engine_version: string; server_time: string; selection_fingerprint: string };
+export type Quote = Omit<PricePreview, "binding" | "persisted" | "server_time" | "selection_fingerprint"> & { quote_reference: string; issued_at: string; expires_at: string; status: "ACTIVE" | "EXPIRED" | "SUPERSEDED" | "CANCELLED" | string };

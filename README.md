@@ -195,3 +195,6 @@ Milestone 2-A adds backend catalog categories/products, immutable product versio
 ## Milestone 2-B1 administrator catalog console
 
 The admin web app now includes a Persian RTL catalog-management console at `/catalog`. It covers category management, product identity, draft product-version editing, fixed and customizable plan editors, provider-neutral options and fulfillment requirements, price lists, structured pricing rules and tiers, administrative pricing preview, publication review, and safe catalog error states. It uses the Milestone 2-A admin catalog APIs and intentionally does not add customer storefront, checkout, wallet, order, payment, provider, server, allocation, provisioning, subscription-link, QR, reseller, or financial analytics functionality.
+
+## Milestone 2-B2 customer storefront
+The customer Mini App now includes a catalog storefront for real backend categories/products, fixed-plan selection, custom-plan building, non-persisted server price preview, immutable quote creation/detail, quote expiration/recalculation and bounded plan comparison. It does not implement checkout, wallet, orders, payments, providers, provisioning or subscription delivery.
