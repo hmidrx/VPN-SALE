@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0005_milestone_1d_a"
 down_revision: str = "0004_milestone_1c_customer_auth"
@@ -85,11 +86,12 @@ def upgrade() -> None:
     )
     _add_col(
         "security_events",
-        sa.Column("acknowledged_by_admin_id", sa.UUID(as_uuid=False), nullable=True),
+        sa.Column("acknowledged_by_admin_id", postgresql.UUID(as_uuid=False), nullable=True),
     )
     _add_col("security_events", sa.Column("resolved_at", sa.DateTime(timezone=True), nullable=True))
     _add_col(
-        "security_events", sa.Column("resolved_by_admin_id", sa.UUID(as_uuid=False), nullable=True)
+        "security_events",
+        sa.Column("resolved_by_admin_id", postgresql.UUID(as_uuid=False), nullable=True),
     )
     _add_col("security_events", sa.Column("resolution_note", sa.String(length=500), nullable=True))
     fks = _fks("security_events")
@@ -122,13 +124,19 @@ def upgrade() -> None:
         ("security.read", "Read security events"),
         ("security.acknowledge", "Acknowledge security events"),
     )
+    permissions_table = sa.table(
+        "permissions",
+        sa.column("id", postgresql.UUID(as_uuid=True)),
+        sa.column("code", sa.String(length=120)),
+        sa.column("description", sa.String(length=240)),
+    )
     for code, desc in permissions:
-        op.execute(
-            sa.text(
-                "insert into permissions (id, code, description) "
-                "values (:id, :code, :description) on conflict (code) do nothing"
-            ).bindparams(id=str(uuid4()), code=code, description=desc)
+        stmt = (
+            postgresql.insert(permissions_table)
+            .values(id=uuid4(), code=code, description=desc)
+            .on_conflict_do_nothing(index_elements=["code"])
         )
+        op.execute(stmt)
 
 
 def downgrade() -> None:
