@@ -50,3 +50,7 @@ Customer payment history, detail, wallet top-up and order-payment endpoints rema
 
 ## Payment administration permissions
 Payment operations use backend-defined permissions: `payment_methods.read`, `payment_methods.manage`, `payments.read`, `payment_webhooks.read`, `payment_webhooks.retry`, `audit.read`, `security_events.read`, and `ledger.read`. Read permissions do not grant mutation permissions, webhook read does not grant retry, and payment-method management does not grant settlement mutation.
+
+## Configuration permissions
+
+Configuration permissions are separate: read, manage, preview, publish, schedule and rollback are independent. Branding, themes, templates, feature flags, navigation, Telegram menus and media assets have scoped read/manage permissions; media management does not grant publication.

@@ -55,3 +55,7 @@ Milestone 4-A1 adds focused payment tables rather than one oversized table: `pay
 
 ## Milestone 4-A2B1 note
 Administrator payment operations are represented in admin-web as a safe operations console for payment methods, intents, attempts, verifications, settlements and webhook inbox records. The console preserves payment immutability, credential boundaries, backend-authoritative authorization, no browser persistence for payment data, sanitized webhook rendering, and no refund/reconciliation-repair or real-gateway scope.
+
+## Configuration schema
+
+Milestone 5-A adds configuration definitions, drafts, releases, release items, validation runs, preview sessions, runtime snapshots and media assets. Releases store immutable JSONB snapshots with one effective release per scope and UTC status/date indexes.

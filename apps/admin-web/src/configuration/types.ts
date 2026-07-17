@@ -1,0 +1,3 @@
+export type ConfigurationPermission = 'configuration.read'|'configuration.manage'|'configuration.preview'|'configuration.publish'|'configuration.schedule'|'configuration.rollback'|'branding.read'|'branding.manage'|'themes.read'|'themes.manage'|'content_templates.read'|'content_templates.manage'|'feature_flags.read'|'feature_flags.manage'|'navigation.read'|'navigation.manage'|'telegram_menus.read'|'telegram_menus.manage'|'media_assets.read'|'media_assets.manage';
+export type DraftSummary = { reference: string; version: number; validation_ok?: boolean };
+export type ValidationIssue = { code: string; message: string; severity: 'ERROR' | 'WARNING'; path: string };

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import cast
 
 from .application.identity import AccountStatus
 from .callbacks import BotCallback, CallbackAction
@@ -86,4 +87,39 @@ def as_button_rows(
             rows.append([{"text": label, "web_app_url": builder.build(item.route)}])
         elif item.action is not None:
             rows.append([{"text": label, "callback_data": BotCallback(item.action).pack()}])
+    return rows
+
+
+SAFE_RUNTIME_ACTIONS = frozenset(
+    {
+        "OPEN_STORE",
+        "OPEN_WALLET",
+        "OPEN_WALLET_TOPUP",
+        "OPEN_ORDERS",
+        "OPEN_PAYMENTS",
+        "OPEN_PROFILE",
+        "OPEN_SECURITY",
+        "OPEN_MINI_APP",
+        "SHOW_HELP",
+        "SHOW_CONTACT",
+        "GO_HOME",
+        "GO_BACK",
+    }
+)
+
+
+def runtime_menu_rows(menu: list[dict[str, object]], locale: str) -> list[list[dict[str, str]]]:
+    rows: list[list[dict[str, str]]] = []
+    for button in menu[:32]:
+        action = str(button.get("action", ""))
+        if action not in SAFE_RUNTIME_ACTIONS:
+            return []
+        label_map = button.get("label")
+        label = action
+        if isinstance(label_map, dict):
+            labels = cast(dict[str, object], label_map)
+            localized = labels.get(locale) or labels.get("fa") or labels.get("en")
+            if isinstance(localized, str) and localized.strip():
+                label = localized[:64]
+        rows.append([{"text": label, "callback_data": f"cfg:{action}"}])
     return rows

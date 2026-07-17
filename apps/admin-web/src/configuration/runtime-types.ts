@@ -1,0 +1,1 @@
+export type RuntimeConfiguration = { schema_version: 1; runtime_version: number; brand: Record<string, unknown>; theme: Record<string, unknown>; navigation: readonly unknown[]; content: Record<string, unknown>; feature_flags: Record<string, boolean>; maintenance: Record<string, boolean> };

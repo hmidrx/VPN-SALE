@@ -1,0 +1,9 @@
+export type LocaleText = Readonly<{ fa: string; en: string }>;
+export type RuntimeBrand = Readonly<{ store_name: LocaleText; short_name: string; tagline: LocaleText; support_username: string; support_url: string; website_url: string; mini_app_url: string }>;
+export type ThemeTokens = Readonly<{ page_color: string; surface_color: string; text_primary_color: string; primary_color: string; focus_ring_color: string }>;
+export type RuntimeTheme = Readonly<{ light: ThemeTokens; dark: ThemeTokens; radius: 'sm' | 'md' | 'lg'; font_family: 'Vazirmatn' | 'Inter'; motion: string }>;
+export type RuntimeNavigationItem = Readonly<{ code: string; label: LocaleText; destination: 'HOME' | 'CATALOG' | 'WALLET' | 'ORDERS' | 'PAYMENTS' | 'PROFILE' | 'SECURITY' | 'MINI_APP' | 'LEGAL' | 'CONTACT'; order: number }>;
+export type RuntimeConfiguration = Readonly<{ schema_version: 1; runtime_version: number; brand: RuntimeBrand; theme: RuntimeTheme; navigation: readonly RuntimeNavigationItem[]; content: Record<string, LocaleText>; feature_flags: Record<string, boolean>; maintenance: Record<string, boolean> }>;
+export const SAFE_BOT_ACTIONS = ['OPEN_STORE','OPEN_WALLET','OPEN_WALLET_TOPUP','OPEN_ORDERS','OPEN_PAYMENTS','OPEN_PROFILE','OPEN_SECURITY','OPEN_MINI_APP','SHOW_HELP','SHOW_CONTACT','GO_HOME','GO_BACK'] as const;
+export type SafeBotAction = typeof SAFE_BOT_ACTIONS[number];
+export function themeToCssVariables(theme: RuntimeTheme, mode: 'light' | 'dark'): Record<string, string> { const t = theme[mode]; return {'--cfg-page': t.page_color, '--cfg-surface': t.surface_color, '--cfg-text': t.text_primary_color, '--cfg-primary': t.primary_color, '--cfg-focus': t.focus_ring_color}; }

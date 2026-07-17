@@ -94,3 +94,7 @@ Payment pages keep idempotency values, payment intents, redirect actions, wallet
 
 ## Admin payment console security posture
 The Milestone 4-A2B1 admin payment console keeps tokens memory-only, uses no browser persistence for payment or webhook records, redacts secret-like metadata keys, and avoids rendering raw webhook bodies, signatures, provider responses, Authorization/Cookie headers or gateway credentials. Payment-method management does not imply settlement authority, and the UI contains no mark paid, force success, create-settlement, direct wallet credit or invoice-paid controls.
+
+## Runtime configuration security
+
+Public configuration rejects arbitrary JavaScript, CSS, HTML, executable templates, unsafe URL schemes, secret-like values, unrestricted callback payloads and unvalidated media. Preview references are short lived and must not be logged or persisted.

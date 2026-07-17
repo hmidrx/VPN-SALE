@@ -5,7 +5,7 @@
   "scripts": {
     "lint": "node ../../scripts/lint-workspace.mjs .",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node src/tests/auth-client.test.mjs && node src/tests/management.test.mjs && node src/tests/catalog.test.mjs && node src/tests/catalog-e2e.test.mjs && node src/tests/finance.test.mjs && node src/tests/commerce.test.mjs && node src/tests/payments.test.mjs && node ../../scripts/check-web-app.mjs .",
+    "test": "node src/tests/auth-client.test.mjs && node src/tests/management.test.mjs && node src/tests/catalog.test.mjs && node src/tests/catalog-e2e.test.mjs && node src/tests/finance.test.mjs && node src/tests/commerce.test.mjs && node src/tests/payments.test.mjs && node ../../scripts/check-web-app.mjs . && node src/tests/configuration.test.mjs",
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 3000"
   },
