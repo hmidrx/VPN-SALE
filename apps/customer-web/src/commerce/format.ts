@@ -1,0 +1,4 @@
+export function assertSafeRial(v: unknown, field: string): number { if (!Number.isSafeInteger(v) || (v as number) < 0) throw new Error(`invalid_${field}`); return v as number; }
+export function formatRial(v: number): string { return `${new Intl.NumberFormat("fa-IR").format(v)} ریال`; }
+export function formatToman(v: number): string { return `${new Intl.NumberFormat("fa-IR").format(Math.trunc(v / 10))} تومان (نمایشی)`; }
+export function productLabel(snapshot: Record<string, unknown>): string { const labels = snapshot.product_label_snapshot; if (labels && typeof labels === "object" && !Array.isArray(labels)) { const fa = (labels as Record<string, {name?: string}>).fa; if (fa?.name) return fa.name; } return typeof snapshot.product_machine_code === "string" ? snapshot.product_machine_code : "محصول"; }

@@ -42,3 +42,16 @@ assert.doesNotMatch(source("components/Wallet.tsx"), /checkout|payment|invoice|p
 assert.match(source("wallet/format.ts"), /Number\.isSafeInteger/);
 assert.match(source("wallet/format.ts"), /const toman = Math\.trunc\(value \/ 10\)/);
 assert.match(source("wallet/format.ts"), /value % 10/);
+
+assert.match(source("commerce/api.ts"), /\/api\/v1\/customer/);
+assert.match(source("commerce/api.ts"), /payment_method:\"WALLET\"/);
+assert.doesNotMatch(source("commerce/api.ts"), /price_components|wallet_balance|customer_identity/);
+assert.match(source("commerce/api.ts"), /invoice_amount_mismatch/);
+assert.match(source("commerce/idempotency.ts"), /getRandomValues/);
+assert.doesNotMatch(source("commerce/idempotency.ts"), /localStorage|sessionStorage|indexedDB/i);
+assert.match(source("components/Commerce.tsx"), /READY_FOR_FULFILLMENT/);
+assert.match(source("components/Commerce.tsx"), /هیچ سرویس\/QR\/لینکی اکنون تحویل داده نمی‌شود/);
+assert.match(source("components/Commerce.tsx"), /role=\"dialog\"/);
+assert.match(source("components/Commerce.tsx"), /پرداخت فعلاً فقط از کیف پول/);
+assert.doesNotMatch(source("components/Commerce.tsx"), /card-number|crypto|gateway|server ip|inbound|subscription URL/i);
+assert.doesNotMatch(source("commerce/api.ts"), /localStorage|sessionStorage|indexedDB|initDataUnsafe/i);
