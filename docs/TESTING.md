@@ -97,3 +97,6 @@ Payment tests use the deterministic fake adapter contract. Required coverage inc
 
 ## Milestone 4-A2A payment tests
 Frontend payment tests cover integer-rial parsing, toman derivation, safe redirect validation, unsafe redirect rejection and idempotency key stability without storing auth/payment data in browser persistence. End-to-end fake adapter settlement remains deterministic test fixture scope only.
+
+## Milestone 4-A2B1 payment operations testing
+Admin-web includes deterministic behavioral coverage for payment navigation, route inventory, permission strings, runtime validation, safe metadata redaction, immutable inspection pages, webhook retry safeguards, RTL/LTR rendering and absence of forbidden controls. E2E setup must use explicit fake adapter test configuration and must not call real payment or VPN providers.

@@ -222,3 +222,6 @@ The backend includes a provider-neutral payment core foundation with versioned a
 
 ## Milestone 4-A2A customer payment interface
 Customer-web now exposes customer payment routes for wallet top-up, external order payment, secure payment return, and payment history/detail. The UI consumes the provider-neutral Milestone 4-A1 backend, keeps rial as canonical integer money, labels derived toman display, validates redirect actions, and never treats browser return parameters as proof of payment.
+
+## Milestone 4-A2B1 note
+Administrator payment operations are represented in admin-web as a safe operations console for payment methods, intents, attempts, verifications, settlements and webhook inbox records. The console preserves payment immutability, credential boundaries, backend-authoritative authorization, no browser persistence for payment data, sanitized webhook rendering, and no refund/reconciliation-repair or real-gateway scope.

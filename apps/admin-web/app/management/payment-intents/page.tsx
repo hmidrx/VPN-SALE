@@ -1,0 +1,4 @@
+import { PaymentOpsShell } from '../../../src/components/PaymentOpsShell';
+import { IntentTable } from '../../../src/payments/components';
+import { paymentPermissions } from '../../../src/payments/policy';
+export default function Page(): React.ReactElement { return <PaymentOpsShell title="کشف نیت‌های پرداخت" required={paymentPermissions.paymentsRead}><form className="filters" aria-label="فیلتر intent"><input placeholder="payment reference" dir="ltr"/><input placeholder="customer uuid" dir="ltr"/><input placeholder="telegram exact lookup" dir="ltr"/><select><option>purpose</option></select><select><option>status</option></select><input type="date"/><input type="date"/><button className="btn secondary" type="submit">اعمال</button></form><IntentTable items={[]} /><p className="notice">Amount و purpose immutable هستند؛ idempotency، fingerprint و raw provider response نمایش داده نمی‌شود.</p></PaymentOpsShell>; }

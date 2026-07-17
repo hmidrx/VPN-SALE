@@ -52,3 +52,6 @@ Admin-web now includes `/management/commerce`, order discovery/detail/snapshot/t
 
 ## Payment schema
 Milestone 4-A1 adds focused payment tables rather than one oversized table: `payment_methods`, localizations, policies, intents, attempts, verifications, settlements, webhook inbox, refunds, refund attempts, idempotency records and reconciliation runs. Money uses integer rial, currency is explicit, provider references are unique where economic effects depend on them and no credentials/card/bank data are stored.
+
+## Milestone 4-A2B1 note
+Administrator payment operations are represented in admin-web as a safe operations console for payment methods, intents, attempts, verifications, settlements and webhook inbox records. The console preserves payment immutability, credential boundaries, backend-authoritative authorization, no browser persistence for payment data, sanitized webhook rendering, and no refund/reconciliation-repair or real-gateway scope.

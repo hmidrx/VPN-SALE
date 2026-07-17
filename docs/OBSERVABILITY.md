@@ -73,3 +73,6 @@ Payment metrics and events should use safe references, status codes and mismatch
 
 ## Milestone 4-A2A payment observability
 Allowed frontend diagnostics are low-cardinality route, purpose, method kind, status category and safe outcome codes. Payment references, provider references, order/invoice references, amounts, redirect URLs, idempotency values, tokens and initData must not be logged.
+
+## Milestone 4-A2B1 note
+Administrator payment operations are represented in admin-web as a safe operations console for payment methods, intents, attempts, verifications, settlements and webhook inbox records. The console preserves payment immutability, credential boundaries, backend-authoritative authorization, no browser persistence for payment data, sanitized webhook rendering, and no refund/reconciliation-repair or real-gateway scope.

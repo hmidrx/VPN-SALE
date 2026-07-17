@@ -8,3 +8,6 @@ Payment intents and attempts use explicit legal transitions. Browser returns onl
 
 ## Consequences
 Expired or cancelled intents that later receive provider success evidence move to reconciliation-required review rather than silently crediting wallets or marking invoices paid.
+
+## Milestone 4-A2B1 note
+Administrator payment operations are represented in admin-web as a safe operations console for payment methods, intents, attempts, verifications, settlements and webhook inbox records. The console preserves payment immutability, credential boundaries, backend-authoritative authorization, no browser persistence for payment data, sanitized webhook rendering, and no refund/reconciliation-repair or real-gateway scope.
