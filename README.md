@@ -244,3 +244,7 @@ See `docs/milestones/MILESTONE_5_B_PLAN.md` and ADRs 0025-0028 for diagrams, rol
 ## Milestone 5-C reseller core
 
 Milestone 5-C adds backend reseller account lifecycle, tier/limit policy, wholesale pricing, managed-customer ownership, reseller-funded order attribution, prepaid wallet and controlled credit foundations, safe remark templates, admin-web management routes and reseller-facing API foundations. It does not add reseller-web portal screens, VPN provisioning, panel adapters, provider data, coupons, referrals or real payment gateways.
+
+## Milestone 5-D reseller portal
+
+`apps/reseller-web` now contains the reseller portal shell for Milestone 5-D. It is Persian RTL by default and documents the reseller route inventory, account-status handling, dashboard, managed customers, wholesale catalog, backend-authoritative rial pricing, quote and reseller-funded checkout flow, wallet/credit summaries, order history, safe remarks, white-label presentation, activity, accessibility, and browser-storage security policy. VPN provider provisioning, QR/configuration links, real payment gateways, support systems, coupons, referrals, sub-resellers, and customer impersonation remain intentionally out of scope.

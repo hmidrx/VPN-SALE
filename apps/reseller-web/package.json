@@ -5,7 +5,7 @@
   "scripts": {
     "lint": "node ../../scripts/lint-workspace.mjs .",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node ../../scripts/check-web-app.mjs .",
+    "test": "node ../../scripts/check-web-app.mjs . && node tests/reseller-portal.test.mjs",
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 3000"
   },
