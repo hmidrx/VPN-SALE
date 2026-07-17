@@ -89,26 +89,32 @@ PERMISSIONS = (
 )
 
 
+def _super_admin_permission_grant_statement() -> sa.TextClause:
+    uuid_type = postgresql.UUID(as_uuid=True)
+    return sa.text(
+        "insert into role_permissions (role_id, permission_id) "
+        "select roles.id, :permission_id from roles "
+        "where machine_name = 'super_admin' on conflict do nothing"
+    ).bindparams(sa.bindparam("permission_id", type_=uuid_type))
+
+
 def _seed_permissions() -> None:
+    uuid_type = postgresql.UUID(as_uuid=True)
     p = sa.table(
         "permissions",
-        sa.column("id", postgresql.UUID(as_uuid=True)),
+        sa.column("id", uuid_type),
         sa.column("code", sa.String),
         sa.column("description", sa.String),
     )
+    connection = op.get_bind()
+    grant_stmt = _super_admin_permission_grant_statement()
     for code, desc, pid in PERMISSIONS:
-        op.execute(
+        connection.execute(
             postgresql.insert(p)
             .values(id=pid, code=code, description=desc)
             .on_conflict_do_update(index_elements=["code"], set_={"description": desc})
         )
-        op.execute(
-            sa.text(
-                "insert into role_permissions (role_id, permission_id) "
-                "select roles.id, :pid from roles "
-                "where machine_name = 'super_admin' on conflict do nothing"
-            ).bindparams(pid=str(pid))
-        )
+        connection.execute(grant_stmt, {"permission_id": pid})
 
 
 def upgrade() -> None:
