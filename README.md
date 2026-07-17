@@ -233,3 +233,10 @@ Milestone 4-A2B2 adds production-grade recovery controls around provider-neutral
 ## Milestone 5-A runtime configuration
 
 VPN-SALE now includes a typed runtime configuration and branding platform with safe defaults, drafts, validation, previews, immutable releases, rollback, public runtime APIs, feature flags, navigation and Telegram menu registries, and media asset governance. See `docs/milestones/MILESTONE_5_A_PLAN.md` and `docs/adr/0024-runtime-configuration-platform.md`.
+
+
+## Milestone 5-B Customer Administration
+
+The admin platform now includes a Milestone 5-B customer administration area for cursor-paginated discovery, customer 360 profiles, legal lifecycle commands, session revocation, wallet inspection/freezing, ledger-backed adjustment requests with high-risk approval separation, internal notes, tags, saved views, short-lived allowlisted exports and bounded bulk operations. The implementation reuses existing identity, session, wallet, ledger, order/payment, audit and Security Center invariants and does not add reseller, VPN-provider, provisioning, subscription-delivery, support-chat, coupon, referral, marketing or impersonation scope.
+
+See `docs/milestones/MILESTONE_5_B_PLAN.md` and ADRs 0025-0028 for diagrams, rollback notes and security decisions.

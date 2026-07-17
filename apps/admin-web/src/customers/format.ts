@@ -1,0 +1,3 @@
+export function formatRial(amount: number): string { return `${new Intl.NumberFormat("fa-IR").format(amount)} ریال (${new Intl.NumberFormat("fa-IR").format(Math.trunc(amount / 10))} تومان نمایشی)`; }
+export function statusLabel(status: string): string { return ({PENDING:"در انتظار",ACTIVE:"فعال",SUSPENDED:"تعلیق",BLOCKED:"مسدود",DEACTIVATED:"غیرفعال"} as Record<string,string>)[status] ?? "وضعیت ناشناخته (بسته)"; }
+export function riskLabel(code: string): string { return ({account_restricted:"محدودیت حساب",wallet_frozen:"کیف پول منجمد",reconciliation_warning:"هشدار تطبیق",suspicious_session:"نشست مشکوک"} as Record<string,string>)[code] ?? code; }
