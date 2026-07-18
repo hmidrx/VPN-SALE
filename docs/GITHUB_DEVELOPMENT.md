@@ -10,7 +10,7 @@ Jobs:
 
 - `backend`: Python 3.12 with PostgreSQL 16 and Redis 7 service containers. Defines disposable CI database credentials at the backend job level, derives the application database URL for `127.0.0.1`, runs a sanitized PostgreSQL credential preflight, then runs formatting, linting, Pyright, pytest, Alembic upgrade/current/downgrade/re-upgrade, and API import/startup smoke checks.
 - `frontend`: Node.js 22 with npm. Uses `npm ci` when `package-lock.json` exists and temporarily uses `npm install` with a warning when no lockfile exists. If that fallback generates `package-lock.json`, the workflow uploads it as the `generated-package-lock` artifact while keeping read-only repository permissions. Reports Node, npm, TypeScript, and Next.js versions, runs an npm audit gate for high and critical advisories, then runs lint, strict TypeScript checks, tests, clearly labeled real Next.js builds for customer, admin, and reseller apps, and shared package validation.
-- `docker`: Runs Docker/Compose versions, `docker compose config`, builds the API image, starts PostgreSQL, Redis, API, and reverse proxy, verifies `/health`, `/ready`, `/version`, and `/metrics` through the reverse proxy, checks readiness content, and cleans up volumes.
+- `docker`: Runs Docker/Compose versions, enforces Docker Compose 2.24.4 or newer for test-server `!override`/`!reset` support, verifies the rendered test-server port-isolation model, runs `docker compose config`, builds the API image, starts PostgreSQL, Redis, API, and reverse proxy, verifies `/health`, `/ready`, `/version`, and `/metrics` through the reverse proxy, checks readiness content, and cleans up volumes.
 - `security`: Runs the repository security baseline without requiring production secrets and without printing secret values. The scanner excludes only its deliberate pattern-source files from self-matching and continues to scan all other tracked source and configuration files.
 
 ## Run the workflow manually
@@ -68,6 +68,7 @@ scripts/bootstrap-dev.sh
 scripts/verify-backend.sh
 scripts/verify-frontend.sh
 scripts/verify-docker.sh
+scripts/verify-test-server-compose.sh
 scripts/verify-all.sh
 docker compose up --build api reverse-proxy
 docker compose down --volumes --remove-orphans

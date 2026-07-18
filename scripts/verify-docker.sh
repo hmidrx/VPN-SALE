@@ -19,6 +19,8 @@ trap cleanup EXIT
 log "Docker versions"
 docker --version
 docker compose version
+log "Test-server Compose port isolation"
+scripts/verify-test-server-compose.sh
 log "Compose config"
 docker compose config
 log "Build core images"

@@ -12,6 +12,13 @@ Milestone 0 does not deploy production services. It provides:
 
 Codespaces and CI use safe development or CI-only placeholders and must not require Telegram, panel, payment, email, production domain, or customer data credentials.
 
+
+## Test-server exposure model
+
+Before starting the disposable test-server stack, operators must render and inspect the merged Compose model with `docker-compose.yml`, `docker-compose.test-server.yml`, and the `ops`, `web`, and `telegram` profiles. The test-server overlay must leave only these localhost application bindings: API on `127.0.0.1:8000`, customer-web on `127.0.0.1:3000`, admin-web on `127.0.0.1:3001`, and reseller-web on `127.0.0.1:3002`. PostgreSQL, Redis, worker, and Telegram bot remain Docker-network-only with no host-published ports.
+
+The test server is designed to be isolated by the Compose model itself, not by UFW or operator memory. Only host-installed Caddy publishes internet-facing ports 80 and 443, then reverse proxies to the localhost application bindings. The overlay uses Docker Compose `!override` and `!reset` tags, so Docker Compose 2.24.4 or newer is required and verified by `scripts/verify-test-server-compose.sh`.
+
 ## Milestone 1B-A bootstrap and key rotation
 
 Run `python -m platform_api.cli bootstrap-admin --email admin@example.com` once after migrations. Use the interactive no-echo prompt, or `--password-stdin` only in protected automation. Recovery from lost Super Admin access is an operational database recovery with audited credential reset by trusted operators; no unsafe override flag is provided.
