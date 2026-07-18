@@ -4,4 +4,5 @@ from . import knowledge_status as knowledge_status
 from . import providers as providers
 from . import service_migrations as service_migrations
 from . import support as support
+from . import usage as usage
 from .configuration import *  # noqa: F403
