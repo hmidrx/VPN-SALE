@@ -77,3 +77,6 @@ Customer payment screens mitigate open redirects, forged success returns, duplic
 
 ## Milestone 4-A2B1 note
 Administrator payment operations are represented in admin-web as a safe operations console for payment methods, intents, attempts, verifications, settlements and webhook inbox records. The console preserves payment immutability, credential boundaries, backend-authoritative authorization, no browser persistence for payment data, sanitized webhook rendering, and no refund/reconciliation-repair or real-gateway scope.
+
+## Support threats
+Milestone 5-E mitigates cross-tenant ticket access, unauthorized internal-note reads, Telegram agent bypass, public-group bridge attempts, malicious attachments, replayed message deliveries, unsafe URLs/scripts and rate-limit abuse through backend authorization, idempotency, audit, Security Center events and minimal notifications.

@@ -89,6 +89,7 @@ def test_menu_registry_contains_working_items_only() -> None:
         "profile",
         "security",
         "wallet",
+        "support",
         "help",
         "language",
         "privacy",

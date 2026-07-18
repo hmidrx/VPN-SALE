@@ -54,3 +54,6 @@ Payment operations use backend-defined permissions: `payment_methods.read`, `pay
 ## Configuration permissions
 
 Configuration permissions are separate: read, manage, preview, publish, schedule and rollback are independent. Branding, themes, templates, feature flags, navigation, Telegram menus and media assets have scoped read/manage permissions; media management does not grant publication.
+
+## Support permissions
+Milestone 5-E adds granular `support.*` permissions. `support.read`, `support.reply`, `support.assign`, internal-note, attachment, queue/category/SLA, canned-response/macro, merge, escalation, Telegram bridge and reporting permissions are separate. Customer and reseller tokens are denied from agent APIs; frontend hiding is not authorization.
