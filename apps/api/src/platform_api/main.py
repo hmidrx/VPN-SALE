@@ -48,6 +48,12 @@ from .services import reconciliation_router as admin_service_reconciliation_rout
 from .support import admin_router as admin_support_router
 from .support import customer_router as customer_support_router
 from .support import reseller_router as reseller_support_router
+from .usage import admin_router as admin_usage_router
+from .usage import anomaly_router as admin_usage_anomaly_router
+from .usage import automation_router as admin_lifecycle_automation_router
+from .usage import customer_router as customer_usage_router
+from .usage import policy_router as admin_usage_policy_router
+from .usage import reseller_router as reseller_usage_router
 from .wallet import admin_ledger_router, admin_wallet_router
 from .wallet import customer_router as wallet_router
 
@@ -101,6 +107,12 @@ app.include_router(reseller_service_operation_router)
 app.include_router(admin_delivery_router)
 app.include_router(customer_delivery_router)
 app.include_router(subscription_router)
+app.include_router(customer_usage_router)
+app.include_router(reseller_usage_router)
+app.include_router(admin_usage_router)
+app.include_router(admin_usage_policy_router)
+app.include_router(admin_usage_anomaly_router)
+app.include_router(admin_lifecycle_automation_router)
 
 
 @app.get("/health")
