@@ -259,3 +259,7 @@ Milestone 5-F adds safe versioned educational content, Persian-ready search, FAQ
 ## Milestone 6-A2A provider write safety gate
 
 Provider mutations remain disabled. The write-contract layer supports only sanitized preflight and dry-run planning for 3X-UI v3.5.0, Alireza X-UI v1.11.3 and PasarGuard panel v4.0.2. PasarGuard v5.1.0/OpenAPI/API-key assumptions from Milestone 6-A1 are invalidated and require re-certification against the corrected contract digest. No real panel write, provisioning, subscription delivery or configuration generation is enabled by default.
+
+## Milestone 6-B1 service provisioning core
+
+Milestone 6-B1 adds the service and entitlement domain, fulfillment ingestion model, allocation policy and pool schema, capacity reservations, multi-inbound attachment records, provisioning workflow references and reconciliation issue tracking. Customer delivery profiles, configuration links, QR codes and subscription output remain out of scope until Milestone 6-B2. See docs/milestones/MILESTONE_6_B1_PLAN.md and docs/adr/0050-service-provisioning-core.md.
