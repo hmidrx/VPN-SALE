@@ -8,6 +8,9 @@ from .configuration import admin_router as admin_configuration_router
 from .configuration import public_router as runtime_configuration_router
 from .customer_admin import router as admin_customer_router
 from .customer_auth.routes import router as customer_auth_router
+from .delivery import admin_router as admin_delivery_router
+from .delivery import customer_router as customer_delivery_router
+from .delivery import public_router as subscription_router
 from .dependencies import check_database, check_redis
 from .knowledge_status import admin_router as admin_knowledge_router
 from .knowledge_status import admin_status_router, status_router
@@ -79,6 +82,9 @@ app.include_router(admin_service_router)
 app.include_router(customer_service_router)
 app.include_router(admin_allocation_router)
 app.include_router(admin_service_reconciliation_router)
+app.include_router(admin_delivery_router)
+app.include_router(customer_delivery_router)
+app.include_router(subscription_router)
 
 
 @app.get("/health")

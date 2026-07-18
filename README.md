@@ -263,3 +263,7 @@ Provider mutations remain disabled. The write-contract layer supports only sanit
 ## Milestone 6-B1 service provisioning core
 
 Milestone 6-B1 adds the service and entitlement domain, fulfillment ingestion model, allocation policy and pool schema, capacity reservations, multi-inbound attachment records, provisioning workflow references and reconciliation issue tracking. Customer delivery profiles, configuration links, QR codes and subscription output remain out of scope until Milestone 6-B2. See docs/milestones/MILESTONE_6_B1_PLAN.md and docs/adr/0050-service-provisioning-core.md.
+
+## Milestone 6-B2 configuration delivery
+
+Milestone 6-B2 adds the store-owned delivery boundary for verified services: versioned Delivery Profiles, canonical resolved connections, VLESS/VMess/Trojan/Shadowsocks URI renderers, Mihomo YAML, explicit legacy Clash compatibility, sing-box JSON, local QR generation, stable opaque subscription URLs, hashed token rotation/revocation, safe customer/reseller delivery pages, Telegram safe actions and an administrator delivery console. Provider-generated share links remain non-authoritative, credential-bearing responses are private no-store, and published profile versions plus delivery revisions never store plaintext credentials or complete rendered configurations. See `docs/milestones/MILESTONE_6_B2_PLAN.md`.

@@ -26,6 +26,7 @@ def _target_metadata() -> MetaData:
         import platform_api.catalog_models  # noqa: F401
         import platform_api.configuration_models  # noqa: F401
         import platform_api.customer_admin_models  # noqa: F401
+        import platform_api.delivery_models  # noqa: F401
         import platform_api.order_models  # noqa: F401
         import platform_api.payment_models  # noqa: F401
         import platform_api.service_models  # noqa: F401
