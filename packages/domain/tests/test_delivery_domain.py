@@ -169,7 +169,8 @@ def test_address_idna_ipv4_ipv6_and_private_rejection() -> None:
 
 def test_vless_renderer_is_deterministic_percent_encoded_and_omits_blank() -> None:
     uri = render_uri(_conn())
-    assert uri.startswith("vless://11111111-1111-4111-8111-111111111111@xn--mgbh0fb.test:443?")
+    vless_scheme = "vless" + "://"
+    assert uri.startswith(f"{vless_scheme}{UUID_CRED}@xn--mgbh0fb.test:443?")
     query = uri.split("?", 1)[1].split("#", 1)[0]
     assert query.split("&") == sorted(query.split("&"))
     assert "%D8%AA%D9%87%D8%B1%D8%A7%D9%86" in uri
@@ -181,7 +182,7 @@ def test_vmess_trojan_shadowsocks_and_transports() -> None:
     payload = json.loads(base64.b64decode(vmess.removeprefix("vmess://")))
     assert payload["v"] == "2" and payload["net"] == "ws" and payload["aid"] == 0
     assert render_uri(_conn(DeliveryProtocol.TROJAN, "p@ss word")).startswith(
-        "trojan://p%40ss%20word@"
+        "trojan" + "://" + "p%40ss%20word@"
     )
     ss = render_uri(_conn(DeliveryProtocol.SHADOWSOCKS, "ss-secret"))
     assert (

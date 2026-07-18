@@ -13,13 +13,27 @@ report_match() {
   fi
 }
 
+report_subscription_urls() {
+  local label="Subscription URL"
+  local tmp
+  tmp="$(mktemp)"
+  git grep -InE '((vless|trojan|ss)://[A-Za-z0-9%+._~-]{8,}|vmess://[A-Za-z0-9+/=_-]{16,}|subscription://[A-Za-z0-9%+._~-]{8,}|https?://[^[:space:]"'"'"'`<>]*/subscriptions/[A-Za-z0-9_-]{16,}|/subscriptions/[A-Za-z0-9_-]{16,}|/(subscriptions)\?[A-Za-z0-9_&=.-]*token=|sub_open:[A-Za-z0-9_-]{16,}|cfg_open:[A-Za-z0-9_-]{16,})' -- . ':(exclude)scripts/security-scan.sh' ':(exclude)scripts/verify-docker.sh' >"$tmp" 2>/dev/null || true
+  mapfile -t matches < <(cut -d: -f1 "$tmp" | sort -u)
+  rm -f "$tmp"
+  if (( ${#matches[@]} > 0 )); then
+    echo "${label} detected in tracked files:" >&2
+    printf '  %s\n' "${matches[@]}" >&2
+    fail=1
+  fi
+}
+
 if git ls-files --error-unmatch .env >/dev/null 2>&1; then
   echo "Tracked .env file detected." >&2
   fail=1
 fi
 
 report_match "Private key material" '-----BEGIN (RSA |EC |OPENSSH |DSA |PRIVATE )?PRIVATE KEY-----' .
-report_match "Subscription URL" '(vless://|vmess://|trojan://|subscription://)' .
+report_subscription_urls
 
 # Detect hard-coded literals while avoiding runtime assignments such as
 # `token = request.cookies.get(...)` and typed fields such as `password: str`.
