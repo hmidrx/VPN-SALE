@@ -1,10 +1,20 @@
-import { ServiceMigrationNotice } from "../../../../src/service-migrations/status";
+import { notFound } from "next/navigation";
 
-export default function CustomerMigrationPage({ params }: { params: { serviceReference: string } }) {
+import { isOpaqueServiceReference, ServiceMigrationNotice } from "../../../../src/service-migrations/status";
+
+export default async function CustomerMigrationPage({
+  params,
+}: {
+  params: Promise<{ serviceReference: string }>;
+}): Promise<React.ReactElement> {
+  const { serviceReference } = await params;
+  if (!isOpaqueServiceReference(serviceReference)) {
+    notFound();
+  }
   return (
     <ServiceMigrationNotice
       status={{
-        serviceReference: params.serviceReference,
+        serviceReference,
         status: "NONE",
         expectedImpact: "در حال حاضر مهاجرت قابل مشاهده‌ای برای این سرویس وجود ندارد.",
         configurationRefreshRequired: false,

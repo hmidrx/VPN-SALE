@@ -27,3 +27,11 @@ export interface OrphanIdentitySummary {
   possibleActive: boolean;
   cleanupApproved: boolean;
 }
+
+export function isOpaqueServiceReference(value: string): boolean {
+  return /^(SVC|svc)-[A-Za-z0-9][A-Za-z0-9_-]{2,63}$/.test(value);
+}
+
+export function isMigrationReference(value: string): boolean {
+  return /^(MIG|mig)-[A-Za-z0-9][A-Za-z0-9_-]{2,63}$/.test(value);
+}
