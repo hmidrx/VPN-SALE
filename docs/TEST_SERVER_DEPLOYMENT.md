@@ -22,6 +22,8 @@ for name in ["POSTGRES_PASSWORD", "IDENTITY_ENCRYPTION_KEY", "ADMIN_ACCESS_TOKEN
 PY
 ```
 
+`/opt/vpn-sale-runtime/test.env` is an operator-managed, untracked runtime file for the disposable VPS only. GitHub Actions and ordinary repository verification do not require this path to exist. `scripts/verify-test-server-compose.sh` creates a temporary environment file from `infra/deployment/env/test-server.env.example`, uses it only for Compose interpolation and structure validation, and removes it on success or failure. Real runtime secrets are never required for Compose structure verification, and the verification script does not print environment contents. Operators can validate against the actual VPS file explicitly with `scripts/verify-test-server-compose.sh /opt/vpn-sale-runtime/test.env` or `VPN_SALE_TEST_SERVER_ENV_FILE=/opt/vpn-sale-runtime/test.env scripts/verify-test-server-compose.sh`.
+
 Edit `/opt/vpn-sale-runtime/test.env`. Set `VPN_SALE_BOT_ENABLED=true` and `VPN_SALE_BOT_MODE=polling` only after a real test bot token and BotFather Mini App URL are configured. Do not commit this file.
 
 Changing any `NEXT_PUBLIC_*` value requires rebuilding frontend images because Next.js embeds public variables at build time.

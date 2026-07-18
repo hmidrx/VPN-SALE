@@ -1,6 +1,6 @@
 services:
   postgres:
-    env_file: /opt/vpn-sale-runtime/test.env
+    env_file: ${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}
     ports: []
     volumes:
       - test_server_postgres_data:/var/lib/postgresql/data
@@ -18,7 +18,7 @@ services:
     restart: unless-stopped
 
   api:
-    env_file: /opt/vpn-sale-runtime/test.env
+    env_file: ${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}
     environment:
       VPN_SALE_PROVIDER_WRITES_ENABLED: "false"
       VPN_SALE_FAKE_CUSTOMER_AUTH_ENABLED: "false"
@@ -34,7 +34,7 @@ services:
 
   worker:
     profiles: []
-    env_file: /opt/vpn-sale-runtime/test.env
+    env_file: ${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}
     environment:
       VPN_SALE_PROVIDER_WRITES_ENABLED: "false"
     depends_on:
@@ -46,7 +46,7 @@ services:
 
   telegram-bot:
     profiles: ["telegram"]
-    env_file: /opt/vpn-sale-runtime/test.env
+    env_file: ${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}
     environment:
       VPN_SALE_PROVIDER_WRITES_ENABLED: "false"
     depends_on:
@@ -57,7 +57,7 @@ services:
 
   customer-web:
     profiles: []
-    env_file: /opt/vpn-sale-runtime/test.env
+    env_file: ${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}
     build:
       context: .
       dockerfile: infra/docker/web.Dockerfile
@@ -78,7 +78,7 @@ services:
 
   admin-web:
     profiles: []
-    env_file: /opt/vpn-sale-runtime/test.env
+    env_file: ${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}
     build:
       context: .
       dockerfile: infra/docker/web.Dockerfile
@@ -95,7 +95,7 @@ services:
 
   reseller-web:
     profiles: []
-    env_file: /opt/vpn-sale-runtime/test.env
+    env_file: ${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}
     build:
       context: .
       dockerfile: infra/docker/web.Dockerfile
