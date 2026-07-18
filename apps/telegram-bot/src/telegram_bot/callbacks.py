@@ -15,6 +15,11 @@ class CallbackAction(StrEnum):
     SEARCH_GUIDES = "guide_search"
     SHOW_FAQ = "faq"
     OPEN_STATUS_PAGE = "status"
+    MY_SERVICES = "svc"
+    OPEN_SERVICE = "svc_open"
+    OPEN_CONFIGS = "cfg_open"
+    OPEN_SUBSCRIPTION = "sub_open"
+    OPEN_SERVICE_GUIDE = "svc_guide"
 
 
 @dataclass(frozen=True)

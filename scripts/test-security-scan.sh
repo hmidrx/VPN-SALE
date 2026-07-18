@@ -3,13 +3,17 @@ set -Eeuo pipefail
 
 typed_fixture="security-scan-typed-fixture.tmp"
 secret_fixture="security-scan-secret-fixture.conf"
+subscription_fixture="security-scan-subscription-fixture.tmp"
+safe_subscription_fixture="security-scan-safe-subscription-fixture.tmp"
 cleanup() {
-  git rm -f --quiet "$typed_fixture" "$secret_fixture" >/dev/null 2>&1 || true
-  rm -f "$typed_fixture" "$secret_fixture" \
+  git rm -f --quiet "$typed_fixture" "$secret_fixture" "$subscription_fixture" "$safe_subscription_fixture" >/dev/null 2>&1 || true
+  rm -f "$typed_fixture" "$secret_fixture" "$subscription_fixture" "$safe_subscription_fixture" \
     scan-safe.out scan-safe.err \
     scan-typed.out scan-typed.err \
     scan-secret.out scan-secret.err \
-    scan-self.out scan-self.err
+    scan-self.out scan-self.err \
+    scan-subscription.out scan-subscription.err \
+    scan-safe-subscription.out scan-safe-subscription.err
 }
 trap cleanup EXIT
 
@@ -43,6 +47,25 @@ fi
 
 git rm -f --quiet "$typed_fixture"
 
+cat >"$safe_subscription_fixture" <<'PY'
+SUBSCRIPTION_ROUTE = "/subscriptions/{opaqueToken}"
+SUBSCRIPTION_PARTS = {"prefix": "/subscriptions", "parameter": "opaque_token"}
+REDACTED_SUBSCRIPTION_URL = "https://customer.example.test/subscriptions/[redacted]"
+def build_route(token: str) -> str:
+    return f"/subscriptions/{token}"
+def build_vless(uuid: str, host: str) -> str:
+    return f"vless://{uuid}@{host}:443"
+PY
+git add --intent-to-add "$safe_subscription_fixture"
+
+if ! run_scan scan-safe-subscription.out scan-safe-subscription.err; then
+  echo "Expected explicit placeholders, split route metadata, redacted URLs and runtime builders to pass." >&2
+  cat scan-safe-subscription.err >&2
+  exit 1
+fi
+
+git rm -f --quiet "$safe_subscription_fixture"
+
 secret_value="fake_test_secret_value_123456789"
 printf 'api_key = %s\n' "$secret_value" >"$secret_fixture"
 git add --intent-to-add "$secret_fixture"
@@ -64,6 +87,45 @@ if rg --fixed-strings --quiet -- "$secret_value" scan-secret.out scan-secret.err
 fi
 
 git rm -f --quiet "$secret_fixture"
+
+subscription_prefix="/subscriptions"
+http_origin="https://customer.example.test"
+opaque_segment="$(python - <<'PY'
+import secrets
+print(secrets.token_urlsafe(48))
+PY
+)"
+uuid_reference="$(python - <<'PY'
+import uuid
+print(uuid.uuid4())
+PY
+)"
+vless_scheme="vless://"
+subscription_scheme="subscription://"
+subscription_cases=()
+subscription_cases+=("complete subscription URL with opaque token|url = \"${http_origin}${subscription_prefix}/${opaque_segment}\"")
+subscription_cases+=("subscription URL with UUID reference|url = \"${http_origin}${subscription_prefix}/${uuid_reference}\"")
+subscription_cases+=("high-entropy token path|path = \"${subscription_prefix}/${opaque_segment}\"")
+subscription_cases+=("token in Telegram callback|callback = \"b:v1:sub_open:${opaque_segment}\"")
+subscription_cases+=("token in source-code example|example = \"${subscription_scheme}${opaque_segment}\"")
+subscription_cases+=("token in test assertion|assert output.startswith(\"${vless_scheme}${uuid_reference}@edge.example:443\")")
+
+for entry in "${subscription_cases[@]}"; do
+  case_name="${entry%%|*}"
+  line="${entry#*|}"
+  printf '%s\n' "$line" >"$subscription_fixture"
+  git add --intent-to-add "$subscription_fixture"
+  if run_scan scan-subscription.out scan-subscription.err; then
+    echo "Expected security scan to reject ${case_name}." >&2
+    exit 1
+  fi
+  if ! grep -q "$subscription_fixture" scan-subscription.err; then
+    echo "Expected security scan to report subscription fixture for ${case_name}." >&2
+    cat scan-subscription.err >&2
+    exit 1
+  fi
+  git rm -f --quiet "$subscription_fixture"
+done
 
 if ! run_scan scan-self.out scan-self.err; then
   echo "Expected scanner pattern definitions not to self-match." >&2
