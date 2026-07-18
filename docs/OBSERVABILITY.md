@@ -98,3 +98,17 @@ Add low-cardinality metrics for eligibility, simulation, reservation, target pro
 ## Milestone 6-D2 fleet operations
 
 Fleet operations add a typed hierarchy for providers, panels, nodes, inbounds and allocation targets; immutable health observations/evaluations; integer capacity snapshots/forecasts; maintenance, drain, evacuation, failover/recovery proposals, bounded bulk operations and typed runbooks. Fleet code orchestrates existing certified application services only and does not call provider transports directly. Customer/reseller exposure remains safe impact-only and never includes credentials, raw provider payloads, panel URLs or infrastructure identifiers.
+
+## Milestone 7-A1 observability, SLOs and alerts
+
+Structured logs must carry correlation/causation IDs and redact tokens, cookies, Telegram initData, payment/provider/protocol credentials, subscription tokens and raw provider payloads. Metrics use low-cardinality labels only. Initial SLOs are proposed targets, not achieved production percentages.
+
+```mermaid
+flowchart LR
+  Apps --> Logs[JSON logs]
+  Apps --> Metrics[Prometheus metrics]
+  Apps --> Traces[trace boundaries]
+  Logs --> Dashboards
+  Metrics --> Alerts
+  Traces --> Dashboards
+```

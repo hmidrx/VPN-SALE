@@ -1,0 +1,18 @@
+groups:
+  - name: vpnsale.operations
+    rules:
+      - alert: VPN_SALE_API_HIGH_ERROR_RATE
+        expr: sum(rate(http_requests_total{outcome="error"}[5m])) > 0
+        for: 10m
+        labels: {severity: warning, runbook: docs/runbooks/api-degradation.md}
+        annotations: {summary: API error outcomes observed}
+      - alert: VPN_SALE_BACKUP_MISSING
+        expr: time() - vpnsale_backup_last_success_timestamp_seconds > 93600
+        for: 15m
+        labels: {severity: critical, runbook: docs/runbooks/postgresql-loss.md}
+        annotations: {summary: No recent successful backup evidence}
+      - alert: VPN_SALE_PROVIDER_CERTIFICATION_NOT_RUN
+        expr: vpnsale_provider_certification_state{state="NOT_RUN"} == 1
+        for: 24h
+        labels: {severity: warning, runbook: docs/runbooks/provider-panel-outage.md}
+        annotations: {summary: Live provider certification still requires staging credentials}
