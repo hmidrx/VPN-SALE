@@ -50,22 +50,32 @@ class BotSettings:
         if not self.enabled or self.mode == BotMode.DISABLED:
             return
         if not self.token:
-            raise ValueError("Telegram bot token is required when bot is enabled")
+            raise ValueError(
+                "VPN_SALE_TELEGRAM_BOT_TOKEN is required when VPN_SALE_BOT_ENABLED=true"
+            )
         if (
             self.mode == BotMode.POLLING
             and self.production_like
             and not self.allow_polling_in_production
         ):
-            raise ValueError("polling mode is rejected in production-like environments")
+            raise ValueError(
+                "VPN_SALE_BOT_MODE=polling is rejected in production-like environments"
+            )
         if self.mode == BotMode.WEBHOOK:
             if not self.webhook_base_url or not self.webhook_secret_token:
-                raise ValueError("webhook base URL and secret token are required")
+                raise ValueError(
+                    "VPN_SALE_TELEGRAM_WEBHOOK_BASE_URL and "
+                    "VPN_SALE_TELEGRAM_WEBHOOK_SECRET_TOKEN are required"
+                )
             _require_https_public(self.webhook_url, "webhook URL", self.production_like)
         _validate_mini_app(
             self.mini_app_base_url, self.mini_app_allowed_hosts, self.production_like
         )
         if self.default_locale not in self.supported_locales:
-            raise ValueError("default locale must be supported")
+            raise ValueError(
+                "VPN_SALE_TELEGRAM_DEFAULT_LOCALE must be listed in "
+                "VPN_SALE_TELEGRAM_SUPPORTED_LOCALES"
+            )
 
 
 def _require_https_public(url: str, label: str, production_like: bool) -> None:
@@ -79,5 +89,8 @@ def _require_https_public(url: str, label: str, production_like: bool) -> None:
 def _validate_mini_app(url: str, hosts: tuple[str, ...], production_like: bool) -> None:
     parsed = urlparse(url)
     if parsed.hostname not in hosts:
-        raise ValueError("Mini App host is not allowlisted")
+        raise ValueError(
+            "VPN_SALE_CUSTOMER_MINI_APP_URL host must be listed in "
+            "VPN_SALE_CUSTOMER_MINI_APP_ALLOWED_HOSTS"
+        )
     _require_https_public(url, "Mini App URL", production_like)

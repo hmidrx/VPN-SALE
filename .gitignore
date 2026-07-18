@@ -7,3 +7,10 @@ __pycache__/
 .ruff_cache/
 .pyright/
 apps/*-web/tsconfig.tsbuildinfo
+
+# Untracked test-server runtime env files
+/opt/vpn-sale-runtime/
+test-server.env
+test.env
+*.runtime.env
+*.local.env

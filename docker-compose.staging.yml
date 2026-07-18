@@ -1,18 +1,18 @@
 services:
   api:
-    env_file: infra/deployment/env/staging.env.example
+    env_file: /opt/vpn-sale-runtime/staging.env
     read_only: true
     tmpfs: [/tmp]
     restart: unless-stopped
     depends_on: [postgres, redis]
   worker:
-    env_file: infra/deployment/env/staging.env.example
+    env_file: /opt/vpn-sale-runtime/staging.env
     read_only: true
     tmpfs: [/tmp]
     restart: unless-stopped
     depends_on: [postgres, redis]
   telegram-bot:
-    env_file: infra/deployment/env/staging.env.example
+    env_file: /opt/vpn-sale-runtime/staging.env
     read_only: true
     tmpfs: [/tmp]
     restart: unless-stopped

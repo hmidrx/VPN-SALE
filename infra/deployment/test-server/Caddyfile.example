@@ -1,0 +1,65 @@
+{
+  # Host-installed Caddy example for disposable test server only.
+  auto_https on
+}
+
+(common_headers) {
+  header {
+    -Server
+    Cache-Control "no-store"
+  }
+  request_body {
+    max_size 10MB
+  }
+}
+
+app.dr-ping.com {
+  import common_headers
+  reverse_proxy 127.0.0.1:3000 {
+    header_up Host {host}
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Proto {scheme}
+  }
+}
+
+admin.dr-ping.com {
+  import common_headers
+  reverse_proxy 127.0.0.1:3001 {
+    header_up Host {host}
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Proto {scheme}
+  }
+}
+
+reseller.dr-ping.com {
+  import common_headers
+  reverse_proxy 127.0.0.1:3002 {
+    header_up Host {host}
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Proto {scheme}
+  }
+}
+
+api.dr-ping.com {
+  import common_headers
+  @metrics path /metrics
+  respond @metrics 404
+  reverse_proxy 127.0.0.1:8000 {
+    header_up Host {host}
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Proto {scheme}
+  }
+}
+
+# The API exposes public subscription routes under /subscriptions and status/knowledge routes.
+# The app is not host-aware, so route each whole hostname to the API and preserve Host.
+sub.dr-ping.com, status.dr-ping.com {
+  import common_headers
+  @metrics path /metrics
+  respond @metrics 404
+  reverse_proxy 127.0.0.1:8000 {
+    header_up Host {host}
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Proto {scheme}
+  }
+}
