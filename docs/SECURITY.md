@@ -116,3 +116,7 @@ Provider mutation attempts never store raw request bodies, cookies, protocol cre
 
 ## Service migration security
 Migration records store digests and safe references only. Plaintext credentials, subscription tokens, raw provider payloads, panel URLs and node/inbound identifiers are forbidden in logs, metrics, audit and browser storage. Destructive source cleanup and orphan deletion require ownership evidence and approval.
+
+## Milestone 6-D2 fleet operations
+
+Fleet operations add a typed hierarchy for providers, panels, nodes, inbounds and allocation targets; immutable health observations/evaluations; integer capacity snapshots/forecasts; maintenance, drain, evacuation, failover/recovery proposals, bounded bulk operations and typed runbooks. Fleet code orchestrates existing certified application services only and does not call provider transports directly. Customer/reseller exposure remains safe impact-only and never includes credentials, raw provider payloads, panel URLs or infrastructure identifiers.

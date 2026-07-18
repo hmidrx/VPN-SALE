@@ -72,3 +72,7 @@ Milestone 6-A2B adds provider canary, write-enable, operation, reconciliation an
 
 ## Migration permissions
 Milestone 6-C2 adds granular permissions for service migration read/manage/simulate/request/approve/execute/cutover/cleanup/rollback/compensate, failover proposal read/manage, orphan identity read/manage and migration policy manage/publish. Request and approval are separate; high-risk self-approval is denied.
+
+## Milestone 6-D2 fleet operations
+
+Fleet operations add a typed hierarchy for providers, panels, nodes, inbounds and allocation targets; immutable health observations/evaluations; integer capacity snapshots/forecasts; maintenance, drain, evacuation, failover/recovery proposals, bounded bulk operations and typed runbooks. Fleet code orchestrates existing certified application services only and does not call provider transports directly. Customer/reseller exposure remains safe impact-only and never includes credentials, raw provider payloads, panel URLs or infrastructure identifiers.

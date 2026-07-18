@@ -12,6 +12,9 @@ from .delivery import admin_router as admin_delivery_router
 from .delivery import customer_router as customer_delivery_router
 from .delivery import public_router as subscription_router
 from .dependencies import check_database, check_redis
+from .fleet import admin_router as admin_fleet_router
+from .fleet import customer_router as customer_fleet_router
+from .fleet import reseller_router as reseller_fleet_router
 from .knowledge_status import admin_router as admin_knowledge_router
 from .knowledge_status import admin_status_router, status_router
 from .knowledge_status import public_router as knowledge_router
@@ -113,6 +116,9 @@ app.include_router(admin_usage_router)
 app.include_router(admin_usage_policy_router)
 app.include_router(admin_usage_anomaly_router)
 app.include_router(admin_lifecycle_automation_router)
+app.include_router(admin_fleet_router)
+app.include_router(customer_fleet_router)
+app.include_router(reseller_fleet_router)
 
 
 @app.get("/health")
