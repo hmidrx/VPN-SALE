@@ -13,10 +13,10 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0019_m6b1_services"
-down_revision = "0018_m6a2b"
-branch_labels = None
-depends_on = None
+revision: str = "0019_m6b1_services"
+down_revision: str = "0018_m6a2b"
+branch_labels: None = None
+depends_on: None = None
 
 UUID_T = postgresql.UUID(as_uuid=True)
 JSONB = postgresql.JSONB(none_as_null=True)

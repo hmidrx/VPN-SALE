@@ -57,8 +57,36 @@ class AllocationSimulationResponse(BaseModel):
     performs_provider_mutation: bool = False
 
 
+def snapshot_non_negative_int(value: object, field_name: str, default: int) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "SERVICE_ENTITLEMENT_INVALID", "field": field_name},
+        )
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str) and value.isdecimal():
+        parsed = int(value)
+    else:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "SERVICE_ENTITLEMENT_INVALID", "field": field_name},
+        )
+    if parsed < 0:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "SERVICE_ENTITLEMENT_INVALID", "field": field_name},
+        )
+    return parsed
+
+
 def _safe_service(row: ServiceModel) -> SafeServiceStatus:
     entitlement = row.entitlement_snapshot
+    required_attachment_count = snapshot_non_negative_int(
+        entitlement.get("required_attachment_count"), "required_attachment_count", 0
+    )
     return SafeServiceStatus(
         public_reference=row.public_reference,
         lifecycle=row.lifecycle,
@@ -66,7 +94,7 @@ def _safe_service(row: ServiceModel) -> SafeServiceStatus:
         created_at=row.created_at,
         activated_at=row.activated_at,
         expires_at=row.expires_at,
-        required_attachment_count=int(entitlement.get("required_attachment_count", 0)),
+        required_attachment_count=required_attachment_count,
         verified_attachment_count=0,
         operational_message="وضعیت تحقق سرویس بدون نمایش اطلاعات فنی ارائه‌دهنده.",
     )
