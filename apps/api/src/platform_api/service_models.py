@@ -276,3 +276,155 @@ class ServiceReconciliationIssueModel(IdentityBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (Index("ix_service_reconciliation_status_created", "status", "created_at"),)
+
+
+class ServiceOperationPolicyModel(IdentityBase):
+    __tablename__ = "service_operation_policies"
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    current_version_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __table_args__ = (UniqueConstraint("name", name="uq_service_operation_policies_name"),)
+
+
+class ServiceOperationPolicyVersionModel(IdentityBase):
+    __tablename__ = "service_operation_policy_versions"
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    policy_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("service_operation_policies.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    immutable_snapshot: Mapped[dict[str, object]] = mapped_column(JSON_TYPE, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        UniqueConstraint(
+            "policy_id", "version_number", name="uq_service_operation_policy_versions_number"
+        ),
+    )
+
+
+class ServiceOperationModel(IdentityBase):
+    __tablename__ = "service_operations"
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    service_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("services.id", ondelete="RESTRICT"), nullable=False
+    )
+    operation_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    requester_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    requester_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    idempotency_key_digest: Mapped[str] = mapped_column(String(96), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    policy_version_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("service_operation_policy_versions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    policy_snapshot: Mapped[dict[str, object]] = mapped_column(JSON_TYPE, nullable=False)
+    desired_change: Mapped[dict[str, object]] = mapped_column(JSON_TYPE, nullable=False)
+    quote_snapshot: Mapped[dict[str, object] | None] = mapped_column(JSON_TYPE)
+    order_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("orders.id", ondelete="RESTRICT")
+    )
+    invoice_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("invoices.id", ondelete="RESTRICT")
+    )
+    payment_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("wallet_payments.id", ondelete="RESTRICT")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __table_args__ = (
+        UniqueConstraint(
+            "service_id", "idempotency_key_digest", name="uq_service_operations_service_idempotency"
+        ),
+        Index("ix_service_operations_status_created", "status", "created_at"),
+        Index("ix_service_operations_service_created", "service_id", "created_at"),
+    )
+
+
+class ServiceOperationAttachmentPlanModel(IdentityBase):
+    __tablename__ = "service_operation_attachment_plans"
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    operation_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("service_operations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    attachment_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("service_attachments.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    required: Mapped[bool] = mapped_column(nullable=False)
+    provider_operation_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False))
+    capability: Mapped[str] = mapped_column(String(80), nullable=False)
+    expected_snapshot_digest: Mapped[str] = mapped_column(String(96), nullable=False)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    verified: Mapped[bool] = mapped_column(nullable=False, default=False)
+    uncertain: Mapped[bool] = mapped_column(nullable=False, default=False)
+    result_snapshot: Mapped[dict[str, object]] = mapped_column(
+        JSON_TYPE, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("operation_id", "attachment_id", name="uq_service_operation_attachment"),
+    )
+
+
+class ServiceStateRevisionModel(IdentityBase):
+    __tablename__ = "service_state_revisions"
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    service_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("services.id", ondelete="RESTRICT"), nullable=False
+    )
+    operation_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("service_operations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    desired_state: Mapped[dict[str, object]] = mapped_column(JSON_TYPE, nullable=False)
+    previous_revision_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("service_id", "revision_number", name="uq_service_state_revisions_number"),
+    )
+
+
+class ServiceOperationApprovalModel(IdentityBase):
+    __tablename__ = "service_operation_approvals"
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    operation_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("service_operations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    requested_by: Mapped[str] = mapped_column(String(96), nullable=False)
+    decided_by: Mapped[str] = mapped_column(String(96), nullable=False)
+    decision: Mapped[str] = mapped_column(String(24), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        CheckConstraint("requested_by <> decided_by", name="ck_service_operation_no_self_approval"),
+    )
