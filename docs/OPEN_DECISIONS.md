@@ -107,3 +107,6 @@ Provider combinations remain unsupported until exact write contracts prove crede
 ## Milestone 6-D2 fleet operations
 
 Fleet operations add a typed hierarchy for providers, panels, nodes, inbounds and allocation targets; immutable health observations/evaluations; integer capacity snapshots/forecasts; maintenance, drain, evacuation, failover/recovery proposals, bounded bulk operations and typed runbooks. Fleet code orchestrates existing certified application services only and does not call provider transports directly. Customer/reseller exposure remains safe impact-only and never includes credentials, raw provider payloads, panel URLs or infrastructure identifiers.
+
+## Milestone 7-B controlled production rollout open decisions
+Real production hosting profiles, protected runner implementation, KMS/envelope encryption provider for production backups, production provider panel identities, live write canary scopes, payment gateway production enablement, public status-page wording approvals, and real customer canary consent policy remain operator decisions. Codex did not perform a production launch.

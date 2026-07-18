@@ -1,0 +1,4 @@
+export default async function ProductionReleaseDetail({ params }: { params: Promise<{ releaseReference: string }> }): Promise<React.ReactElement> {
+  const { releaseReference } = await params;
+  return <main dir="rtl" className="admin-page"><h1>انتشار تولید <code dir="ltr">{releaseReference}</code></h1><nav><a href={`/management/releases/production/${releaseReference}/preflight`}>Preflight</a> · <a href={`/management/releases/production/${releaseReference}/rollout`}>Rollout</a> · <a href={`/management/releases/production/${releaseReference}/hypercare`}>Hypercare</a> · <a href={`/management/releases/production/${releaseReference}/rollback`}>Rollback</a></nav><dl><dt>Release Candidate</dt><dd dir="ltr">immutable-finalized-rc-only</dd><dt>وضعیت</dt><dd dir="ltr">AWAITING_OPERATOR_EVIDENCE</dd><dt>امنیت</dt><dd>مقادیر فنی LTR هستند و داده مشتری/راز نمایش داده نمی‌شود.</dd></dl></main>;
+}

@@ -1,0 +1,43 @@
+name: Production release operator actions
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "preflight, deploy, canary, rollback"
+        required: true
+        type: choice
+        options: [preflight, deploy, canary, rollback]
+      release_reference:
+        description: "Production release reference"
+        required: true
+        type: string
+      typed_confirmation:
+        description: "Exact operator confirmation; never include secrets"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  VPN_SALE_PRODUCTION_DEPLOYMENT_FROM_CI: "disabled"
+
+jobs:
+  protected-production-action:
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate operator-only boundary
+        run: |
+          set -euo pipefail
+          case "${{ inputs.action }}" in preflight|deploy|canary|rollback) ;; *) exit 2 ;; esac
+          expected="VPN-SALE ${{ inputs.action }} ${{ inputs.release_reference }}"
+          test "${{ inputs.typed_confirmation }}" = "$expected"
+          echo "Operator workflow accepted for protected environment; implementation must run registered deployment profiles only."
+      - name: Refuse normal CI production execution
+        run: |
+          set -euo pipefail
+          echo "No production secrets are requested in this repository workflow."
+          echo "Real production execution remains BLOCKED until protected environment approvals and external deployment runner are configured."
+          exit 1

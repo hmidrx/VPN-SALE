@@ -117,3 +117,6 @@ flowchart TD
   Monitor -->|incident| AppRollback
   AppRollback --> ReviewSchema[manual schema compatibility review]
 ```
+
+## Milestone 7-B protected deployment orchestration
+Production deployment is not available from ordinary CI. The opt-in `production-release-operator` workflow uses `workflow_dispatch`, the protected `production` environment and typed confirmation. It is intentionally blocked until an approved external production runner/profile supplies real evidence; no secrets are requested by default.
