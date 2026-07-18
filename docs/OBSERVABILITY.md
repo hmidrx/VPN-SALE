@@ -83,3 +83,6 @@ Publishing, rollback, validation, preview, media lifecycle and cache propagation
 
 ## Support metrics
 Support observability uses low-cardinality labels for conversation channel/category, message direction/channel, queue backlog, assignment outcome, SLA outcome, escalation, attachment processing, Telegram delivery, realtime outcome, CSAT aggregates and notification delivery. Customer IDs, reseller IDs, ticket references, Telegram IDs, message text and attachment names are forbidden labels.
+
+## Milestone 5-F observability
+Metrics and logs must use low-cardinality outcomes for publication, search, media processing, guide recommendation, feedback aggregates, incident/maintenance counts and notification delivery without query text, filenames, customer identifiers or incident secrets.

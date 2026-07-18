@@ -62,6 +62,12 @@ def default_menu_registry() -> MenuRegistry:
         MenuItem("support", "support", MenuTarget.MINI_APP, 38, route=MiniAppRoute.SUPPORT)
     )
     registry.register(
+        MenuItem("education", "education", MenuTarget.MINI_APP, 39, route=MiniAppRoute.EDUCATION)
+    )
+    registry.register(
+        MenuItem("status", "status", MenuTarget.MINI_APP, 41, route=MiniAppRoute.STATUS)
+    )
+    registry.register(
         MenuItem("help", "help_button", MenuTarget.CALLBACK, 40, action=CallbackAction.HELP)
     )
     registry.register(
@@ -103,6 +109,10 @@ SAFE_RUNTIME_ACTIONS = frozenset(
         "OPEN_PROFILE",
         "OPEN_SECURITY",
         "OPEN_SUPPORT",
+        "OPEN_EDUCATION",
+        "SEARCH_GUIDES",
+        "SHOW_FAQ",
+        "OPEN_STATUS_PAGE",
         "OPEN_MINI_APP",
         "SHOW_HELP",
         "SHOW_CONTACT",

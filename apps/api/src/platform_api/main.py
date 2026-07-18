@@ -9,6 +9,9 @@ from .configuration import public_router as runtime_configuration_router
 from .customer_admin import router as admin_customer_router
 from .customer_auth.routes import router as customer_auth_router
 from .dependencies import check_database, check_redis
+from .knowledge_status import admin_router as admin_knowledge_router
+from .knowledge_status import admin_status_router, status_router
+from .knowledge_status import public_router as knowledge_router
 from .logging import configure_logging
 from .management import public_router as admin_invitation_router
 from .management import router as management_router
@@ -64,6 +67,10 @@ app.include_router(admin_configuration_router)
 app.include_router(customer_support_router)
 app.include_router(reseller_support_router)
 app.include_router(admin_support_router)
+app.include_router(knowledge_router)
+app.include_router(admin_knowledge_router)
+app.include_router(status_router)
+app.include_router(admin_status_router)
 
 
 @app.get("/health")

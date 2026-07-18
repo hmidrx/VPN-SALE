@@ -251,3 +251,7 @@ Milestone 5-C adds backend reseller account lifecycle, tier/limit policy, wholes
 
 ## Milestone 5-E omnichannel support
 Milestone 5-E adds the support/ticketing boundary for customers, resellers, agents, admin-web, customer-web, reseller-web and Telegram Mini App/Bot. It introduces normalized support schema, stable support permissions, domain lifecycle/idempotency/attachment/CSAT rules and Persian RTL support entry points without implementing knowledge-base publishing, VPN providers, provisioning, service/config delivery or financial mutations from chat. See `docs/milestones/MILESTONE_5_E_PLAN.md`.
+
+## Milestone 5-F knowledge and status platform
+
+Milestone 5-F adds safe versioned educational content, Persian-ready search, FAQ/troubleshooting, contextual guide recommendations, article feedback, Telegram education/status actions and a public status platform for existing application components only. It does not add VPN provider health, provisioning, subscription delivery, real payment gateways, fabricated uptime or unverified application downloads.

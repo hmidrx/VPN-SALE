@@ -11,6 +11,8 @@ class MiniAppRoute(StrEnum):
     SECURITY = "security"
     WALLET = "wallet"
     SUPPORT = "support"
+    EDUCATION = "education"
+    STATUS = "status"
 
 
 ROUTE_PATHS = {
@@ -19,6 +21,8 @@ ROUTE_PATHS = {
     MiniAppRoute.SECURITY: "/security",
     MiniAppRoute.WALLET: "/wallet",
     MiniAppRoute.SUPPORT: "/support",
+    MiniAppRoute.EDUCATION: "/education",
+    MiniAppRoute.STATUS: "/status",
 }
 FORBIDDEN_QUERY = {
     "token",

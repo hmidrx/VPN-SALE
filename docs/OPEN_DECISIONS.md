@@ -92,3 +92,6 @@ Future decisions: choose S3-compatible production storage, finalize status-page 
 
 ## Milestone 5-E open decisions
 Full-text message search, production malware-scanner implementation, long-term legal deletion workflows, private support-team bridge activation and realtime transport choice require operational approval before production enablement.
+
+## Milestone 5-F open decisions
+Future decisions: production malware scanner selection, external video provider allowlist, verified application download URL policy and service-specific guide targeting after provisioning exists.
