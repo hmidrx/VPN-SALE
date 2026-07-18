@@ -118,3 +118,7 @@ Provider mutations remain disabled. The write-contract layer supports only sanit
 
 ## Migration tests
 Milestone 6-C2 tests cover eligibility, deterministic target simulation, capacity reservation, source snapshots, credential preservation/rotation, cutover idempotency, source cleanup safety, failover boundaries, orphan reconciliation, rollback boundaries, approval isolation and no secret or infrastructure leakage. Provider tests must use exact certified mocks only.
+
+## Milestone 6-D2 fleet operations
+
+Fleet operations add a typed hierarchy for providers, panels, nodes, inbounds and allocation targets; immutable health observations/evaluations; integer capacity snapshots/forecasts; maintenance, drain, evacuation, failover/recovery proposals, bounded bulk operations and typed runbooks. Fleet code orchestrates existing certified application services only and does not call provider transports directly. Customer/reseller exposure remains safe impact-only and never includes credentials, raw provider payloads, panel URLs or infrastructure identifiers.

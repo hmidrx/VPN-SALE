@@ -275,3 +275,7 @@ Milestone 6-C1 adds the controlled service-operation platform for renewals, traf
 
 ## Milestone 6-C2 service migration
 The platform now includes a domain model, migration schema, safe API shells and admin/customer UI surfaces for controlled service migration and failover. Migrations preserve the commercial service and stable subscription URL, reserve target capacity before provisioning, use only certified provider-operation writes, verify targets before cutover, retain source capacity until cleanup and expose only safe status to customers/resellers.
+
+## Milestone 6-D2 fleet operations
+
+Milestone 6-D2 adds the admin fleet operations console and backend/domain foundations for fleet hierarchy, typed health evidence with freshness/confidence/hysteresis, integer capacity accounting, deterministic forecasts, maintenance windows, allocation drain, controlled evacuation, failover/recovery proposals, bounded bulk operations and typed runbooks. It does not implement unattended failover or claim verified customer data-plane connectivity.
