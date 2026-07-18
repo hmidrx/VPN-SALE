@@ -108,3 +108,7 @@ Structured blocks reject scripts, event handlers, arbitrary HTML and unsafe URLs
 ## Milestone 6-A2A provider write safety gate
 
 Provider mutations remain disabled. The write-contract layer supports only sanitized preflight and dry-run planning for 3X-UI v3.5.0, Alireza X-UI v1.11.3 and PasarGuard panel v4.0.2. PasarGuard v5.1.0/OpenAPI/API-key assumptions from Milestone 6-A1 are invalidated and require re-certification against the corrected contract digest. No real panel write, provisioning, subscription delivery or configuration generation is enabled by default.
+
+## Provider mutation secret handling
+
+Provider mutation attempts never store raw request bodies, cookies, protocol credentials or full panel URLs. Protocol credentials are generated with secure randomness, encrypted through the provider vault boundary and compared only by non-reversible fingerprints. Ambiguous transport outcomes are reconciled before retry to avoid duplicate or destructive writes.
