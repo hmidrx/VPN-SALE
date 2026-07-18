@@ -57,6 +57,13 @@ CERTIFIED_CONTRACTS: dict[ProviderKind, ProviderContractVersion] = {
 
 
 @dataclass(frozen=True)
+class PanelHealth:
+    healthy: bool
+    latency_ms: int | None = None
+    version: str | None = None
+
+
+@dataclass(frozen=True)
 class SanitizedHttpResponse:
     status_code: int
     json_body: object | None

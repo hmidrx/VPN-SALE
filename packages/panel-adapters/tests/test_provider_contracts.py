@@ -4,7 +4,7 @@ import asyncio
 import base64
 
 import pytest
-from panel_adapters.contracts import AdapterRegistry, EndpointValidator
+from panel_adapters.contracts import AdapterRegistry, EndpointValidator, SanitizedHttpResponse
 from panel_adapters.live_certification import main
 from panel_adapters.vault import ProviderCredentialVault
 from vpnsale_domain.providers import (
@@ -15,6 +15,7 @@ from vpnsale_domain.providers import (
     ProviderError,
     ProviderErrorCode,
     ProviderKind,
+    ProviderRequestContext,
 )
 
 
@@ -97,3 +98,97 @@ def test_endpoint_validator_rejects_unsafe_schemes() -> None:
 def test_live_certification_requires_acknowledgement(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--panel-reference", "panel_123"]) == 2
     assert "without --live" in capsys.readouterr().out
+
+
+class InventoryTransport:
+    def __init__(self, inventory: object, nodes: object | None = None) -> None:
+        self.inventory: object = inventory
+        self.nodes: object = () if nodes is None else nodes
+        self.paths: list[str] = []
+
+    async def get(self, path: str, headers: dict[str, str] | None = None):
+        from panel_adapters.contracts import SanitizedHttpResponse
+
+        self.paths.append(path)
+        if "status" in path:
+            return SanitizedHttpResponse(200, {"version": "3.5.0"}, {}, 0)
+        if "nodes" in path:
+            return SanitizedHttpResponse(200, self.nodes, {}, 0)
+        return SanitizedHttpResponse(200, self.inventory, {}, 0)
+
+    async def post_form(
+        self, path: str, form: dict[str, str], headers: dict[str, str] | None = None
+    ) -> SanitizedHttpResponse:
+        raise AssertionError("mutation endpoint was called")
+
+
+def _ctx() -> ProviderRequestContext:
+    from uuid import uuid4
+
+    from vpnsale_domain.providers import (
+        PanelInstance,
+        PanelReference,
+        ProviderKind,
+    )
+
+    return ProviderRequestContext(
+        PanelInstance(
+            uuid4(),
+            PanelReference("panel_test"),
+            ProviderKind.SANAEI_3X_UI,
+            "test",
+            "https://panel.example",
+            "",
+            "enabled",
+        )
+    )
+
+
+def test_malformed_top_level_status_is_rejected() -> None:
+    from panel_adapters.sanaei_3x_ui import Sanaei3xUiAdapter
+
+    class BadStatusTransport(InventoryTransport):
+        async def get(self, path: str, headers: dict[str, str] | None = None):
+            from panel_adapters.contracts import SanitizedHttpResponse
+
+            if "status" in path:
+                return SanitizedHttpResponse(200, ["bad-envelope"], {}, 0)
+            return await super().get(path, headers)
+
+    with pytest.raises(ProviderError) as exc:
+        asyncio.run(Sanaei3xUiAdapter().detect_version(BadStatusTransport([])))
+    assert exc.value.code is ProviderErrorCode.PROVIDER_RESPONSE_INVALID
+
+
+@pytest.mark.parametrize(
+    "inventory",
+    [
+        {"obj": {"not": "a-list"}},
+        ["not-object"],
+        [{"id": 1, "protocol": "vless", "port": "not-int"}],
+        [{"id": 1, "protocol": "vless", "enable": "yes"}],
+        [{"id": 1, "protocol": "vless", "clients": [{"id": "c", "expiryTime": "never"}]}],
+        [{"id": 1, "protocol": "vless", "settings": "{"}],
+        [{"id": 1, "protocol": "vless", "clients": [{"id": {"bad": "identifier"}}]}],
+    ],
+)
+def test_malformed_inventory_payloads_are_rejected(inventory: object) -> None:
+    from panel_adapters.sanaei_3x_ui import Sanaei3xUiAdapter
+
+    with pytest.raises(ProviderError) as exc:
+        asyncio.run(Sanaei3xUiAdapter().fetch_inventory(_ctx(), InventoryTransport(inventory)))
+    assert exc.value.code is ProviderErrorCode.PROVIDER_RESPONSE_INVALID
+
+
+def test_null_and_missing_client_statistics_are_distinct_but_safe() -> None:
+    from panel_adapters.sanaei_3x_ui import Sanaei3xUiAdapter
+
+    inventory: list[dict[str, object]] = [
+        {"id": 1, "protocol": "vless", "clientStats": None},
+        {"id": 2, "protocol": "trojan"},
+    ]
+    snapshot = asyncio.run(
+        Sanaei3xUiAdapter().fetch_inventory(_ctx(), InventoryTransport(inventory))
+    )
+    assert len(snapshot.inbounds) == 2
+    assert snapshot.clients == ()

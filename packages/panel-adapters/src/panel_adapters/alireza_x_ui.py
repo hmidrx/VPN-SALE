@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import cast
+
 from vpnsale_domain.providers import (
     PanelConnectionTest,
     PanelVersionDetection,
@@ -26,29 +29,133 @@ from panel_adapters.contracts import (
     SecureHttpTransport,
     capability_matrix,
 )
+from panel_adapters.parsing import (
+    JsonMapping,
+    first_present,
+    optional_bool,
+    optional_epoch_datetime,
+    optional_identifier,
+    optional_non_negative_int,
+    optional_sequence,
+    optional_string,
+    parse_json_mapping_string,
+    require_identifier,
+    require_mapping,
+    require_sequence,
+    require_string,
+)
 
 
-def _list(body: object) -> list[object]:
-    if isinstance(body, list):
-        return body
-    if isinstance(body, dict):
+def _enveloped_sequence(body: object, field: str) -> tuple[JsonMapping, ...]:
+    if isinstance(body, Sequence) and not isinstance(body, str | bytes):
+        source = require_sequence(cast(Sequence[object], body), field)
+    else:
+        envelope = require_mapping(body, field)
+        source = None
         for key in ("obj", "data", "results", "users", "nodes", "inbounds"):
-            item = body.get(key)
-            if isinstance(item, list):
-                return item
-    return []
+            candidate = optional_sequence(envelope.get(key), f"{field}.{key}")
+            if candidate is not None:
+                source = candidate
+                break
+        if source is None:
+            raise ProviderError(
+                ProviderErrorCode.PROVIDER_RESPONSE_INVALID, f"invalid_list:{field}"
+            )
+    items: list[JsonMapping] = []
+    for index, value in enumerate(source):
+        items.append(require_mapping(value, f"{field}[{index}]"))
+    return tuple(items)
 
 
-def _str(value: object, default: str = "") -> str:
-    return value if isinstance(value, str) else default
+def _client_sequence(inbound: JsonMapping, field: str) -> tuple[JsonMapping, ...]:
+    direct = optional_sequence(inbound.get("clients"), f"{field}.clients")
+    stats = optional_sequence(inbound.get("clientStats"), f"{field}.clientStats")
+    source = direct if direct is not None else stats
+    if source is None:
+        settings = parse_json_mapping_string(inbound.get("settings"), f"{field}.settings")
+        source = optional_sequence(
+            settings.get("clients") if settings is not None else None, f"{field}.settings.clients"
+        )
+    if source is None:
+        return ()
+    clients: list[JsonMapping] = []
+    for index, value in enumerate(source):
+        clients.append(require_mapping(value, f"{field}.clients[{index}]"))
+    return tuple(clients)
 
 
-def _int(value: object) -> int | None:
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str) and value.isdigit():
-        return int(value)
-    return None
+def _node_snapshot(item: JsonMapping, field: str) -> RemoteNodeSnapshot:
+    remote_id = require_identifier(first_present(item, ("id", "uuid", "node_id")), f"{field}.id")
+    display_name = (
+        optional_string(first_present(item, ("name", "remark", "display_name")), f"{field}.name")
+        or "local"
+    )
+    return RemoteNodeSnapshot(
+        RemoteIdentifier(remote_id),
+        display_name,
+        optional_string(item.get("status"), f"{field}.status"),
+        optional_string(item.get("version"), f"{field}.version"),
+        optional_string(first_present(item, ("core", "supported_core")), f"{field}.core"),
+    )
+
+
+def _inbound_snapshot(item: JsonMapping, field: str, digest: str) -> RemoteInboundSnapshot:
+    stream = parse_json_mapping_string(item.get("streamSettings"), f"{field}.streamSettings")
+    inbound_id = require_identifier(
+        first_present(item, ("id", "uuid", "inbound_id")), f"{field}.id"
+    )
+    node_id = optional_identifier(first_present(item, ("node_id", "nodeId")), f"{field}.node_id")
+    transport = optional_string(first_present(item, ("transport", "network")), f"{field}.transport")
+    security = optional_string(item.get("security"), f"{field}.security")
+    if stream is not None:
+        transport = transport or optional_string(
+            stream.get("network"), f"{field}.streamSettings.network"
+        )
+        security = security or optional_string(
+            stream.get("security"), f"{field}.streamSettings.security"
+        )
+    listen = optional_string(item.get("listen"), f"{field}.listen")
+    return RemoteInboundSnapshot(
+        RemoteIdentifier(inbound_id),
+        RemoteIdentifier(node_id) if node_id is not None else None,
+        optional_string(first_present(item, ("remark", "name")), f"{field}.remark"),
+        require_string(item.get("protocol"), f"{field}.protocol"),
+        optional_non_negative_int(item.get("port"), f"{field}.port"),
+        "explicit" if listen else "any",
+        transport,
+        security,
+        optional_bool(first_present(item, ("enable", "enabled")), f"{field}.enabled"),
+        optional_non_negative_int(
+            first_present(item, ("client_count", "clientCount")), f"{field}.client_count"
+        ),
+        optional_non_negative_int(item.get("up"), f"{field}.up"),
+        optional_non_negative_int(item.get("down"), f"{field}.down"),
+        digest,
+    )
+
+
+def _client_snapshot(
+    item: JsonMapping, inbound_id: RemoteIdentifier, field: str, version: str
+) -> RemoteClientSnapshot:
+    identity = require_identifier(
+        first_present(item, ("id", "email", "password", "username")), f"{field}.identity"
+    )
+    return RemoteClientSnapshot(
+        RemoteIdentifier(identity),
+        (inbound_id,),
+        optional_bool(first_present(item, ("enable", "enabled")), f"{field}.enabled"),
+        optional_non_negative_int(
+            first_present(item, ("total", "data_limit")), f"{field}.traffic_limit"
+        ),
+        optional_non_negative_int(item.get("up"), f"{field}.up"),
+        optional_non_negative_int(item.get("down"), f"{field}.down"),
+        optional_epoch_datetime(
+            first_present(item, ("expiryTime", "expiry", "expire")), f"{field}.expiry"
+        ),
+        optional_bool(item.get("online"), f"{field}.online"),
+        optional_string(first_present(item, ("email", "remark")), f"{field}.remark"),
+        version,
+    )
 
 
 class AlirezaXuiAdapter:
@@ -71,18 +178,9 @@ class AlirezaXuiAdapter:
                 None,
                 self.definition,
             )
-        if not isinstance(response.json_body, dict):
-            return PanelVersionDetection(
-                ProviderKind.ALIREZA_X_UI,
-                None,
-                ProviderCertificationStatus.DEGRADED,
-                None,
-                self.definition,
-            )
-        version = _str(
-            response.json_body.get("version")
-            or response.json_body.get("app_version")
-            or response.json_body.get("panelVersion")
+        body = require_mapping(response.json_body, "status")
+        version = optional_string(
+            first_present(body, ("version", "app_version", "panelVersion")), "status.version"
         )
         status = (
             ProviderCertificationStatus.CONTRACT_VERIFIED
@@ -91,7 +189,7 @@ class AlirezaXuiAdapter:
         )
         return PanelVersionDetection(
             ProviderKind.ALIREZA_X_UI,
-            version or None,
+            version,
             status,
             self.contract.contract_digest,
             self.definition,
@@ -118,7 +216,10 @@ class AlirezaXuiAdapter:
         self, ctx: ProviderRequestContext, transport: SecureHttpTransport
     ) -> RemoteServerSnapshot:
         detection = await self.detect_version(transport)
-        if detection.certification_status != ProviderCertificationStatus.CONTRACT_VERIFIED:
+        if (
+            detection.certification_status != ProviderCertificationStatus.CONTRACT_VERIFIED
+            or detection.remote_version is None
+        ):
             raise ProviderError(
                 ProviderErrorCode.PROVIDER_VERSION_UNSUPPORTED,
                 "inventory blocked for uncertified contract",
@@ -126,70 +227,27 @@ class AlirezaXuiAdapter:
         nodes_response = await transport.get("/xui/API/inbounds/list")
         inbounds_response = await transport.get("/xui/API/outbounds")
         nodes = tuple(
-            RemoteNodeSnapshot(
-                RemoteIdentifier(_str(x.get("id") if isinstance(x, dict) else None, "local")),
-                _str(x.get("name") if isinstance(x, dict) else None, "local"),
-                _str(x.get("status") if isinstance(x, dict) else None) or None,
-                _str(x.get("version") if isinstance(x, dict) else None) or None,
-                _str(x.get("core") if isinstance(x, dict) else None) or None,
-            )
-            for x in _list(nodes_response.json_body)
-            if isinstance(x, dict)
+            _node_snapshot(item, f"nodes[{index}]")
+            for index, item in enumerate(_enveloped_sequence(nodes_response.json_body, "nodes"))
         )
         inbounds: list[RemoteInboundSnapshot] = []
         clients: list[RemoteClientSnapshot] = []
-        for item in _list(inbounds_response.json_body):
-            if not isinstance(item, dict):
-                continue
-            inbound_id = RemoteIdentifier(str(item.get("id", item.get("uuid", "unknown"))))
-            inbounds.append(
-                RemoteInboundSnapshot(
-                    inbound_id,
-                    None,
-                    _str(item.get("remark") or item.get("name")) or None,
-                    _str(item.get("protocol"), "unknown"),
-                    _int(item.get("port")),
-                    "explicit" if item.get("listen") else "any",
-                    _str(item.get("transport") or item.get("network")) or None,
-                    _str(item.get("security")) or None,
-                    bool(item.get("enable", item.get("enabled", True))),
-                    _int(item.get("client_count") or item.get("clientCount")),
-                    _int(item.get("up")),
-                    _int(item.get("down")),
-                    self.contract.contract_digest,
+        for index, item in enumerate(_enveloped_sequence(inbounds_response.json_body, "inventory")):
+            inbound = _inbound_snapshot(item, f"inventory[{index}]", self.contract.contract_digest)
+            inbounds.append(inbound)
+            for client_index, client in enumerate(_client_sequence(item, f"inventory[{index}]")):
+                clients.append(
+                    _client_snapshot(
+                        client,
+                        inbound.remote_inbound_id,
+                        f"inventory[{index}].clients[{client_index}]",
+                        detection.remote_version,
+                    )
                 )
-            )
-            for c in _list(
-                item.get("clients")
-                if isinstance(item.get("clients"), list)
-                else item.get("clientStats")
-            ):
-                if isinstance(c, dict):
-                    ident = str(
-                        c.get("id")
-                        or c.get("email")
-                        or c.get("password")
-                        or c.get("username")
-                        or "unknown"
-                    )
-                    clients.append(
-                        RemoteClientSnapshot(
-                            RemoteIdentifier(ident),
-                            (inbound_id,),
-                            bool(c.get("enable", c.get("enabled", True))),
-                            _int(c.get("total") or c.get("data_limit")),
-                            _int(c.get("up")),
-                            _int(c.get("down")),
-                            None,
-                            c.get("online") if isinstance(c.get("online"), bool) else None,
-                            _str(c.get("email") or c.get("remark")) or None,
-                            detection.remote_version or "unknown",
-                        )
-                    )
         return RemoteServerSnapshot(
             ProviderKind.ALIREZA_X_UI,
             self.definition,
-            detection.remote_version or "unknown",
+            detection.remote_version,
             ProviderHealthCheck("ok", 0, None),
             nodes,
             tuple(inbounds),
