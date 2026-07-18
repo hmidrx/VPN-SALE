@@ -271,3 +271,7 @@ Milestone 6-B2 adds the store-owned delivery boundary for verified services: ver
 ## Milestone 6-C1 service operations
 
 Milestone 6-C1 adds the controlled service-operation platform for renewals, traffic/duration/limit changes, suspend/resume, traffic reset, IP/HWID clearing, credential rotation, subscription revocation/rotation, delivery refresh, approval, reconciliation and compensation. Billable changes remain separate from technical operations and use new immutable commerce records; provider effects must flow through the certified 6-A2B operation engine with read-after-write verification.
+
+
+## Milestone 6-C2 service migration
+The platform now includes a domain model, migration schema, safe API shells and admin/customer UI surfaces for controlled service migration and failover. Migrations preserve the commercial service and stable subscription URL, reserve target capacity before provisioning, use only certified provider-operation writes, verify targets before cutover, retain source capacity until cleanup and expose only safe status to customers/resellers.

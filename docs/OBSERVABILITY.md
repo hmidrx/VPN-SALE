@@ -90,3 +90,7 @@ Metrics and logs must use low-cardinality outcomes for publication, search, medi
 ## Milestone 6-A2A provider write safety gate
 
 Provider mutations remain disabled. The write-contract layer supports only sanitized preflight and dry-run planning for 3X-UI v3.5.0, Alireza X-UI v1.11.3 and PasarGuard panel v4.0.2. PasarGuard v5.1.0/OpenAPI/API-key assumptions from Milestone 6-A1 are invalidated and require re-certification against the corrected contract digest. No real panel write, provisioning, subscription delivery or configuration generation is enabled by default.
+
+
+## Migration observability
+Add low-cardinality metrics for eligibility, simulation, reservation, target provisioning, time to verified target, cutover, dual-active duration, source cleanup, rollback, failover, reconciliation, orphan identity count and manual-review backlog. Labels must not include service references, customer IDs, panel URLs, node/inbound IDs, credentials or remote identities.

@@ -84,3 +84,7 @@ Milestone 5-E mitigates cross-tenant ticket access, unauthorized internal-note r
 ## Milestone 6-A2A provider write safety gate
 
 Provider mutations remain disabled. The write-contract layer supports only sanitized preflight and dry-run planning for 3X-UI v3.5.0, Alireza X-UI v1.11.3 and PasarGuard panel v4.0.2. PasarGuard v5.1.0/OpenAPI/API-key assumptions from Milestone 6-A1 are invalidated and require re-certification against the corrected contract digest. No real panel write, provisioning, subscription delivery or configuration generation is enabled by default.
+
+
+## Migration abuse cases
+Security Center events are required for client-supplied target manipulation, cross-owner access, self-approval, credential-preservation bypass, target-capacity bypass, write-certification bypass, stale-plan cutover, destructive cleanup without approval and orphan identity discovery.

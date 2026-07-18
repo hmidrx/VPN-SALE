@@ -68,3 +68,7 @@ Provider mutations remain disabled. The write-contract layer supports only sanit
 ## Provider mutation permissions
 
 Milestone 6-A2B adds provider canary, write-enable, operation, reconciliation and compensation permissions. They are seeded idempotently for Super Admin only; requester self-approval is denied and canary execution does not grant production mutation capability.
+
+
+## Migration permissions
+Milestone 6-C2 adds granular permissions for service migration read/manage/simulate/request/approve/execute/cutover/cleanup/rollback/compensate, failover proposal read/manage, orphan identity read/manage and migration policy manage/publish. Request and approval are separate; high-risk self-approval is denied.

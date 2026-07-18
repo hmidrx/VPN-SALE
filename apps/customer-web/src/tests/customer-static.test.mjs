@@ -70,3 +70,16 @@ assert.match(source("components/Payments.tsx"), /مبلغ فاکتور غیرق�
 assert.match(source("components/Payments.tsx"), /هیچ سرویس، QR یا لینک پیکربندی/);
 assert.doesNotMatch(source("components/Payments.tsx"), /force.*success|fake.*success|card-number|CVV|crypto|subscription URL/i);
 assert.match(source("components/CustomerApp.tsx"), /href="\/payments"/);
+
+assert.match(source("../app/services/[serviceReference]/migration/page.tsx"), /params: Promise<\{ serviceReference: string \}>/);
+assert.match(source("../app/services/[serviceReference]/migration/page.tsx"), /await params/);
+assert.match(source("../app/services/[serviceReference]/migration/page.tsx"), /isOpaqueServiceReference\(serviceReference\)/);
+assert.match(source("../app/services/[serviceReference]/migration/page.tsx"), /notFound\(\)/);
+assert.match(source("service-migrations/status.tsx"), /SVC\|svc/);
+assert.match(source("service-migrations/status.tsx"), /UNAUTHORIZED/);
+assert.match(source("service-migrations/status.tsx"), /LOADING/);
+assert.match(source("service-migrations/status.tsx"), /ERROR/);
+assert.match(source("service-migrations/status.tsx"), /data-migration-status/);
+assert.match(source("service-migrations/status.tsx"), /ارتباط با پشتیبانی/);
+assert.doesNotMatch(source("service-migrations/status.tsx"), /panel|node|inbound|provider|credential|subscription token|localStorage|sessionStorage|indexedDB/i);
+assert.doesNotMatch(source("../app/services/[serviceReference]/migration/page.tsx"), /panel|node|inbound|provider|credential|localStorage|sessionStorage|indexedDB|as |any|unknown|@ts-/i);

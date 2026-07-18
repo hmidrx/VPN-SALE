@@ -33,6 +33,11 @@ from .payments import customer_router as payment_router
 from .payments import webhook_router as payment_webhook_router
 from .resellers import admin_router as admin_reseller_router
 from .resellers import reseller_router
+from .service_migrations import admin_router as admin_service_migration_router
+from .service_migrations import customer_router as customer_service_migration_router
+from .service_migrations import failover_router as admin_failover_router
+from .service_migrations import orphan_router as admin_orphan_router
+from .service_migrations import reseller_router as reseller_service_migration_router
 from .service_operations import admin_router as admin_service_operation_router
 from .service_operations import customer_router as customer_service_operation_router
 from .service_operations import reseller_router as reseller_service_operation_router
@@ -86,6 +91,11 @@ app.include_router(customer_service_router)
 app.include_router(admin_allocation_router)
 app.include_router(admin_service_reconciliation_router)
 app.include_router(admin_service_operation_router)
+app.include_router(admin_service_migration_router)
+app.include_router(customer_service_migration_router)
+app.include_router(reseller_service_migration_router)
+app.include_router(admin_failover_router)
+app.include_router(admin_orphan_router)
 app.include_router(customer_service_operation_router)
 app.include_router(reseller_service_operation_router)
 app.include_router(admin_delivery_router)

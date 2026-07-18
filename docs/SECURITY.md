@@ -112,3 +112,7 @@ Provider mutations remain disabled. The write-contract layer supports only sanit
 ## Provider mutation secret handling
 
 Provider mutation attempts never store raw request bodies, cookies, protocol credentials or full panel URLs. Protocol credentials are generated with secure randomness, encrypted through the provider vault boundary and compared only by non-reversible fingerprints. Ambiguous transport outcomes are reconciled before retry to avoid duplicate or destructive writes.
+
+
+## Service migration security
+Migration records store digests and safe references only. Plaintext credentials, subscription tokens, raw provider payloads, panel URLs and node/inbound identifiers are forbidden in logs, metrics, audit and browser storage. Destructive source cleanup and orphan deletion require ownership evidence and approval.
