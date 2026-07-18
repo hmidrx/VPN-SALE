@@ -101,3 +101,6 @@ Public configuration rejects arbitrary JavaScript, CSS, HTML, executable templat
 
 ## Support security
 Support messages reject unsafe/scriptable content; attachments are validated by content and MIME, executable/archive/script/html inputs are rejected or quarantined, and malicious upload attempts create Security Center events. Raw Telegram IDs, initData, tokens, bot tokens, storage paths and full message bodies must not appear in logs, URLs, notifications or browser persistence.
+
+## Milestone 5-F content and media security
+Structured blocks reject scripts, event handlers, arbitrary HTML and unsafe URLs. Educational media is inspected by content, quarantines executable/HTML-like payloads and exposes opaque references only.

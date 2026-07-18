@@ -57,3 +57,6 @@ Configuration permissions are separate: read, manage, preview, publish, schedule
 
 ## Support permissions
 Milestone 5-E adds granular `support.*` permissions. `support.read`, `support.reply`, `support.assign`, internal-note, attachment, queue/category/SLA, canned-response/macro, merge, escalation, Telegram bridge and reporting permissions are separate. Customer and reseller tokens are denied from agent APIs; frontend hiding is not authorization.
+
+## Milestone 5-F permissions
+Knowledge and status permissions are separately seeded. Read, manage, publish, rollback, media, feedback, component, incident, maintenance and notification permissions do not imply each other.

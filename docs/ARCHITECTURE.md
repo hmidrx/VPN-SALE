@@ -69,3 +69,6 @@ Milestone 5-A centralizes branding, themes, content templates, feature flags, sa
 
 ## Milestone 5-E support architecture
 Support is implemented as a domain-owned conversation/ticket module. FastAPI routes remain thin; frontend and Telegram handlers do not contain business rules. PostgreSQL stores conversations, messages, assignments, SLA, attachments, merges, CSAT and notification/idempotency records. Realtime and Telegram delivery are downstream from committed durable records.
+
+## Milestone 5-F knowledge and status platform
+Knowledge and status rules are domain-owned, versioned and safe-by-default; FastAPI routes expose thin published projections only.

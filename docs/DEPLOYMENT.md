@@ -91,3 +91,6 @@ Administrator payment operations are represented in admin-web as a safe operatio
 
 ## Support deployment notes
 Support private Telegram team bridge is disabled by default and requires validated allowlisted private chat configuration plus linked agent identities. Attachment storage/scanning must be configured without public URLs. Realtime Redis/SSE/WebSocket failure must fall back to polling because PostgreSQL/outbox remains authoritative.
+
+## Milestone 5-F deployment
+Production deployments must configure Redis cache, transactional outbox workers, local-development or S3-compatible educational media storage, scanner adapter settings and public status cache headers before enabling administrator publication.

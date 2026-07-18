@@ -11,6 +11,10 @@ class CallbackAction(StrEnum):
     PRIVACY = "privacy"
     PROFILE = "profile"
     SECURITY = "security"
+    OPEN_EDUCATION = "edu"
+    SEARCH_GUIDES = "guide_search"
+    SHOW_FAQ = "faq"
+    OPEN_STATUS_PAGE = "status"
 
 
 @dataclass(frozen=True)

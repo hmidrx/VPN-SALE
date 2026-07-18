@@ -62,3 +62,6 @@ Milestone 5-A adds configuration definitions, drafts, releases, release items, v
 
 ## Support schema
 Revision `0014_milestone_5e_support` adds normalized support tables for categories, calendars, SLA policies, queues/teams, conversations, messages/revisions/deliveries, assignments/status history, attachments, canned responses/macros, tags, merges, CSAT, Telegram mappings, idempotency and notifications. The migration seeds stable UUID support permissions and grants them to Super Admin idempotently.
+
+## Milestone 5-F schema
+Migration 0015 adds knowledge spaces/categories/articles/versions/blocks/previews/media/feedback/troubleshooting and status components/incidents/maintenance/notifications using UUID primary keys, stable codes, immutable publication boundaries and audience/status indexes.

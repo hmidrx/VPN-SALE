@@ -107,3 +107,6 @@ Configuration tests cover lifecycle, validation, publishing, rollback, feature r
 
 ## Support testing
 Milestone 5-E tests cover participant isolation, internal-note privacy, assignment conflicts, legal status transitions, message ordering and deduplication, attachment quarantine/rejection, canned response placeholder allowlists, CSAT cycles and same-requester merge rules. E2E support flows must not call real VPN or payment providers.
+
+## Milestone 5-F tests
+Deterministic domain, API and Telegram bot tests cover publication immutability, preview expiry, unsafe block/media rejection, Persian normalization, guide recommendations, status UNKNOWN defaults and no fabricated VPN health.
