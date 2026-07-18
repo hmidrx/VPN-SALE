@@ -47,10 +47,10 @@ CERTIFIED_CONTRACTS: dict[ProviderKind, ProviderContractVersion] = {
     ),
     ProviderKind.PASARGUARD: ProviderContractVersion(
         upstream_repository="https://github.com/PasarGuard/panel",
-        release_tag="v5.1.0",
-        commit_sha="c8886ab8b74f7786c5e3c4312b38f5171d7649a1",
-        release_date="2026-07-14",
-        contract_digest="sha256:pasarguard-v5.1.0-read-only-contract",
+        release_tag="v4.0.2",
+        commit_sha="0b0ddaa9a5a9a3d7402f5f5a274a1a77f743d4bf",
+        release_date="2026-05-17",
+        contract_digest="sha256:pasarguard-v4.0.2-read-write-a2a-corrected-contract",
         extraction_date="2026-07-18",
     ),
 }

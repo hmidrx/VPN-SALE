@@ -1,6 +1,6 @@
 # Milestone 6-A1 — Production provider core and read-only certified adapters
 
-Extraction date: 2026-07-18. Official GitHub release pages were rechecked on 2026-07-18; stable latest releases remained MHSanaei/3x-ui v3.5.0, alireza0/x-ui v1.11.3 and PasarGuard/panel v5.1.0. Development builds and prereleases were ignored.
+Extraction date: 2026-07-18. Official GitHub release pages were rechecked on 2026-07-18; stable latest releases remained MHSanaei/3x-ui v3.5.0, alireza0/x-ui v1.11.3 and PasarGuard/panel v4.0.2 after Milestone 6-A2A correction; the prior v5.1.0 target is invalidated. Development builds and prereleases were ignored.
 
 ## Scope
 

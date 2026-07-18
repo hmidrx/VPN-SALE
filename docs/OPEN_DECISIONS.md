@@ -1,6 +1,6 @@
 # Open Decisions
 
-Open decisions: legal markets and currencies; exact PasarGuard OpenAPI schema; exact Sanaei 3x-ui installed version/API; payment providers and credentials; SMS/email providers; production hosting region; final charting package; whether admin TOTP is mandatory at launch; reseller credit policy; data retention durations.
+Open decisions: legal markets and currencies; PasarGuard panel v4.0.2 write canary credentials and staging route evidence; exact Sanaei 3x-ui installed version/API; payment providers and credentials; SMS/email providers; production hosting region; final charting package; whether admin TOTP is mandatory at launch; reseller credit policy; data retention durations.
 
 Milestone 0 infrastructure decision: commit the generated `package-lock.json` after the first successful Codespaces bootstrap; remove the temporary no-lockfile CI fallback in a follow-up Milestone 0 cleanup once the lockfile is present.
 
@@ -95,3 +95,7 @@ Full-text message search, production malware-scanner implementation, long-term l
 
 ## Milestone 5-F open decisions
 Future decisions: production malware scanner selection, external video provider allowlist, verified application download URL policy and service-specific guide targeting after provisioning exists.
+
+## Milestone 6-A2A provider write safety gate
+
+Provider mutations remain disabled. The write-contract layer supports only sanitized preflight and dry-run planning for 3X-UI v3.5.0, Alireza X-UI v1.11.3 and PasarGuard panel v4.0.2. PasarGuard v5.1.0/OpenAPI/API-key assumptions from Milestone 6-A1 are invalidated and require re-certification against the corrected contract digest. No real panel write, provisioning, subscription delivery or configuration generation is enabled by default.

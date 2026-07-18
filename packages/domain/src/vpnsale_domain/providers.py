@@ -52,6 +52,9 @@ class ProviderCapability(StrEnum):
     CLIENT_DISABLE = "CLIENT_DISABLE"
     CLIENT_DELETE = "CLIENT_DELETE"
     CLIENT_TRAFFIC_RESET = "CLIENT_TRAFFIC_RESET"
+    CLIENT_IP_CLEAR = "CLIENT_IP_CLEAR"
+    CLIENT_TRAFFIC_LIMIT_UPDATE = "CLIENT_TRAFFIC_LIMIT_UPDATE"
+    CLIENT_DEVICE_LIMIT_UPDATE = "CLIENT_DEVICE_LIMIT_UPDATE"
     CLIENT_EXPIRY_UPDATE = "CLIENT_EXPIRY_UPDATE"
     CLIENT_REVOKE_SUBSCRIPTION = "CLIENT_REVOKE_SUBSCRIPTION"
     MULTI_INBOUND_ASSIGNMENT = "MULTI_INBOUND_ASSIGNMENT"
@@ -65,6 +68,9 @@ WRITE_CAPABILITIES = frozenset(
         ProviderCapability.CLIENT_DISABLE,
         ProviderCapability.CLIENT_DELETE,
         ProviderCapability.CLIENT_TRAFFIC_RESET,
+        ProviderCapability.CLIENT_IP_CLEAR,
+        ProviderCapability.CLIENT_TRAFFIC_LIMIT_UPDATE,
+        ProviderCapability.CLIENT_DEVICE_LIMIT_UPDATE,
         ProviderCapability.CLIENT_EXPIRY_UPDATE,
         ProviderCapability.CLIENT_REVOKE_SUBSCRIPTION,
         ProviderCapability.MULTI_INBOUND_ASSIGNMENT,
@@ -95,6 +101,7 @@ class ProviderErrorCode(StrEnum):
     PROVIDER_CAPABILITY_UNSUPPORTED = "PROVIDER_CAPABILITY_UNSUPPORTED"
     PROVIDER_SYNC_ALREADY_RUNNING = "PROVIDER_SYNC_ALREADY_RUNNING"
     PROVIDER_OPERATION_NOT_ENABLED = "PROVIDER_OPERATION_NOT_ENABLED"
+    PROVIDER_WRITE_NOT_ENABLED = "PROVIDER_WRITE_NOT_ENABLED"
     PROVIDER_CREDENTIAL_UNAVAILABLE = "PROVIDER_CREDENTIAL_UNAVAILABLE"
     CONCURRENT_MODIFICATION = "CONCURRENT_MODIFICATION"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
@@ -280,3 +287,145 @@ class ProviderSyncRun:
     started_at: datetime
     completed_at: datetime | None
     drift: tuple[ProviderDriftIssue, ...]
+
+
+class ProviderMutationOperation(StrEnum):
+    CREATE_REMOTE_IDENTITY = "CreateRemoteIdentity"
+    UPDATE_REMOTE_IDENTITY = "UpdateRemoteIdentity"
+    ENABLE_REMOTE_IDENTITY = "EnableRemoteIdentity"
+    DISABLE_REMOTE_IDENTITY = "DisableRemoteIdentity"
+    DELETE_REMOTE_IDENTITY = "DeleteRemoteIdentity"
+    RESET_REMOTE_TRAFFIC = "ResetRemoteTraffic"
+    CLEAR_REMOTE_CLIENT_IPS = "ClearRemoteClientIps"
+    SET_REMOTE_TRAFFIC_LIMIT = "SetRemoteTrafficLimit"
+    SET_REMOTE_EXPIRY = "SetRemoteExpiry"
+    SET_REMOTE_DEVICE_OR_IP_LIMIT = "SetRemoteDeviceOrIpLimit"
+    ATTACH_REMOTE_INBOUND = "AttachRemoteInbound"
+    DETACH_REMOTE_INBOUND = "DetachRemoteInbound"
+    ROTATE_REMOTE_CREDENTIAL = "RotateRemoteCredential"
+    REVOKE_REMOTE_SUBSCRIPTION_IDENTITY = "RevokeRemoteSubscriptionIdentity"
+
+
+class ProviderWriteState(StrEnum):
+    DISABLED = "DISABLED"
+    CONTRACT_ONLY = "CONTRACT_ONLY"
+    MOCK_VERIFIED = "MOCK_VERIFIED"
+    LIVE_READ_VERIFIED = "LIVE_READ_VERIFIED"
+    LIVE_WRITE_CANARY_REQUIRED = "LIVE_WRITE_CANARY_REQUIRED"
+    LIVE_WRITE_VERIFIED = "LIVE_WRITE_VERIFIED"
+    SUSPENDED = "SUSPENDED"
+
+
+class MutationPreflightStatus(StrEnum):
+    READY = "READY"
+    BLOCKED = "BLOCKED"
+    UNSUPPORTED = "UNSUPPORTED"
+    REQUIRES_RECERTIFICATION = "REQUIRES_RECERTIFICATION"
+    STALE_REMOTE_STATE = "STALE_REMOTE_STATE"
+    CONTRACT_MISMATCH = "CONTRACT_MISMATCH"
+    MANUAL_REVIEW_REQUIRED = "MANUAL_REVIEW_REQUIRED"
+
+
+class ProviderOperationState(StrEnum):
+    PLANNED = "PLANNED"
+    PREFLIGHT_FAILED = "PREFLIGHT_FAILED"
+    READY = "READY"
+    EXECUTION_DISABLED = "EXECUTION_DISABLED"
+    EXECUTING = "EXECUTING"
+    VERIFYING = "VERIFYING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    UNCERTAIN = "UNCERTAIN"
+    COMPENSATING = "COMPENSATING"
+    COMPENSATED = "COMPENSATED"
+    MANUAL_REVIEW = "MANUAL_REVIEW"
+
+
+@dataclass(frozen=True)
+class RemoteTrafficLimit:
+    bytes_limit: int | None
+    unlimited: bool = False
+
+    def __post_init__(self) -> None:
+        if self.unlimited == (self.bytes_limit is not None):
+            raise ValueError("traffic limit must be either unlimited or an explicit integer")
+        if self.bytes_limit is not None and self.bytes_limit < 0:
+            raise ValueError("traffic limit cannot be negative")
+
+
+@dataclass(frozen=True)
+class RemoteExpiryPolicy:
+    expires_at: datetime | None
+    no_expiry: bool = False
+
+    def __post_init__(self) -> None:
+        if self.no_expiry == (self.expires_at is not None):
+            raise ValueError("expiry must be either no_expiry or an explicit UTC instant")
+        if self.expires_at is not None and self.expires_at.tzinfo is None:
+            raise ValueError("expiry instant must be timezone-aware")
+
+
+@dataclass(frozen=True)
+class DesiredRemoteIdentity:
+    shop_identity_reference: str
+    protocol: str
+    enabled: bool
+    traffic_limit: RemoteTrafficLimit
+    expiry: RemoteExpiryPolicy
+    device_or_ip_limit: int | None
+    customer_safe_remark: str
+    provider_safe_label: str
+    inbound_assignments: tuple[RemoteIdentifier, ...]
+    credential_fingerprint: str | None = None
+    provider_options_digest: str | None = None
+
+
+@dataclass(frozen=True)
+class ProviderMutationCommand:
+    operation_id: UUID
+    operation: ProviderMutationOperation
+    service_reference: str
+    customer_reference: str
+    panel_reference: PanelReference
+    adapter_contract_version: str
+    expected_panel_version: str
+    target_remote_identity: RemoteIdentifier | None
+    target_inbound_relationships: tuple[RemoteIdentifier, ...]
+    desired_state: DesiredRemoteIdentity
+    expected_remote_snapshot: str | None
+    idempotency_scope: str
+    actor_reference: str
+    reason: str
+    requested_at: datetime
+    correlation_reference: str
+    causation_reference: str | None
+
+
+@dataclass(frozen=True)
+class MutationPreflightResult:
+    status: MutationPreflightStatus
+    operation: ProviderMutationOperation
+    capability: ProviderCapability | None
+    safe_reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DryRunMutationPlan:
+    provider: ProviderKind
+    adapter_contract_version: str
+    operation: ProviderMutationOperation
+    target_panel: PanelReference
+    target_remote_resource: RemoteIdentifier | None
+    affected_inbound_relationships: tuple[RemoteIdentifier, ...]
+    changed_fields: tuple[str, ...]
+    capability_evidence: tuple[ProviderCapabilityEvidence, ...]
+    sanitized_endpoint_identifier: str
+    expected_response_class: str
+    expected_postconditions: tuple[str, ...]
+    read_after_write_checks: tuple[str, ...]
+    compensation_strategy: str
+    retry_classification: str
+    risk_classification: str
+    warnings: tuple[str, ...]
+    expires_at: datetime
+    plan_digest: str
