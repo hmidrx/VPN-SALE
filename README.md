@@ -287,3 +287,9 @@ This repository now includes production-like staging/production Compose overlays
 ## Milestone 7-A2 quality and release hardening
 
 Release-candidate hardening is documented in `docs/milestones/MILESTONE_7_A2_PLAN.md` and ADR 0065. The implementation adds CI-safe quality domain checks, sanitized evidence metadata, release-defect records, granular quality/release permissions and an administrator quality/release console. Long-running load, soak, isolated DAST, chaos and live-provider certification are opt-in staging activities and must remain `NOT_RUN` when the required environment is unavailable.
+
+## Milestone 7-B controlled production rollout
+
+Milestone 7-B adds a controlled production-release platform: immutable production release plans bound to one finalized Release Candidate, independent final preflight gates, approval separation, change freeze, backup requirement, protected deployment orchestration, deterministic backend-owned canary cohorts, manual phase advancement, automatic safety pause, explicit resume, non-destructive rollback strategies, hypercare, incident coordination, post-launch reconciliation, sanitized immutable completion reports, and a Persian RTL administrator release console under `/management/releases/production`.
+
+Normal CI and Codex do not deploy production, access production secrets, enable real payments, register real provider credentials, select real customers or mark launch completion. Real production actions remain opt-in protected operator workflows and missing production evidence is `NOT_RUN`, `BLOCKED` or `EXPIRED`.
