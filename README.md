@@ -283,3 +283,7 @@ Milestone 6-D2 adds the admin fleet operations console and backend/domain founda
 ## Milestone 7-A1 operations readiness
 
 This repository now includes production-like staging/production Compose overlays, strict environment validation, safe release metadata, operations health/readiness/startup probes, backup/restore drill scripts, alert/dashboard definitions and readiness documentation. Real provider certifications for Sanaei 3x-ui, Alireza x-ui and PasarGuard remain `NOT_RUN` until operators supply dedicated staging panels and explicit acknowledgements.
+
+## Milestone 7-A2 quality and release hardening
+
+Release-candidate hardening is documented in `docs/milestones/MILESTONE_7_A2_PLAN.md` and ADR 0065. The implementation adds CI-safe quality domain checks, sanitized evidence metadata, release-defect records, granular quality/release permissions and an administrator quality/release console. Long-running load, soak, isolated DAST, chaos and live-provider certification are opt-in staging activities and must remain `NOT_RUN` when the required environment is unavailable.
