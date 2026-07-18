@@ -255,3 +255,7 @@ Milestone 5-E adds the support/ticketing boundary for customers, resellers, agen
 ## Milestone 5-F knowledge and status platform
 
 Milestone 5-F adds safe versioned educational content, Persian-ready search, FAQ/troubleshooting, contextual guide recommendations, article feedback, Telegram education/status actions and a public status platform for existing application components only. It does not add VPN provider health, provisioning, subscription delivery, real payment gateways, fabricated uptime or unverified application downloads.
+
+## Milestone 6-A2A provider write safety gate
+
+Provider mutations remain disabled. The write-contract layer supports only sanitized preflight and dry-run planning for 3X-UI v3.5.0, Alireza X-UI v1.11.3 and PasarGuard panel v4.0.2. PasarGuard v5.1.0/OpenAPI/API-key assumptions from Milestone 6-A1 are invalidated and require re-certification against the corrected contract digest. No real panel write, provisioning, subscription delivery or configuration generation is enabled by default.

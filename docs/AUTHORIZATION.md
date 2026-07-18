@@ -60,3 +60,7 @@ Milestone 5-E adds granular `support.*` permissions. `support.read`, `support.re
 
 ## Milestone 5-F permissions
 Knowledge and status permissions are separately seeded. Read, manage, publish, rollback, media, feedback, component, incident, maintenance and notification permissions do not imply each other.
+
+## Milestone 6-A2A provider write safety gate
+
+Provider mutations remain disabled. The write-contract layer supports only sanitized preflight and dry-run planning for 3X-UI v3.5.0, Alireza X-UI v1.11.3 and PasarGuard panel v4.0.2. PasarGuard v5.1.0/OpenAPI/API-key assumptions from Milestone 6-A1 are invalidated and require re-certification against the corrected contract digest. No real panel write, provisioning, subscription delivery or configuration generation is enabled by default.

@@ -172,7 +172,7 @@ class PasarGuardAdapter:
             ProviderCapability.MULTI_INBOUND_DISCOVERY,
         },
         "0.6a1",
-        "docs/provider-contracts/pasarguard/v5.1.0/contract.md",
+        "docs/provider-contracts/pasarguard/v4.0.2/contract.md",
     )
 
     async def detect_version(self, transport: SecureHttpTransport) -> PanelVersionDetection:

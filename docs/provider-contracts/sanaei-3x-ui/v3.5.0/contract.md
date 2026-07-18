@@ -1,28 +1,40 @@
-# Certified read-only provider contract
+# Provider contract dossier
 
-Status: CONTRACT_VERIFIED from official source/release-page research on 2026-07-18; LIVE_UNVERIFIED until a real staging panel completes live certification.
+Extraction date: 2026-07-18. Official tagged source is authoritative; community wrappers, old wiki pages and different forks are non-authoritative.
 
-## Evidence fields
+## Compatibility target
 
-- Upstream repository: see table below.
-- Release tag: see table below.
-- Full commit SHA: recorded in adapter constants; abbreviated release commit was verified on GitHub release pages.
-- Authentication: read-only machine credential preferred where the panel exposes it; session-cookie fallback only when that panel contract requires session login.
-- Base paths: exact panel-family paths are adapter-specific and custom web base paths must be prepended by configuration.
-- Contract digest: stable normalized digest is stored in adapter constants; live OpenAPI digest mismatch fails closed.
-- Time/traffic: byte counters are bytes; X-UI epoch timestamps are treated as milliseconds only when the certified response field documents milliseconds, otherwise parsed defensively as seconds with explicit evidence.
-- Nullable fields: client statistics, envelope objects, online state and optional host/template metadata are nullable/unsupported unless the certified endpoint exposes them.
+This dossier is paired with the path/tag shown in its directory name and adapter constants. Release metadata was re-verified from official GitHub releases on 2026-07-18.
 
-## Endpoint inventory summary
+## Milestone 6-A2A write-contract layer
 
-| Provider | Release | Release date | Read authentication | Base paths | Read inventory |
-|---|---:|---:|---|---|---|
-| MHSanaei/3x-ui | v3.5.0 | 2026-07-12 | API Token preferred; panel session fallback | `/panel/api/inbounds`, `/panel/api/clients`, `/panel/api/server`, `/panel/api/nodes`, `/panel/api/openapi.json` | server status, nodes, inbounds, clients, traffic, online state |
-| alireza0/x-ui | v1.11.3 | 2026-07-04 | session login cookie | `/xui/API/inbounds`, `/xui/API/outbounds`, `/xui/API/routing`, `/xui/API/server` | server status, inbounds, clients, outbounds/routing references where safe |
-| PasarGuard/panel | v5.1.0 | 2026-07-14 | official API key/RBAC permissions | generated OpenAPI API routes for users, nodes, hosts/templates and system status | users, nodes, hosts, templates, core/inbound metadata, traffic, expiry/HWID where exposed |
+The adapter defines provider-specific upstream DTO names, endpoint identifiers, method, authentication, content type, success/error conditions, atomicity, natural idempotency, side effects, read-after-write endpoint class, compensation strategy, sensitive fields and capability evidence in `panel_adapters.write_contracts`. Production execution is disabled until a later milestone.
 
-## Unsupported or deferred
+## Common safety semantics
 
-- Mutation endpoints are deliberately not called and map to `PROVIDER_OPERATION_NOT_ENABLED`.
-- Unknown versions can run diagnostics only.
-- Live verification requires an operator-owned staging panel with read-only credentials.
+- Traffic is normalized as integer bytes; unlimited and zero are distinct.
+- Expiry is normalized as UTC; no-expiry and expired are distinct.
+- Nullable, missing and empty fields are handled explicitly.
+- Raw request payloads, UUIDs, passwords, cookies, API keys and full endpoint URLs are not exposed in dry-run plans, logs, API responses or the DOM.
+- HTTP 200 alone is never success; authoritative read-after-write postconditions are required.
+- Ambiguous timeouts require read-before-retry and may move operations to uncertain/manual review.
+
+## Provider-specific evidence summary
+
+### Sanaei 3X-UI v3.5.0
+
+- Repository: `https://github.com/MHSanaei/3x-ui`; tag `v3.5.0`; release commit `4e928a1`.
+- Route evidence: `/panel/api/clients` and `/panel/api/inbounds` controller/service/DTO source in the official v3.5.0 tag.
+- Authentication: panel session cookie; no raw credentials in plans.
+- Identifier semantics: global client identity is distinct from inbound attachment; multi-inbound relationships are preserved where verified.
+- Supported contract-only write operations: create, update, enable, disable, delete, reset traffic, clear client IPs, attach inbound and detach inbound.
+- MTProto/WireGuard create/update remains unsupported unless exact credential DTOs are fully verified.
+
+### Alireza X-UI v1.11.3
+
+- Repository: `https://github.com/alireza0/x-ui`; tag `v1.11.3`; release commit `419fce7`.
+- Route evidence: `/xui/API/inbounds/addClient/`, `/xui/API/inbounds/updateClient/:clientId`, `/xui/API/inbounds/:id/delClient/:clientId`, `/xui/API/inbounds/:id/resetClientTraffic/:email` in official route/controller source.
+- Authentication: session cookie; CSRF is modeled as required when present in tagged source.
+- Identifier semantics: VLESS/VMess use client ID; Trojan uses password; Shadowsocks preserves official identifier/email semantics. Email is not a universal remote identity.
+- Supported contract-only write operations: create, update/full replacement, enable, disable, delete and reset traffic.
+- Unsupported: Sanaei `/panel/api` paths, unverified multi-inbound assignment, unverified clear-IP.

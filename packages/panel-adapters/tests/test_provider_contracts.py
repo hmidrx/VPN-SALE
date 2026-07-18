@@ -56,7 +56,7 @@ class MockTransport:
     [
         (ProviderKind.SANAEI_3X_UI, "3.5.0"),
         (ProviderKind.ALIREZA_X_UI, "1.11.3"),
-        (ProviderKind.PASARGUARD, "5.1.0"),
+        (ProviderKind.PASARGUARD, "4.0.2"),
     ],
 )
 def test_certified_adapters_detect_exact_version(kind: ProviderKind, version: str) -> None:
