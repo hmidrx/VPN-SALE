@@ -69,3 +69,7 @@ Migration 0015 adds knowledge spaces/categories/articles/versions/blocks/preview
 ## Milestone 6-A2A provider write safety gate
 
 Provider mutations remain disabled. The write-contract layer supports only sanitized preflight and dry-run planning for 3X-UI v3.5.0, Alireza X-UI v1.11.3 and PasarGuard panel v4.0.2. PasarGuard v5.1.0/OpenAPI/API-key assumptions from Milestone 6-A1 are invalidated and require re-certification against the corrected contract digest. No real panel write, provisioning, subscription delivery or configuration generation is enabled by default.
+
+
+## Milestone 6-C2 migration schema
+Revision `0022_m6c2_migrations` adds focused tables for migration policies, policy versions, migrations, immutable snapshots, attachment plans, approvals, steps, attempts, cutovers, rollbacks, reconciliation, compensation, notifications, allocation replacements, failover proposals and orphan remote identities. The schema uses UUID primary keys, optimistic versions, active-migration uniqueness per service, step idempotency uniqueness and status/deadline indexes.

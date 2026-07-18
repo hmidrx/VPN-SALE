@@ -99,3 +99,7 @@ Future decisions: production malware scanner selection, external video provider 
 ## Milestone 6-A2A provider write safety gate
 
 Provider mutations remain disabled. The write-contract layer supports only sanitized preflight and dry-run planning for 3X-UI v3.5.0, Alireza X-UI v1.11.3 and PasarGuard panel v4.0.2. PasarGuard v5.1.0/OpenAPI/API-key assumptions from Milestone 6-A1 are invalidated and require re-certification against the corrected contract digest. No real panel write, provisioning, subscription delivery or configuration generation is enabled by default.
+
+
+## Milestone 6-C2 staging decisions
+Provider combinations remain unsupported until exact write contracts prove credential preservation, device/IP/HWID semantics and delivery profile rendering. Operators must stage cross-provider migration against certified mock panels before enabling production policies.

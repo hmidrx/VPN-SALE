@@ -76,3 +76,7 @@ Knowledge and status rules are domain-owned, versioned and safe-by-default; Fast
 ## Milestone 6-A2A provider write safety gate
 
 Provider mutations remain disabled. The write-contract layer supports only sanitized preflight and dry-run planning for 3X-UI v3.5.0, Alireza X-UI v1.11.3 and PasarGuard panel v4.0.2. PasarGuard v5.1.0/OpenAPI/API-key assumptions from Milestone 6-A1 are invalidated and require re-certification against the corrected contract digest. No real panel write, provisioning, subscription delivery or configuration generation is enabled by default.
+
+
+## Milestone 6-C2 service migrations
+Service migration is modeled in the domain layer and executed through application workers that call only the certified provider-operation engine. Routes and UI surfaces never accept raw panel, node or inbound IDs from customers or resellers.
