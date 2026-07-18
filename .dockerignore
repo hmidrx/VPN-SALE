@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+!.env.example
+node_modules
+.next
+.pytest_cache
+.ruff_cache
+.pyright
+.venv
+__pycache__
+*.pyc
+/infra/deployment/env/*.local
