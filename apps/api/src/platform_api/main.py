@@ -33,6 +33,9 @@ from .payments import customer_router as payment_router
 from .payments import webhook_router as payment_webhook_router
 from .resellers import admin_router as admin_reseller_router
 from .resellers import reseller_router
+from .service_operations import admin_router as admin_service_operation_router
+from .service_operations import customer_router as customer_service_operation_router
+from .service_operations import reseller_router as reseller_service_operation_router
 from .services import admin_router as admin_service_router
 from .services import allocation_router as admin_allocation_router
 from .services import customer_router as customer_service_router
@@ -82,6 +85,9 @@ app.include_router(admin_service_router)
 app.include_router(customer_service_router)
 app.include_router(admin_allocation_router)
 app.include_router(admin_service_reconciliation_router)
+app.include_router(admin_service_operation_router)
+app.include_router(customer_service_operation_router)
+app.include_router(reseller_service_operation_router)
 app.include_router(admin_delivery_router)
 app.include_router(customer_delivery_router)
 app.include_router(subscription_router)

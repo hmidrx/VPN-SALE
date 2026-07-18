@@ -267,3 +267,7 @@ Milestone 6-B1 adds the service and entitlement domain, fulfillment ingestion mo
 ## Milestone 6-B2 configuration delivery
 
 Milestone 6-B2 adds the store-owned delivery boundary for verified services: versioned Delivery Profiles, canonical resolved connections, VLESS/VMess/Trojan/Shadowsocks URI renderers, Mihomo YAML, explicit legacy Clash compatibility, sing-box JSON, local QR generation, stable opaque subscription URLs, hashed token rotation/revocation, safe customer/reseller delivery pages, Telegram safe actions and an administrator delivery console. Provider-generated share links remain non-authoritative, credential-bearing responses are private no-store, and published profile versions plus delivery revisions never store plaintext credentials or complete rendered configurations. See `docs/milestones/MILESTONE_6_B2_PLAN.md`.
+
+## Milestone 6-C1 service operations
+
+Milestone 6-C1 adds the controlled service-operation platform for renewals, traffic/duration/limit changes, suspend/resume, traffic reset, IP/HWID clearing, credential rotation, subscription revocation/rotation, delivery refresh, approval, reconciliation and compensation. Billable changes remain separate from technical operations and use new immutable commerce records; provider effects must flow through the certified 6-A2B operation engine with read-after-write verification.
