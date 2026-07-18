@@ -87,6 +87,22 @@ class Settings(BaseSettings):
     catalog_max_device_count: int = Field(default=10000, gt=0)
     catalog_max_pricing_components: int = Field(default=64, ge=1, le=256)
     catalog_max_pricing_tiers: int = Field(default=128, ge=1, le=512)
+
+    public_app_origin: str = "http://localhost:3000"
+    api_public_origin: str = "http://localhost:8000"
+    subscription_public_origin: str = "http://localhost:8000"
+    cors_allowed_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    cors_allow_credentials: bool = True
+    trusted_proxy_cidrs: list[str] = Field(default_factory=list)
+    observability_otlp_endpoint: str = ""
+    backup_destination_url: str = "file:///tmp/vpnsale-backups"
+    backup_retention_days: int = Field(default=30, ge=1, le=3650)
+    worker_concurrency: int = Field(default=4, ge=1, le=128)
+    request_body_limit_bytes: int = Field(default=10485760, ge=1024, le=104857600)
+    upload_file_limit_bytes: int = Field(default=5242880, ge=1024, le=52428800)
+    maintenance_mode_enabled: bool = False
+    provider_credential_vault_key_version: str = "dev-v1"
+    object_storage_url: str = "file:///tmp/vpnsale-media"
     model_config = SettingsConfigDict(env_file=".env", env_prefix="VPN_SALE_", extra="ignore")
 
 

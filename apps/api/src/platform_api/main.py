@@ -3,7 +3,7 @@ from fastapi import FastAPI, Response, status
 from .admin_auth.routes import router as admin_auth_router
 from .catalog import admin_router as admin_catalog_router
 from .catalog import customer_router as catalog_router
-from .config import get_settings, validate_security_configuration
+from .config import get_settings
 from .configuration import admin_router as admin_configuration_router
 from .configuration import public_router as runtime_configuration_router
 from .customer_admin import router as admin_customer_router
@@ -21,6 +21,8 @@ from .knowledge_status import public_router as knowledge_router
 from .logging import configure_logging
 from .management import public_router as admin_invitation_router
 from .management import router as management_router
+from .operations import assert_startup_configuration
+from .operations import router as operations_router
 from .orders import (
     admin_checkout_router,
     admin_commerce_router,
@@ -61,7 +63,7 @@ from .wallet import admin_ledger_router, admin_wallet_router
 from .wallet import customer_router as wallet_router
 
 configure_logging()
-validate_security_configuration(get_settings())
+assert_startup_configuration(get_settings())
 app = FastAPI(title=get_settings().app_name, version=get_settings().version)
 app.include_router(admin_auth_router)
 app.include_router(customer_auth_router)
@@ -116,9 +118,15 @@ app.include_router(admin_usage_router)
 app.include_router(admin_usage_policy_router)
 app.include_router(admin_usage_anomaly_router)
 app.include_router(admin_lifecycle_automation_router)
+app.include_router(operations_router)
 app.include_router(admin_fleet_router)
 app.include_router(customer_fleet_router)
 app.include_router(reseller_fleet_router)
+
+
+@app.get("/live")
+async def live() -> dict[str, str]:
+    return {"status": "alive"}
 
 
 @app.get("/health")
@@ -129,7 +137,11 @@ async def health() -> dict[str, str]:
 @app.get("/version")
 async def version() -> dict[str, str]:
     settings = get_settings()
-    return {"version": settings.version, "environment": settings.environment}
+    return {
+        "version": settings.version,
+        "environment": settings.environment,
+        "schema_revision": __import__("os").getenv("VPN_SALE_SCHEMA_REVISION", "unknown"),
+    }
 
 
 @app.get("/ready")

@@ -1,0 +1,28 @@
+services:
+  api:
+    env_file: infra/deployment/env/staging.env.example
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    depends_on: [postgres, redis]
+  worker:
+    env_file: infra/deployment/env/staging.env.example
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    depends_on: [postgres, redis]
+  telegram-bot:
+    env_file: infra/deployment/env/staging.env.example
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    depends_on: [api]
+  postgres:
+    ports: []
+    restart: unless-stopped
+  redis:
+    ports: []
+    restart: unless-stopped
+networks:
+  default:
+    internal: true

@@ -75,6 +75,16 @@ INITIAL_PERMISSIONS: tuple[tuple[str, str], ...] = (
     ("fleet.runbooks.publish", "Publish fleet runbooks"),
     ("fleet.runbooks.execute", "Execute fleet runbooks"),
     ("fleet.manual_review.manage", "Manage fleet manual reviews"),
+    ("operations.readiness.read", "Read operations readiness reports"),
+    ("operations.releases.read", "Read release evidence"),
+    ("operations.releases.manage", "Manage release evidence"),
+    ("operations.backups.read", "Read backup manifests"),
+    ("operations.backups.execute", "Execute backups"),
+    ("operations.restore_drills.read", "Read restore drills"),
+    ("operations.restore_drills.execute", "Execute restore drills"),
+    ("operations.provider_certification.read", "Read provider certification"),
+    ("operations.provider_certification.execute", "Execute provider certification"),
+    ("operations.runbooks.read", "Read operational runbooks"),
 )
 INITIAL_ROLES: tuple[tuple[str, str], ...] = (
     ("super_admin", "Super Admin"),

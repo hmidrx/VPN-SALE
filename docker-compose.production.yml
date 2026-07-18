@@ -1,0 +1,30 @@
+services:
+  api:
+    env_file: infra/deployment/env/production.env.example
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+      resources: {limits: {cpus: "1.0", memory: 768M}}
+  worker:
+    env_file: infra/deployment/env/production.env.example
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    deploy:
+      resources: {limits: {cpus: "1.0", memory: 768M}}
+  telegram-bot:
+    env_file: infra/deployment/env/production.env.example
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+  postgres:
+    ports: []
+    restart: unless-stopped
+  redis:
+    ports: []
+    restart: unless-stopped
+networks:
+  default:
+    internal: true

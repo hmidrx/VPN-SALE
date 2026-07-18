@@ -279,3 +279,7 @@ The platform now includes a domain model, migration schema, safe API shells and 
 ## Milestone 6-D2 fleet operations
 
 Milestone 6-D2 adds the admin fleet operations console and backend/domain foundations for fleet hierarchy, typed health evidence with freshness/confidence/hysteresis, integer capacity accounting, deterministic forecasts, maintenance windows, allocation drain, controlled evacuation, failover/recovery proposals, bounded bulk operations and typed runbooks. It does not implement unattended failover or claim verified customer data-plane connectivity.
+
+## Milestone 7-A1 operations readiness
+
+This repository now includes production-like staging/production Compose overlays, strict environment validation, safe release metadata, operations health/readiness/startup probes, backup/restore drill scripts, alert/dashboard definitions and readiness documentation. Real provider certifications for Sanaei 3x-ui, Alireza x-ui and PasarGuard remain `NOT_RUN` until operators supply dedicated staging panels and explicit acknowledgements.
