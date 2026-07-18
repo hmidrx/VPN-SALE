@@ -98,3 +98,6 @@ The Milestone 4-A2B1 admin payment console keeps tokens memory-only, uses no bro
 ## Runtime configuration security
 
 Public configuration rejects arbitrary JavaScript, CSS, HTML, executable templates, unsafe URL schemes, secret-like values, unrestricted callback payloads and unvalidated media. Preview references are short lived and must not be logged or persisted.
+
+## Support security
+Support messages reject unsafe/scriptable content; attachments are validated by content and MIME, executable/archive/script/html inputs are rejected or quarantined, and malicious upload attempts create Security Center events. Raw Telegram IDs, initData, tokens, bot tokens, storage paths and full message bodies must not appear in logs, URLs, notifications or browser persistence.

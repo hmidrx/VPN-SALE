@@ -59,3 +59,6 @@ Administrator payment operations are represented in admin-web as a safe operatio
 ## Configuration schema
 
 Milestone 5-A adds configuration definitions, drafts, releases, release items, validation runs, preview sessions, runtime snapshots and media assets. Releases store immutable JSONB snapshots with one effective release per scope and UTC status/date indexes.
+
+## Support schema
+Revision `0014_milestone_5e_support` adds normalized support tables for categories, calendars, SLA policies, queues/teams, conversations, messages/revisions/deliveries, assignments/status history, attachments, canned responses/macros, tags, merges, CSAT, Telegram mappings, idempotency and notifications. The migration seeds stable UUID support permissions and grants them to Super Admin idempotently.

@@ -248,3 +248,6 @@ Milestone 5-C adds backend reseller account lifecycle, tier/limit policy, wholes
 ## Milestone 5-D reseller portal
 
 `apps/reseller-web` now contains the reseller portal shell for Milestone 5-D. It is Persian RTL by default and documents the reseller route inventory, account-status handling, dashboard, managed customers, wholesale catalog, backend-authoritative rial pricing, quote and reseller-funded checkout flow, wallet/credit summaries, order history, safe remarks, white-label presentation, activity, accessibility, and browser-storage security policy. VPN provider provisioning, QR/configuration links, real payment gateways, support systems, coupons, referrals, sub-resellers, and customer impersonation remain intentionally out of scope.
+
+## Milestone 5-E omnichannel support
+Milestone 5-E adds the support/ticketing boundary for customers, resellers, agents, admin-web, customer-web, reseller-web and Telegram Mini App/Bot. It introduces normalized support schema, stable support permissions, domain lifecycle/idempotency/attachment/CSAT rules and Persian RTL support entry points without implementing knowledge-base publishing, VPN providers, provisioning, service/config delivery or financial mutations from chat. See `docs/milestones/MILESTONE_5_E_PLAN.md`.

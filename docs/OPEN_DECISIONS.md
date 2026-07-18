@@ -89,3 +89,6 @@ Administrator payment operations are represented in admin-web as a safe operatio
 ## Milestone 5-A open decisions
 
 Future decisions: choose S3-compatible production storage, finalize status-page URL policy, and add SVG only after a mature sanitizer and regression suite exist.
+
+## Milestone 5-E open decisions
+Full-text message search, production malware-scanner implementation, long-term legal deletion workflows, private support-team bridge activation and realtime transport choice require operational approval before production enablement.

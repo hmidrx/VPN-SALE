@@ -88,3 +88,6 @@ No gateway credentials or public fake-success controls are required for customer
 
 ## Milestone 4-A2B1 note
 Administrator payment operations are represented in admin-web as a safe operations console for payment methods, intents, attempts, verifications, settlements and webhook inbox records. The console preserves payment immutability, credential boundaries, backend-authoritative authorization, no browser persistence for payment data, sanitized webhook rendering, and no refund/reconciliation-repair or real-gateway scope.
+
+## Support deployment notes
+Support private Telegram team bridge is disabled by default and requires validated allowlisted private chat configuration plus linked agent identities. Attachment storage/scanning must be configured without public URLs. Realtime Redis/SSE/WebSocket failure must fall back to polling because PostgreSQL/outbox remains authoritative.

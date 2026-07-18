@@ -80,3 +80,6 @@ Administrator payment operations are represented in admin-web as a safe operatio
 ## Configuration observability
 
 Publishing, rollback, validation, preview, media lifecycle and cache propagation emit audit/security events with sanitized metadata and without tokens, preview references, raw upload bytes or full request bodies.
+
+## Support metrics
+Support observability uses low-cardinality labels for conversation channel/category, message direction/channel, queue backlog, assignment outcome, SLA outcome, escalation, attachment processing, Telegram delivery, realtime outcome, CSAT aggregates and notification delivery. Customer IDs, reseller IDs, ticket references, Telegram IDs, message text and attachment names are forbidden labels.

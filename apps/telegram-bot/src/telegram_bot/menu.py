@@ -59,6 +59,9 @@ def default_menu_registry() -> MenuRegistry:
         MenuItem("wallet", "wallet", MenuTarget.MINI_APP, 35, route=MiniAppRoute.WALLET)
     )
     registry.register(
+        MenuItem("support", "support", MenuTarget.MINI_APP, 38, route=MiniAppRoute.SUPPORT)
+    )
+    registry.register(
         MenuItem("help", "help_button", MenuTarget.CALLBACK, 40, action=CallbackAction.HELP)
     )
     registry.register(
@@ -99,6 +102,7 @@ SAFE_RUNTIME_ACTIONS = frozenset(
         "OPEN_PAYMENTS",
         "OPEN_PROFILE",
         "OPEN_SECURITY",
+        "OPEN_SUPPORT",
         "OPEN_MINI_APP",
         "SHOW_HELP",
         "SHOW_CONTACT",

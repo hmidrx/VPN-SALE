@@ -66,3 +66,6 @@ Administrator payment operations are represented in admin-web as a safe operatio
 ## Runtime configuration platform
 
 Milestone 5-A centralizes branding, themes, content templates, feature flags, safe navigation, Telegram menus and media assets behind typed schemas and immutable release snapshots. Business authorization remains in backend services; frontend flags are presentation-only.
+
+## Milestone 5-E support architecture
+Support is implemented as a domain-owned conversation/ticket module. FastAPI routes remain thin; frontend and Telegram handlers do not contain business rules. PostgreSQL stores conversations, messages, assignments, SLA, attachments, merges, CSAT and notification/idempotency records. Realtime and Telegram delivery are downstream from committed durable records.

@@ -104,3 +104,6 @@ Admin-web includes deterministic behavioral coverage for payment navigation, rou
 ## Configuration tests
 
 Configuration tests cover lifecycle, validation, publishing, rollback, feature rollout, template escaping, safe navigation, Telegram action registries, media validation, runtime APIs, ETags, permissions and migration head constraints.
+
+## Support testing
+Milestone 5-E tests cover participant isolation, internal-note privacy, assignment conflicts, legal status transitions, message ordering and deduplication, attachment quarantine/rejection, canned response placeholder allowlists, CSAT cycles and same-requester merge rules. E2E support flows must not call real VPN or payment providers.
