@@ -202,7 +202,10 @@ def _request(
 
 
 def _migration() -> tuple[
-    Service, ServiceMigrationPolicyVersion, ServiceMigrationRequest, ServiceMigration
+    Service,
+    ServiceMigrationPolicyVersion,
+    ServiceMigrationRequest,
+    ServiceMigration,
 ]:
     now = datetime.now(UTC)
     service = _service()
