@@ -30,6 +30,10 @@ from .payments import customer_router as payment_router
 from .payments import webhook_router as payment_webhook_router
 from .resellers import admin_router as admin_reseller_router
 from .resellers import reseller_router
+from .services import admin_router as admin_service_router
+from .services import allocation_router as admin_allocation_router
+from .services import customer_router as customer_service_router
+from .services import reconciliation_router as admin_service_reconciliation_router
 from .support import admin_router as admin_support_router
 from .support import customer_router as customer_support_router
 from .support import reseller_router as reseller_support_router
@@ -71,6 +75,10 @@ app.include_router(knowledge_router)
 app.include_router(admin_knowledge_router)
 app.include_router(status_router)
 app.include_router(admin_status_router)
+app.include_router(admin_service_router)
+app.include_router(customer_service_router)
+app.include_router(admin_allocation_router)
+app.include_router(admin_service_reconciliation_router)
 
 
 @app.get("/health")
