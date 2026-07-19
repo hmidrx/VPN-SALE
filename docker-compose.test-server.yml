@@ -1,7 +1,7 @@
 services:
   postgres:
     env_file: ${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}
-    ports: []
+    ports: !reset []
     volumes:
       - test_server_postgres_data:/var/lib/postgresql/data
     deploy:
@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
 
   redis:
-    ports: []
+    ports: !reset []
     volumes:
       - test_server_redis_data:/data
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "192mb", "--maxmemory-policy", "noeviction"]
@@ -23,7 +23,7 @@ services:
       VPN_SALE_PROVIDER_WRITES_ENABLED: "false"
       VPN_SALE_FAKE_CUSTOMER_AUTH_ENABLED: "false"
       VPN_SALE_PAYMENT_FAKE_SUCCESS_PUBLIC_ENABLED: "false"
-    ports:
+    ports: !override
       - "127.0.0.1:8000:8000"
     depends_on:
       postgres: { condition: service_healthy }
@@ -33,7 +33,7 @@ services:
     restart: unless-stopped
 
   worker:
-    profiles: []
+    profiles: !reset []
     env_file: ${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}
     environment:
       VPN_SALE_PROVIDER_WRITES_ENABLED: "false"
@@ -56,7 +56,7 @@ services:
     restart: unless-stopped
 
   customer-web:
-    profiles: []
+    profiles: !reset []
     env_file: ${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}
     build:
       context: .
@@ -68,7 +68,7 @@ services:
         NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: ${VPN_SALE_TELEGRAM_BOT_USERNAME:?set in /opt/vpn-sale-runtime/test.env}
         NEXT_PUBLIC_CUSTOMER_APP_NAME: ${VPN_SALE_CUSTOMER_APP_NAME:-Dr Ping}
         NEXT_PUBLIC_CUSTOMER_FAKE_TELEGRAM: "false"
-    ports:
+    ports: !override
       - "127.0.0.1:3000:3000"
     depends_on:
       api: { condition: service_healthy }
@@ -77,7 +77,7 @@ services:
     restart: unless-stopped
 
   admin-web:
-    profiles: []
+    profiles: !reset []
     env_file: ${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}
     build:
       context: .
@@ -85,7 +85,7 @@ services:
       args:
         APP_NAME: admin-web
         NEXT_PUBLIC_API_BASE_URL: https://api.dr-ping.com
-    ports:
+    ports: !override
       - "127.0.0.1:3001:3000"
     depends_on:
       api: { condition: service_healthy }
@@ -94,7 +94,7 @@ services:
     restart: unless-stopped
 
   reseller-web:
-    profiles: []
+    profiles: !reset []
     env_file: ${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}
     build:
       context: .
@@ -102,7 +102,7 @@ services:
       args:
         APP_NAME: reseller-web
         NEXT_PUBLIC_API_BASE_URL: https://api.dr-ping.com
-    ports:
+    ports: !override
       - "127.0.0.1:3002:3000"
     depends_on:
       api: { condition: service_healthy }
@@ -111,8 +111,8 @@ services:
     restart: unless-stopped
 
   reverse-proxy:
-    profiles: ["disabled-in-test-server"]
-    ports: []
+    profiles: !override ["disabled-in-test-server"]
+    ports: !reset []
 
 volumes:
   test_server_postgres_data:

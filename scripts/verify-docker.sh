@@ -24,7 +24,7 @@ docker compose version
 log "Compose config"
 docker compose config
 
-log "Test-server Compose isolation"
+log "Test-server Compose port isolation"
 "$repo_root/scripts/verify-test-server-compose.sh"
 log "Build core images"
 docker compose build api
