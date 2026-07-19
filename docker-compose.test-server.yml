@@ -33,7 +33,7 @@ services:
     restart: unless-stopped
 
   worker:
-    profiles: !reset []
+    profiles: !override ["ops"]
     env_file: ${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}
     environment:
       VPN_SALE_PROVIDER_WRITES_ENABLED: "false"
@@ -42,7 +42,7 @@ services:
       redis: { condition: service_healthy }
     deploy:
       resources: { limits: { memory: 384M } }
-    restart: unless-stopped
+    restart: "no"
 
   telegram-bot:
     profiles: ["telegram"]
@@ -63,8 +63,8 @@ services:
       dockerfile: infra/docker/web.Dockerfile
       args:
         APP_NAME: customer-web
-        NEXT_PUBLIC_API_BASE_URL: https://api.dr-ping.com
-        NEXT_PUBLIC_CUSTOMER_API_BASE_URL: https://api.dr-ping.com
+        NEXT_PUBLIC_API_BASE_URL: ${VPN_SALE_API_PUBLIC_ORIGIN:?set in runtime env}
+        NEXT_PUBLIC_CUSTOMER_API_BASE_URL: ${VPN_SALE_CUSTOMER_API_FRONTEND_URL:?set in runtime env}
         NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: ${VPN_SALE_TELEGRAM_BOT_USERNAME:?set in /opt/vpn-sale-runtime/test.env}
         NEXT_PUBLIC_CUSTOMER_APP_NAME: ${VPN_SALE_CUSTOMER_APP_NAME:-Dr Ping}
         NEXT_PUBLIC_CUSTOMER_FAKE_TELEGRAM: "false"
@@ -84,7 +84,7 @@ services:
       dockerfile: infra/docker/web.Dockerfile
       args:
         APP_NAME: admin-web
-        NEXT_PUBLIC_API_BASE_URL: https://api.dr-ping.com
+        NEXT_PUBLIC_API_BASE_URL: ${VPN_SALE_API_PUBLIC_ORIGIN:?set in runtime env}
     ports: !override
       - "127.0.0.1:3001:3000"
     depends_on:
@@ -101,7 +101,7 @@ services:
       dockerfile: infra/docker/web.Dockerfile
       args:
         APP_NAME: reseller-web
-        NEXT_PUBLIC_API_BASE_URL: https://api.dr-ping.com
+        NEXT_PUBLIC_API_BASE_URL: ${VPN_SALE_API_PUBLIC_ORIGIN:?set in runtime env}
     ports: !override
       - "127.0.0.1:3002:3000"
     depends_on:
