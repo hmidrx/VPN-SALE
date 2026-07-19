@@ -3,14 +3,18 @@ set -Eeuo pipefail
 
 typed_fixture="security-scan-typed-fixture.tmp"
 secret_fixture="security-scan-secret-fixture.conf"
+safe_secret_fixture="security-scan-safe-secret-fixture.tmp"
 subscription_fixture="security-scan-subscription-fixture.tmp"
 safe_subscription_fixture="security-scan-safe-subscription-fixture.tmp"
 cleanup() {
-  git rm -f --quiet "$typed_fixture" "$secret_fixture" "$subscription_fixture" "$safe_subscription_fixture" >/dev/null 2>&1 || true
-  rm -f "$typed_fixture" "$secret_fixture" "$subscription_fixture" "$safe_subscription_fixture" \
+  git rm -f --quiet "$typed_fixture" "$secret_fixture" "$safe_secret_fixture" "$subscription_fixture" "$safe_subscription_fixture" >/dev/null 2>&1 || true
+  rm -f "$typed_fixture" "$secret_fixture" "$safe_secret_fixture" "$subscription_fixture" "$safe_subscription_fixture" \
     scan-safe.out scan-safe.err \
     scan-typed.out scan-typed.err \
     scan-secret.out scan-secret.err \
+    scan-safe-secret.out scan-safe-secret.err \
+    scan-credential-url.out scan-credential-url.err \
+    scan-private-key.out scan-private-key.err \
     scan-self.out scan-self.err \
     scan-subscription.out scan-subscription.err \
     scan-safe-subscription.out scan-safe-subscription.err
@@ -65,6 +69,59 @@ if ! run_scan scan-safe-subscription.out scan-safe-subscription.err; then
 fi
 
 git rm -f --quiet "$safe_subscription_fixture"
+
+cat >"$safe_secret_fixture" <<'EOF_SAFE'
+TOKEN="${TOKEN_FROM_ENV:-}"
+TOKEN="$(cat "$TOKEN_FILE")"
+SECRET="$(openssl rand -hex 32)"
+PASSWORD="$(generate_secret)"
+STATUS="MISSING"
+TOKEN_STATUS="REDACTED"
+# Documentation mentions TOKEN and PASSWORD names but assigns no credentials.
+normal_package_lock_metadata = {"integrity":"sha512-deadbeef", "resolved":"https://registry.npmjs.org/example/-/example-1.0.0.tgz"}
+EOF_SAFE
+git add --intent-to-add "$safe_secret_fixture"
+if ! run_scan scan-safe-secret.out scan-safe-secret.err; then
+  echo "Expected runtime secret assignments, redacted values and package metadata to pass." >&2
+  cat scan-safe-secret.err >&2
+  exit 1
+fi
+git rm -f --quiet "$safe_secret_fixture"
+
+secret_cases=()
+secret_cases+=("assigned token|TOKEN=\"actual-looking-literal-value\"")
+secret_cases+=("assigned password|PASSWORD='literal-password'")
+secret_cases+=("database url|DATABASE_URL=\"postgresql://user:password@host/db\"")
+secret_cases+=("credential url|url = \"https://user:password@example.invalid/path\"")
+secret_cases+=("access token url|url = \"https://example.invalid/path?access_token=actualtokenvalue\"")
+for entry in "${secret_cases[@]}"; do
+  case_name="${entry%%|*}"
+  line="${entry#*|}"
+  printf '%s\n' "$line" >"$secret_fixture"
+  git add --intent-to-add "$secret_fixture"
+  if run_scan scan-secret.out scan-secret.err; then
+    echo "Expected security scan to reject ${case_name}." >&2
+    exit 1
+  fi
+  if ! grep -q "$secret_fixture" scan-secret.err; then
+    echo "Expected security scan to report fixture for ${case_name}." >&2
+    cat scan-secret.err >&2
+    exit 1
+  fi
+  git rm -f --quiet "$secret_fixture"
+done
+
+cat >"$secret_fixture" <<'EOF_KEY'
+-----BEGIN PRIVATE KEY-----
+not-a-real-test-key-fixture
+-----END PRIVATE KEY-----
+EOF_KEY
+git add --intent-to-add "$secret_fixture"
+if run_scan scan-private-key.out scan-private-key.err; then
+  echo "Expected PEM private key fixture to fail security scan." >&2
+  exit 1
+fi
+git rm -f --quiet "$secret_fixture"
 
 secret_value="fake_test_secret_value_123456789"
 printf 'api_key = %s\n' "$secret_value" >"$secret_fixture"
