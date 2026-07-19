@@ -26,7 +26,9 @@ PY
 else printf '%s=%s\n' "$key" "$value" >>"$file"; fi; }
 telegram_api(){ local method="$1"; shift; curl -fsS --retry 2 --connect-timeout 5 "https://api.telegram.org/bot${BOT_TOKEN}/${method}" "$@"; }
 phase="preflight"
-. /etc/os-release
+# /etc/os-release is provided by the base OS on supported Ubuntu servers.
+# shellcheck source=/etc/os-release disable=SC1091
+source /etc/os-release
 [[ "${VERSION_ID:-}" == "24.04" || "$OVERRIDE_OS" == true ]] || fail "Ubuntu 24.04 required (or --allow-unsupported-os)"
 (( $(nproc) >= 2 )) || fail "at least 2 CPU cores required"
 (( $(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo) >= 1900 )) || fail "at least 2 GiB RAM required"

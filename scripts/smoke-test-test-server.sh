@@ -5,6 +5,18 @@ env_file="${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}"
 domain="${VPN_SALE_TEST_SERVER_DOMAIN:-}"
 compose=("$repo_root/scripts/vpn-sale-compose-test-server" --env-file "$env_file")
 redact(){ sed -E 's/(bot[0-9]+:)?[A-Za-z0-9_-]{24,}/<redacted>/g; s/(TOKEN|PASSWORD|SECRET|KEY)=([^[:space:]]+)/\1=<redacted>/g'; }
+check_caddyfile(){
+  local caddyfile="$1"
+  if grep -Fq 'email off' "$caddyfile"; then
+    echo "ERROR: invalid Caddy email off directive detected" >&2
+    exit 1
+  fi
+}
+if [[ "${1:-}" == "--check-caddyfile" ]]; then
+  check_caddyfile "${2:?caddyfile path is required}"
+  printf '%s\n' 'Caddyfile email directive check passed'
+  exit 0
+fi
 get_env(){ awk -F= -v k="$1" '$1==k {sub(/^[^=]*=/,""); print; exit}' "$env_file"; }
 "${compose[@]}" ps --format json | jq -e 'all(.RestartCount == 0)' >/dev/null
 for svc in postgres redis; do "${compose[@]}" ps --format json "$svc" | jq -e '.[0].Health == "healthy" or .Health == "healthy"' >/dev/null; done
@@ -22,7 +34,7 @@ fi
 if [[ -n "$domain" ]]; then
   for url in "https://app.$domain" "https://api.$domain/health" "https://admin.$domain" "https://reseller.$domain"; do curl -fsSI --connect-timeout 5 "$url" >/dev/null; echo | openssl s_client -servername "$(awk -F/ '{print $3}' <<<"$url")" -connect "$(awk -F/ '{print $3}' <<<"$url")":443 2>/dev/null | openssl x509 -noout -subject >/dev/null; done
 fi
-if systemctl is-active --quiet caddy; then caddy validate --config /etc/caddy/Caddyfile; ! grep -q 'email off' /etc/caddy/Caddyfile; fi
+if systemctl is-active --quiet caddy; then caddy validate --config /etc/caddy/Caddyfile; check_caddyfile /etc/caddy/Caddyfile; fi
 if grep -q '^VPN_SALE_BOT_ENABLED=true' "$env_file"; then
   token="$(get_env VPN_SALE_TELEGRAM_BOT_TOKEN)"; app_url="$(get_env VPN_SALE_PUBLIC_APP_ORIGIN)"
   "${compose[@]}" ps telegram-bot --format json | jq -e '.[0].RestartCount == 0 and (.[0].State == "running" or .State == "running")' >/dev/null
