@@ -15,20 +15,52 @@ assert url.replace('%', '%%').count('%%') >= 6
 PY
 bash -n "$installer" "$smoke" "$repo_root/scripts/vpn-sale-compose-test-server"
 if command -v shellcheck >/dev/null 2>&1; then shellcheck "$installer" "$smoke" "$repo_root/scripts/vpn-sale-compose-test-server"; fi
-rg -n 'REF="main"' "$installer" >/dev/null
-! rg -n 'fix/deployment-hardening' "$installer" "$doc"
-rg -n 'raw.githubusercontent.com/hmidrx/VPN-SALE/main/scripts/install-test-server.sh' "$doc" >/dev/null
-! rg -n 'apt-get install .*ufw|ufw enable|email off|docker compose down -v|\|\| true.*pull' "$installer" "$doc" "$compose_file"
-rg -n -- '--reset-disposable-postgres' "$installer" "$doc" >/dev/null
-rg -n 'chmod 600 "\$ENV_FILE"|install -d -m 0700 "\$RUNTIME_DIR"' "$installer" >/dev/null
-rg -n 'urlencode\(\)|urllib.parse.quote\(os.environ\["RAW_VALUE"\], safe=""\)' "$installer" >/dev/null
-rg -n 'alembic -c apps/api/alembic.ini upgrade head' "$installer" "$smoke" >/dev/null
-rg -n 'build api customer-web admin-web reseller-web telegram-bot|up -d postgres redis|up -d "\$\{start_services\[@\]\}"|Caddy|wait-for-http|smoke-test-test-server.sh' "$installer" >/dev/null
-rg -n 'deleteWebhook|setMyCommands|setChatMenuButton|getChatMenuButton|getMe' "$installer" "$smoke" >/dev/null
-rg -n 'test_bot' "$installer" "$compose_file" && { echo 'placeholder test_bot found' >&2; exit 1; } || true
-rg -n 'ports: !reset \[\]' "$compose_file" | wc -l | awk '{if ($1 < 2) exit 1}'
-rg -n 'profiles: !override \["ops"\]' "$compose_file" >/dev/null
-rg -n '127\.0\.0\.1:8000:8000|127\.0\.0\.1:3000:3000|127\.0\.0\.1:3001:3000|127\.0\.0\.1:3002:3000' "$compose_file" >/dev/null
-rg -n 'NEXT_PUBLIC_API_BASE_URL|NEXT_PUBLIC_CUSTOMER_API_BASE_URL|NEXT_PUBLIC_TELEGRAM_BOT_USERNAME|NEXT_PUBLIC_CUSTOMER_APP_NAME' "$compose_file" >/dev/null
+
+search(){
+  local pattern="$1"; shift
+  if command -v rg >/dev/null 2>&1; then
+    rg -n -- "$pattern" "$@"
+  else
+    grep -En -- "$pattern" "$@"
+  fi
+}
+require_match(){ search "$@" >/dev/null; }
+reject_match(){ ! search "$@" >/dev/null; }
+count_matches(){ search "$@" 2>/dev/null | wc -l; }
+
+require_match 'REF="main"' "$installer"
+reject_match 'fix/deployment-hardening' "$installer" "$doc"
+require_match 'raw.githubusercontent.com/hmidrx/VPN-SALE/main/scripts/install-test-server.sh' "$doc"
+reject_match 'apt-get install .*ufw|ufw enable|email off|docker compose down -v|\|\| true.*pull' "$installer" "$doc" "$compose_file"
+require_match '--reset-disposable-postgres' "$installer" "$doc"
+require_match 'chmod 600 "[$]ENV_FILE"|install -d -m 0700 "[$]RUNTIME_DIR"' "$installer"
+require_match 'urlencode\(\)|urllib.parse.quote\(os.environ\["RAW_VALUE"\], safe=""\)' "$installer"
+require_match 'alembic -c apps/api/alembic.ini upgrade head' "$installer" "$smoke"
+require_match 'build api customer-web admin-web reseller-web telegram-bot|up -d postgres redis|up -d "\$\{start_services\[@\]\}"|Caddy|wait-for-http|smoke-test-test-server.sh' "$installer"
+require_match 'deleteWebhook|setMyCommands|setChatMenuButton|getChatMenuButton|getMe' "$installer" "$smoke"
+if search 'test_bot' "$installer" "$compose_file" >/dev/null; then echo 'placeholder test_bot found' >&2; exit 1; fi
+(( $(count_matches 'ports: !reset \[\]' "$compose_file") >= 2 ))
+require_match 'profiles: !override \["ops"\]' "$compose_file"
+require_match '127\.0\.0\.1:8000:8000|127\.0\.0\.1:3000:3000|127\.0\.0\.1:3001:3000|127\.0\.0\.1:3002:3000' "$compose_file"
+require_match 'NEXT_PUBLIC_API_BASE_URL|NEXT_PUBLIC_CUSTOMER_API_BASE_URL|NEXT_PUBLIC_TELEGRAM_BOT_USERNAME|NEXT_PUBLIC_CUSTOMER_APP_NAME' "$compose_file"
+
+valid_caddyfile="$(mktemp)"; invalid_caddyfile="$(mktemp)"
+trap 'rm -f "$valid_caddyfile" "$invalid_caddyfile"' EXIT
+printf '{
+	email admin@example.test
+}
+app.example.test {
+	reverse_proxy 127.0.0.1:3000
+}
+' >"$valid_caddyfile"
+printf '{
+	email off
+}
+app.example.test {
+	reverse_proxy 127.0.0.1:3000
+}
+' >"$invalid_caddyfile"
+bash "$smoke" --check-caddyfile "$valid_caddyfile" >/dev/null
+if bash "$smoke" --check-caddyfile "$invalid_caddyfile" >/dev/null 2>&1; then echo 'invalid Caddy email off directive passed smoke check' >&2; exit 1; fi
 if command -v docker >/dev/null 2>&1; then "$repo_root/scripts/verify-test-server-compose.sh"; else printf 'docker unavailable; skipped compose render\n' >&2; fi
 printf 'deployment hardening tests passed\n'
