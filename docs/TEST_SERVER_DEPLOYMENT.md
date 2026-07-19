@@ -1,57 +1,101 @@
 # Test server deployment
 
-Use the repository installer for disposable Ubuntu 24.04 integration servers. The test server does **not** install a VPN panel, Xray, 3X-UI, real payment gateways, provider-write services, or UFW.
+This runbook installs the VPN-SALE test stack on a disposable Ubuntu 24.04 host from `main`. It is intentionally conservative: it does not install UFW, does not expose PostgreSQL or Redis, does not touch unrelated hostnames such as `fast.dr-ping.com`, and never deletes volumes during normal installs or upgrades.
 
-## Fresh install
+## DNS prerequisites
 
-Point DNS for `app.<domain>`, `api.<domain>`, `admin.<domain>`, and `reseller.<domain>` to the server, then run as root:
+Create A/AAAA records for the target server only:
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/hmidrx/VPN-SALE/fix/deployment-hardening/scripts/install-test-server.sh -o /root/install-test-server.sh
-bash /root/install-test-server.sh --domain example.com --repo https://github.com/hmidrx/VPN-SALE.git --ref fix/deployment-hardening --enable-telegram
-```
+- `app.<domain>`
+- `api.<domain>`
+- `admin.<domain>`
+- `reseller.<domain>`
 
-The installer writes protected runtime configuration to `/opt/vpn-sale-runtime/test.env` with mode `0600`, derives public origins from `--domain`, URL-encodes the PostgreSQL password in application URLs, and verifies the Compose model before service changes. It never prints passwords, bot tokens, or full database URLs.
+Do not change unrelated records. Ports 80 and 443 must be free so Caddy can obtain HTTPS certificates.
 
-## Rerun / upgrade
+## Fresh install from main
 
-```bash
-/opt/vpn-sale/scripts/install-test-server.sh --domain example.com --repo https://github.com/hmidrx/VPN-SALE.git --ref fix/deployment-hardening --runtime-dir /opt/vpn-sale-runtime
-```
-
-The Compose wrapper is:
+Run as root on Ubuntu 24.04:
 
 ```bash
-/opt/vpn-sale/scripts/vpn-sale-compose-test-server --env-file /opt/vpn-sale-runtime/test.env ps
+curl -fsSL https://raw.githubusercontent.com/hmidrx/VPN-SALE/main/scripts/install-test-server.sh -o /root/install-test-server.sh
+chmod 700 /root/install-test-server.sh
+/root/install-test-server.sh --domain example.com
 ```
 
-It runs Docker Compose with a clean environment so exported shell variables cannot override the runtime env file.
+The installer clones `https://github.com/hmidrx/VPN-SALE.git`, deploys `main`, generates missing secrets in `/opt/vpn-sale-runtime/test.env` with mode `0600`, installs Docker Engine, the Docker Compose plugin, Caddy, Fail2ban, and required utilities, builds images, runs Alembic migrations once, starts the API and web apps, configures Caddy, and runs smoke tests.
 
-## Telegram rotation
+## Interactive Telegram setup
 
-Update only `VPN_SALE_TELEGRAM_BOT_TOKEN` and `VPN_SALE_TELEGRAM_BOT_USERNAME` in `/opt/vpn-sale-runtime/test.env`, then rerun the installer with `--enable-telegram` or restart the opt-in Telegram profile. Production-like polling restrictions remain enforced; this disposable deployment uses `VPN_SALE_ENVIRONMENT=TEST`.
+Use `--enable-telegram` and enter the token at the secure no-echo prompt:
 
-## Disposable PostgreSQL reset
+```bash
+/root/install-test-server.sh --domain example.com --enable-telegram
+```
 
-Existing PostgreSQL data is not silently deleted. Use the explicit flag only for disposable test data:
+The installer verifies the token with Telegram `getMe`, derives the bot username, removes any webhook before polling, configures commands, sets the default Web App menu button to `https://app.example.com`, and starts the repository polling bot.
+
+## Non-interactive token-file setup
+
+Store the token in a protected file; do not pass secrets on the command line:
+
+```bash
+install -m 0600 /dev/null /root/vpn-sale-telegram.token
+printf '%s' 'REDACTED_TOKEN_FROM_BOTFATHER' >/root/vpn-sale-telegram.token
+/root/install-test-server.sh \
+  --domain example.com \
+  --enable-telegram \
+  --telegram-bot-token-file /root/vpn-sale-telegram.token \
+  --non-interactive
+```
+
+An already-set `VPN_SALE_TELEGRAM_BOT_TOKEN` environment variable is also accepted for non-interactive automation.
+
+## Safe rerun and upgrade
+
+Normal reruns preserve generated secrets and PostgreSQL/Redis data. To upgrade safely from `main`:
+
+```bash
+cd /opt/vpn-sale
+git fetch origin main
+git checkout main
+git merge --ff-only origin/main
+/opt/vpn-sale/scripts/install-test-server.sh --domain example.com
+```
+
+For Telegram deployments, include the same Telegram flags used during installation. Advanced branch testing may use `--ref some-branch`, but normal installation and upgrades should use `main`.
+
+## Smoke tests
+
+The installer runs smoke tests automatically. You can rerun them manually:
+
+```bash
+VPN_SALE_TEST_SERVER_ENV_FILE=/opt/vpn-sale-runtime/test.env \
+VPN_SALE_TEST_SERVER_DOMAIN=example.com \
+/opt/vpn-sale/scripts/smoke-test-test-server.sh
+```
+
+Smoke tests validate database/Redis health, API `/health` and `/ready`, local web HTTP, public HTTPS endpoints, certificates, absence of public database/cache bindings, zero restart loops, current Alembic revision, frontend build-time bot configuration, Telegram state when enabled, and secret-free reports.
+
+## Disposable reset warning
+
+Never reset data during a normal install or upgrade. The only destructive database action is explicit and disposable:
 
 ```bash
 /opt/vpn-sale/scripts/install-test-server.sh --domain example.com --reset-disposable-postgres
 ```
 
-The Redis volume is not part of PostgreSQL repair.
+This resets only the disposable PostgreSQL volume. Redis data is never deleted automatically, and the installer never removes Compose volumes during normal operation.
 
-## Smoke checks and diagnostics
+## Troubleshooting without revealing secrets
+
+Use commands that avoid printing the env file:
 
 ```bash
-/opt/vpn-sale/scripts/smoke-test-test-server.sh
-/opt/vpn-sale/scripts/verify-test-server-compose.sh /opt/vpn-sale-runtime/test.env
-journalctl -u caddy --no-pager -n 100
 docker compose --project-directory /opt/vpn-sale -f /opt/vpn-sale/docker-compose.yml -f /opt/vpn-sale/docker-compose.test-server.yml --env-file /opt/vpn-sale-runtime/test.env ps
+journalctl -u caddy --no-pager -n 80
+docker compose --project-directory /opt/vpn-sale -f /opt/vpn-sale/docker-compose.yml -f /opt/vpn-sale/docker-compose.test-server.yml --env-file /opt/vpn-sale-runtime/test.env logs api --tail=80 | sed -E 's/(TOKEN|PASSWORD|SECRET|KEY)=([^[:space:]]+)/\1=<redacted>/g'
+caddy validate --config /etc/caddy/Caddyfile
+curl -fsS http://127.0.0.1:8000/health
+curl -fsS http://127.0.0.1:8000/ready
 ```
-
-Safe checks include API `/health`, `/ready`, `/version`, local web ports, Caddy validation, no public PostgreSQL/Redis ports, worker absence by default, and Telegram restart counts when enabled.
-
-## Limitations
-
-This deployment is for integration testing only: no provider panel, no Xray/3X-UI, no real payment gateway, no provider writes, and no changes to any `fast.<domain>` host.
