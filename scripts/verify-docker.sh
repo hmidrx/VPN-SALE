@@ -2,6 +2,8 @@
 set -Eeuo pipefail
 
 log() { printf '\n==> %s\n' "$*"; }
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
 need_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 127; }; }
 need_cmd docker
 need_cmd curl
@@ -21,6 +23,9 @@ docker --version
 docker compose version
 log "Compose config"
 docker compose config
+
+log "Test-server Compose port isolation"
+"$repo_root/scripts/verify-test-server-compose.sh"
 log "Build core images"
 docker compose build api
 log "Start core stack"
