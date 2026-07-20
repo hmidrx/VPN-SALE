@@ -23,7 +23,7 @@ chmod 700 /root/install-test-server.sh
 /root/install-test-server.sh --domain example.com
 ```
 
-The installer clones `https://github.com/hmidrx/VPN-SALE.git`, deploys `main`, generates missing secrets in `/opt/vpn-sale-runtime/test.env` with mode `0600`, installs Docker Engine, the Docker Compose plugin, Caddy, Fail2ban, and required utilities, builds images, runs Alembic migrations once, starts the API and web apps, configures Caddy, and runs smoke tests.
+The installer clones `https://github.com/hmidrx/VPN-SALE.git`, deploys `main`, generates missing secrets in `/opt/vpn-sale-runtime/test.env` with mode `0600`, installs Docker Engine, the current Docker Compose plugin, Caddy, Fail2ban, and required utilities including `jq`, `ripgrep`, `nodejs`, and `npm`, builds images, runs Alembic migrations once, starts the API and web apps, configures Caddy, and runs smoke tests.
 
 ## Interactive Telegram setup
 
@@ -49,11 +49,9 @@ printf '%s' 'REDACTED_TOKEN_FROM_BOTFATHER' >/root/vpn-sale-telegram.token
   --non-interactive
 ```
 
-An already-set `VPN_SALE_TELEGRAM_BOT_TOKEN` environment variable is also accepted for non-interactive automation.
-
 ## Safe rerun and upgrade
 
-Normal reruns preserve generated secrets and PostgreSQL/Redis data. To upgrade safely from `main`:
+Normal reruns preserve generated secrets and PostgreSQL/Redis data. Docker Compose `ps --format json` output is normalized for both current JSON Lines output and legacy JSON arrays before health checks, so no Docker Compose downgrade or pin is required. If a previous incomplete run already installed the repository-managed Caddy configuration, reruns recognize the `# vpn-sale-test-server-managed` Caddyfile marker and reconfigure that Caddy service instead of treating it as an unknown port conflict. The installer still refuses unmanaged listeners on ports 80/443 and never stops unrelated processes. To upgrade safely from `main`:
 
 ```bash
 cd /opt/vpn-sale
@@ -75,7 +73,7 @@ VPN_SALE_TEST_SERVER_DOMAIN=example.com \
 /opt/vpn-sale/scripts/smoke-test-test-server.sh
 ```
 
-Smoke tests validate database/Redis health, API `/health` and `/ready`, local web HTTP, public HTTPS endpoints, certificates, absence of public database/cache bindings, zero restart loops, current Alembic revision, frontend build-time bot configuration, Telegram state when enabled, and secret-free reports.
+Smoke tests validate database/Redis health using the same Compose JSON normalization helper, API `/health` and `/ready`, local web HTTP, public HTTPS endpoints, certificates, absence of public database/cache bindings, zero restart loops, current Alembic revision, frontend build-time bot configuration, Telegram state when enabled, and secret-free reports.
 
 ## Disposable reset warning
 

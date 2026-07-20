@@ -24,7 +24,7 @@ lines=path.read_text().splitlines()
 path.write_text("\n".join(f"{key}={value}" if line.startswith(f"{key}=") else line for line in lines)+"\n")
 PY
 else printf '%s=%s\n' "$key" "$value" >>"$file"; fi; }
-telegram_api(){ local method="$1"; shift; curl -fsS --retry 2 --connect-timeout 5 "https://api.telegram.org/bot${BOT_TOKEN}/${method}" "$@"; }
+telegram_api(){ local method="$1"; shift; printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$BOT_TOKEN" "$method" | curl -fsS --retry 2 --connect-timeout 5 --config - "$@"; }
 phase="preflight"
 # /etc/os-release is provided by the base OS on supported Ubuntu servers.
 # shellcheck source=/etc/os-release disable=SC1091
@@ -33,12 +33,21 @@ source /etc/os-release
 (( $(nproc) >= 2 )) || fail "at least 2 CPU cores required"
 (( $(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo) >= 1900 )) || fail "at least 2 GiB RAM required"
 (( $(df -Pm / | awk 'NR==2{print $4}') >= 12000 )) || fail "at least 12 GiB free disk required"
-for p in 80 443; do ss -ltn "sport = :$p" | awk 'NR>1{exit 1}' || fail "port $p is already in use"; done
+is_installer_managed_caddy(){ [[ -f /etc/caddy/Caddyfile ]] && grep -Fq "# vpn-sale-test-server-managed" /etc/caddy/Caddyfile; }
+for p in 80 443; do
+  if ss -ltn "sport = :$p" | awk 'NR>1{exit 1}'; then
+    continue
+  fi
+  if systemctl is-active --quiet caddy 2>/dev/null && is_installer_managed_caddy; then
+    continue
+  fi
+  fail "port $p is already in use by an unmanaged process"
+done
 CUSTOMER_ORIGIN="https://app.$DOMAIN"; API_ORIGIN="https://api.$DOMAIN"; ADMIN_ORIGIN="https://admin.$DOMAIN"; RESELLER_ORIGIN="https://reseller.$DOMAIN"
 if [[ "$SKIP_DNS" != true ]]; then for h in "app.$DOMAIN" "api.$DOMAIN" "admin.$DOMAIN" "reseller.$DOMAIN"; do getent ahosts "$h" >/dev/null || fail "DNS missing for $h"; done; fi
 phase="install packages"
 apt-get update
-apt-get install -y git curl jq ca-certificates gnupg openssl python3 fail2ban debian-keyring debian-archive-keyring apt-transport-https
+apt-get install -y git curl jq ca-certificates gnupg openssl python3 fail2ban debian-keyring debian-archive-keyring apt-transport-https ripgrep nodejs npm
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc; chmod a+r /etc/apt/keyrings/docker.asc
 printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu %s stable\n' "$(dpkg --print-architecture)" "${VERSION_CODENAME}" >/etc/apt/sources.list.d/docker.list
@@ -52,13 +61,20 @@ phase="checkout"
 if [[ -d "$INSTALL_DIR/.git" ]]; then git -C "$INSTALL_DIR" diff --quiet || fail "tracked worktree is dirty"; git -C "$INSTALL_DIR" fetch origin "$REF" --prune; git -C "$INSTALL_DIR" checkout "$REF"; git -C "$INSTALL_DIR" merge --ff-only "origin/$REF"; else git clone --branch "$REF" "$REPO" "$INSTALL_DIR"; fi
 printf 'Deploying commit: %s\n' "$(git -C "$INSTALL_DIR" rev-parse HEAD)"
 cd "$INSTALL_DIR"
+# shellcheck source=scripts/test-server-compose-json.sh
+source ./scripts/test-server-compose-json.sh
 phase="runtime env"
 install -d -m 0700 "$RUNTIME_DIR"; ENV_FILE="$RUNTIME_DIR/test.env"; touch "$ENV_FILE"; chmod 600 "$ENV_FILE"
 if [[ "$RESET_PG" == true ]]; then printf 'WARNING: resetting disposable PostgreSQL volume only because --reset-disposable-postgres was passed\n' >&2; if ./scripts/vpn-sale-compose-test-server --env-file "$ENV_FILE" ps postgres >/dev/null 2>&1; then ./scripts/vpn-sale-compose-test-server --env-file "$ENV_FILE" stop postgres; fi; if docker volume inspect vpn-sale_test_server_postgres_data >/dev/null 2>&1; then docker volume rm vpn-sale_test_server_postgres_data; fi; fi
-BOT_TOKEN="${VPN_SALE_TELEGRAM_BOT_TOKEN:-}"
-if [[ -z "$BOT_TOKEN" && -n "$TELEGRAM_BOT_TOKEN_FILE" ]]; then [[ -r "$TELEGRAM_BOT_TOKEN_FILE" ]] || fail "telegram token file is not readable"; BOT_TOKEN="$(tr -d '\r\n' <"$TELEGRAM_BOT_TOKEN_FILE")"; fi
-if [[ "$ENABLE_TELEGRAM" == true && -z "$BOT_TOKEN" && "$NON_INTERACTIVE" == false ]]; then read -r -s -p 'Telegram bot token: ' BOT_TOKEN; printf '\n' >&2; fi
-[[ "$ENABLE_TELEGRAM" == false || -n "$BOT_TOKEN" ]] || fail "telegram token required via --telegram-bot-token-file or VPN_SALE_TELEGRAM_BOT_TOKEN"
+BOT_TOKEN=""
+if [[ -n "$TELEGRAM_BOT_TOKEN_FILE" ]]; then
+  [[ -r "$TELEGRAM_BOT_TOKEN_FILE" ]] || fail "telegram token file is not readable"
+  token_mode="$(stat -c %a "$TELEGRAM_BOT_TOKEN_FILE")"
+  [[ "$token_mode" == "600" ]] || fail "telegram token file must have mode 0600"
+  BOT_TOKEN="$(tr -d '\r\n' <"$TELEGRAM_BOT_TOKEN_FILE")"
+fi
+if [[ "$ENABLE_TELEGRAM" == true && -z "$BOT_TOKEN" && "$NON_INTERACTIVE" == false ]]; then read -r -s -p 'Telegram bot token: ' BOT_TOKEN </dev/tty; printf '\n' >/dev/tty; fi
+[[ "$ENABLE_TELEGRAM" == false || -n "$BOT_TOKEN" ]] || fail "telegram token required via --telegram-bot-token-file or hidden prompt"
 if [[ "$ENABLE_TELEGRAM" == true ]]; then
   me_json="$(telegram_api getMe)"; [[ "$(jq -r '.ok' <<<"$me_json")" == true ]] || fail "Telegram getMe failed"
   derived_username="$(jq -r '.result.username // empty' <<<"$me_json")"; [[ -n "$derived_username" ]] || fail "Telegram getMe returned no username"
@@ -82,7 +98,7 @@ profiles=( ); [[ "$ENABLE_TELEGRAM" == true ]] && profiles=(--profile telegram)
 ./scripts/vpn-sale-compose-test-server --env-file "$ENV_FILE" "${profiles[@]}" build api customer-web admin-web reseller-web telegram-bot
 phase="database and redis"
 ./scripts/vpn-sale-compose-test-server --env-file "$ENV_FILE" up -d postgres redis
-for svc in postgres redis; do for i in {1..60}; do [[ "$(./scripts/vpn-sale-compose-test-server --env-file "$ENV_FILE" ps --format json "$svc" | jq -r '.[0].Health // .Health')" == "healthy" ]] && break; sleep 2; [[ $i -lt 60 ]] || fail "$svc did not become healthy"; done; done
+for svc in postgres redis; do wait_compose_service_healthy "$svc" 120 ./scripts/vpn-sale-compose-test-server --env-file "$ENV_FILE" || fail "$svc did not become healthy"; done
 phase="migrations"
 ./scripts/vpn-sale-compose-test-server --env-file "$ENV_FILE" run --rm --no-deps api alembic -c apps/api/alembic.ini upgrade head
 phase="start services"
@@ -90,6 +106,7 @@ start_services=(api customer-web admin-web reseller-web); [[ "$ENABLE_TELEGRAM" 
 ./scripts/vpn-sale-compose-test-server --env-file "$ENV_FILE" "${profiles[@]}" up -d "${start_services[@]}"
 phase="Caddy"
 tmp_caddy="$(mktemp)"; cat >"$tmp_caddy" <<CADDY
+# vpn-sale-test-server-managed
 app.$DOMAIN { reverse_proxy 127.0.0.1:3000 }
 api.$DOMAIN { reverse_proxy 127.0.0.1:8000 }
 admin.$DOMAIN { reverse_proxy 127.0.0.1:3001 }
