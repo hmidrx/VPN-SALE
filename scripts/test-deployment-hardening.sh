@@ -13,8 +13,8 @@ assert unquote(urlparse(url).password or '') == raw
 assert '%40' in url and '%25' in url and '%3A' in url and '%2F' in url and '%23' in url and '%20' in url
 assert url.replace('%', '%%').count('%%') >= 6
 PY
-bash -n "$installer" "$smoke" "$repo_root/scripts/vpn-sale-compose-test-server"
-if command -v shellcheck >/dev/null 2>&1; then shellcheck "$installer" "$smoke" "$repo_root/scripts/vpn-sale-compose-test-server"; fi
+bash -n "$installer" "$smoke" "$repo_root/scripts/vpn-sale-compose-test-server" "$repo_root/scripts/test-server-compose-json.sh" "$repo_root/scripts/test-compose-ps-json.sh"
+if command -v shellcheck >/dev/null 2>&1; then shellcheck "$installer" "$smoke" "$repo_root/scripts/vpn-sale-compose-test-server" "$repo_root/scripts/test-server-compose-json.sh" "$repo_root/scripts/test-compose-ps-json.sh"; fi
 
 search(){
   local pattern="$1"; shift
@@ -37,6 +37,7 @@ require_match 'chmod 600 "[$]ENV_FILE"|install -d -m 0700 "[$]RUNTIME_DIR"' "$in
 require_match 'urlencode\(\)|urllib.parse.quote\(os.environ\["RAW_VALUE"\], safe=""\)' "$installer"
 require_match 'alembic -c apps/api/alembic.ini upgrade head' "$installer" "$smoke"
 require_match 'build api customer-web admin-web reseller-web telegram-bot|up -d postgres redis|up -d "\$\{start_services\[@\]\}"|Caddy|wait-for-http|smoke-test-test-server.sh' "$installer"
+require_match 'test-server-compose-json.sh|wait_compose_service_healthy|# vpn-sale-test-server-managed|is_installer_managed_caddy|ripgrep nodejs npm' "$installer"
 require_match 'deleteWebhook|setMyCommands|setChatMenuButton|getChatMenuButton|getMe' "$installer" "$smoke"
 if search 'test_bot' "$installer" "$compose_file" >/dev/null; then echo 'placeholder test_bot found' >&2; exit 1; fi
 (( $(count_matches 'ports: !reset \[\]' "$compose_file") >= 2 ))
@@ -61,6 +62,7 @@ app.example.test {
 }
 ' >"$invalid_caddyfile"
 bash "$smoke" --check-caddyfile "$valid_caddyfile" >/dev/null
+bash "$repo_root/scripts/test-compose-ps-json.sh" >/dev/null
 if bash "$smoke" --check-caddyfile "$invalid_caddyfile" >/dev/null 2>&1; then echo 'invalid Caddy email off directive passed smoke check' >&2; exit 1; fi
 if command -v docker >/dev/null 2>&1; then "$repo_root/scripts/verify-test-server-compose.sh"; else printf 'docker unavailable; skipped compose render\n' >&2; fi
 printf 'deployment hardening tests passed\n'
