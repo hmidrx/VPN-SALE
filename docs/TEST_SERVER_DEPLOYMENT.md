@@ -97,3 +97,78 @@ caddy validate --config /etc/caddy/Caddyfile
 curl -fsS http://127.0.0.1:8000/health
 curl -fsS http://127.0.0.1:8000/ready
 ```
+
+## Hardened clean Ubuntu 24.04 test-server workflow
+
+This TEST installer is designed for a completely rebuilt Ubuntu 24.04 host serving only these deployment names: `app.dr-ping.com`, `api.dr-ping.com`, `admin.dr-ping.com`, and `reseller.dr-ping.com`. The generated deployment configuration must not contain or affect `fast.dr-ping.com`.
+
+### One-time private-repository bootstrap
+
+Because `hmidrx/VPN-SALE` is private, first install a read-only deploy key or equivalent GitHub access for the server account. This bootstrap is intentionally separate from the installer and should not store production secrets in the repository or runtime env file.
+
+### Required DNS
+
+Before running the installer, point these records at the rebuilt server:
+
+- `app.dr-ping.com`
+- `api.dr-ping.com`
+- `admin.dr-ping.com`
+- `reseller.dr-ping.com`
+
+Do not delegate or configure `fast.dr-ping.com` through this installer.
+
+### Single installer invocation after deploy-key setup
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hmidrx/VPN-SALE/main/scripts/install-test-server.sh -o /root/install-test-server.sh
+chmod 700 /root/install-test-server.sh
+sudo /root/install-test-server.sh --domain dr-ping.com --repo git@github.com:hmidrx/VPN-SALE.git --ref main --non-interactive
+```
+
+To enable Telegram polling for TEST, provide a mode-`0600` token file and let the installer derive the public bot username from Telegram `getMe`:
+
+```bash
+install -m 0600 /dev/null /root/vpn-sale-telegram-token
+# paste token with an editor that does not echo it in shell history
+sudo /root/install-test-server.sh --domain dr-ping.com --repo git@github.com:hmidrx/VPN-SALE.git --ref main --enable-telegram --telegram-bot-token-file /root/vpn-sale-telegram-token --non-interactive
+```
+
+Interactive installs may omit `--telegram-bot-token-file`; the hidden prompt is read from `/dev/tty`, never from installer stdin or a heredoc.
+
+### Runtime state, secrets, and safe reruns
+
+Runtime files live under `/opt/vpn-sale-runtime` with restrictive permissions. The non-secret state file `/opt/vpn-sale-runtime/state.json` records TEST environment metadata, root domain, repository, selected ref/commit, compose project name, and the last completed phase. Plaintext generated secrets are stored separately in mode-`0600` files under `/opt/vpn-sale-runtime/secrets` and are copied into `/opt/vpn-sale-runtime/test.env` without printing values.
+
+Secrets are generated exactly once. On rerun, the installer reuses existing secret files and rebuilds the runtime env file from those preserved sources. If the deployment PostgreSQL volume already exists but `/opt/vpn-sale-runtime/secrets/postgres-password` is missing, empty, or not mode `0600`, the installer stops with a state-mismatch error instead of generating a replacement password or modifying database roles.
+
+### Interruption recovery
+
+The installer writes state atomically after each major phase and makes every wait bounded with concise redacted diagnostics. A normal rerun resumes safely after package installation, env creation, PostgreSQL initialization, or Caddy installation. It never runs broad Compose volume teardown, never resets PostgreSQL automatically, and never deletes Redis during PostgreSQL recovery.
+
+### Explicit TEST-only PostgreSQL reset
+
+For this disposable TEST deployment only, reset PostgreSQL explicitly:
+
+```bash
+sudo /opt/vpn-sale/scripts/install-test-server.sh --domain dr-ping.com --repo git@github.com:hmidrx/VPN-SALE.git --ref main --reset-disposable-postgres --non-interactive
+```
+
+The installer prints the exact PostgreSQL container and volume names before removal, removes only that PostgreSQL container and PostgreSQL volume, preserves Redis and all non-database generated secrets, and refuses to trigger this behavior implicitly.
+
+### PostgreSQL identity and migrations
+
+The TEST deployment uses the configured `POSTGRES_USER` and `POSTGRES_DB` (default `vpnsale`) for readiness checks, migrations, diagnostics, and application connections. It does not assume that a `postgres` role exists, because the official PostgreSQL image initializes the configured administrative role when `POSTGRES_USER` is set. Raw `POSTGRES_PASSWORD` remains separate from URL values; the installer percent-encodes it once for SQLAlchemy URLs, and Alembic escapes percent signs before assigning `sqlalchemy.url`.
+
+### Caddy ownership and rerun behavior
+
+The installer performs port preflight before package installation where possible. After the Caddy package is installed, it immediately stops `caddy.service` only when the service is proven to be either installer-managed (`# vpn-sale-test-server-managed`) or still using the untouched package-default Caddyfile. It rejects unrelated listeners on ports 80/443 and does not rely only on the process name. Managed Caddy configuration is validated with `caddy validate`, contains only the four required host blocks, preserves forwarding headers, blocks public metrics/internal diagnostic paths, and is activated only after application services are ready.
+
+### Post-install verification
+
+Run the safe verifier after installation or rerun:
+
+```bash
+sudo /opt/vpn-sale/scripts/verify-test-server.sh --domain dr-ping.com --env-file /opt/vpn-sale-runtime/test.env
+```
+
+The verifier checks the repository commit, Compose rendering, expected services and profiles, PostgreSQL and Redis health, migration state, API readiness, local web HTTP bindings, managed Caddy ownership of ports 80/443, loopback-only application ports, no public PostgreSQL/Redis/worker/Telegram ports, HTTPS for all four domains, optional Telegram polling container identity, fail2ban, swap, and absence of `fast.dr-ping.com` from generated deployment configuration without exposing secrets.

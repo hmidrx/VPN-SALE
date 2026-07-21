@@ -7,7 +7,7 @@ if [[ $# -gt 0 && "$1" == "--env-file" ]]; then
   shift 2
 fi
 exec env -i HOME="${HOME:-/root}" PATH="${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}" \
-  docker compose --project-directory "$repo_root" \
+  docker compose --project-name vpn-sale --project-directory "$repo_root" \
   -f "$repo_root/docker-compose.yml" \
   -f "$repo_root/docker-compose.test-server.yml" \
   --env-file "$env_file" "$@"
