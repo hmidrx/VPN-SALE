@@ -5,7 +5,26 @@ fail(){ printf 'ERROR during %s: %s\n' "$phase" "$*" >&2; printf 'Safe diagnosti
 trap 'fail "command failed on line $LINENO"' ERR
 DOMAIN=""; REPO="https://github.com/hmidrx/VPN-SALE.git"; REF="main"; RUNTIME_DIR="/opt/vpn-sale-runtime"; INSTALL_DIR="/opt/vpn-sale"; PROJECT="vpn-sale"
 ENABLE_TELEGRAM=false; RESET_PG=false; SKIP_DNS=false; NON_INTERACTIVE=false; OVERRIDE_OS=false; TELEGRAM_BOT_TOKEN_FILE=""; TELEGRAM_BOT_USERNAME=""
-while [[ $# -gt 0 ]]; do case "$1" in --domain) DOMAIN="${2:?}"; shift 2;; --repo) REPO="${2:?}"; shift 2;; --ref) REF="${2:?}"; shift 2;; --runtime-dir) RUNTIME_DIR="${2:?}"; shift 2;; --install-dir) INSTALL_DIR="${2:?}"; shift 2;; --enable-telegram) ENABLE_TELEGRAM=true; shift;; --telegram-bot-token-file) TELEGRAM_BOT_TOKEN_FILE="${2:?}"; shift 2;; --telegram-bot-username) TELEGRAM_BOT_USERNAME="${2:?}"; shift 2;; --reset-disposable-postgres) RESET_PG=true; shift;; --skip-dns-wait) SKIP_DNS=true; shift;; --non-interactive) NON_INTERACTIVE=true; shift;; --allow-unsupported-os) OVERRIDE_OS=true; shift;; *) fail "unknown option $1";; esac; done
+usage(){ cat <<USAGE
+Usage: scripts/install-test-server.sh --domain DOMAIN [options]
+
+Options:
+  --domain DOMAIN                    Root test domain to deploy.
+  --repo URL                         Git repository to clone (default: hmidrx/VPN-SALE).
+  --ref REF                          Git ref to deploy (default: main).
+  --runtime-dir DIR                  Runtime state directory.
+  --install-dir DIR                  Checkout directory.
+  --enable-telegram                  Enable Telegram polling bot.
+  --telegram-bot-token-file FILE     Mode-0600 Telegram token file.
+  --telegram-bot-username USERNAME   Expected Telegram bot username.
+  --reset-disposable-postgres        Reset only disposable TEST PostgreSQL resources.
+  --skip-dns-wait                    Skip public DNS preflight/smoke waits.
+  --non-interactive                  Do not prompt for secrets.
+  --allow-unsupported-os             Bypass Ubuntu 24.04 guard.
+  --help                             Show this help and exit.
+USAGE
+}
+while [[ $# -gt 0 ]]; do case "$1" in --help) usage; exit 0;; --domain) DOMAIN="${2:?}"; shift 2;; --repo) REPO="${2:?}"; shift 2;; --ref) REF="${2:?}"; shift 2;; --runtime-dir) RUNTIME_DIR="${2:?}"; shift 2;; --install-dir) INSTALL_DIR="${2:?}"; shift 2;; --enable-telegram) ENABLE_TELEGRAM=true; shift;; --telegram-bot-token-file) TELEGRAM_BOT_TOKEN_FILE="${2:?}"; shift 2;; --telegram-bot-username) TELEGRAM_BOT_USERNAME="${2:?}"; shift 2;; --reset-disposable-postgres) RESET_PG=true; shift;; --skip-dns-wait) SKIP_DNS=true; shift;; --non-interactive) NON_INTERACTIVE=true; shift;; --allow-unsupported-os) OVERRIDE_OS=true; shift;; *) fail "unknown option $1";; esac; done
 [[ $(id -u) -eq 0 ]] || fail "must run as root"
 [[ -n "$DOMAIN" ]] || fail "--domain is required; no implicit production domain is used"
 [[ "$DOMAIN" != "fast.dr-ping.com" && "$DOMAIN" != *".fast.dr-ping.com" ]] || fail "refusing unrelated hostname fast.dr-ping.com"
@@ -16,9 +35,9 @@ if [[ ! -f "$repo_root/scripts/test-server-installer-lib.sh" ]]; then
   curl -fsSL "https://raw.githubusercontent.com/hmidrx/VPN-SALE/${REF}/scripts/test-server-compose-json.sh" -o "$bootstrap_dir/test-server-compose-json.sh"
   repo_root="$bootstrap_dir"
 fi
-# shellcheck source=scripts/test-server-installer-lib.sh
+# shellcheck source=scripts/test-server-installer-lib.sh disable=SC1091
 source "$repo_root/scripts/test-server-installer-lib.sh"
-# shellcheck source=scripts/test-server-compose-json.sh
+# shellcheck source=scripts/test-server-compose-json.sh disable=SC1091
 source "$repo_root/scripts/test-server-compose-json.sh"
 umask 077
 # Database URLs are built with urlencode() semantics via urllib.parse.quote(os.environ["RAW_VALUE"], safe="") in test-server-installer-lib.sh.
@@ -52,15 +71,15 @@ if [[ "$SKIP_DNS" != true ]]; then for h in "app.$DOMAIN" "api.$DOMAIN" "admin.$
 phase_done preflight
 phase="install packages"
 apt-get update
-apt-get install -y git curl jq ca-certificates gnupg openssl python3 fail2ban debian-keyring debian-archive-keyring apt-transport-https ripgrep nodejs npm
+apt-get install -y ca-certificates curl gnupg debian-keyring debian-archive-keyring apt-transport-https
+apt-get install -y git jq openssl python3 fail2ban ripgrep nodejs npm
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc; chmod a+r /etc/apt/keyrings/docker.asc
 printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu %s stable\n' "$(dpkg --print-architecture)" "${VERSION_CODENAME}" >/etc/apt/sources.list.d/docker.list
-curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor -o /etc/apt/keyrings/caddy-stable-archive-keyring.gpg.tmp; mv /etc/apt/keyrings/caddy-stable-archive-keyring.gpg.tmp /etc/apt/keyrings/caddy-stable-archive-keyring.gpg
-printf 'deb [signed-by=/etc/apt/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main\n' >/etc/apt/sources.list.d/caddy-stable.list
-apt-get update; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin caddy
-systemctl enable --now docker fail2ban
+install_caddy_apt_repository
+apt_get_update_with_caddy_retry; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin caddy
 stop_safe_caddy || fail "caddy.service is active with non-default unmanaged configuration"
+systemctl enable --now docker fail2ban
 phase_done packages
 phase="swap"
 if [[ $(swapon --show --noheadings | wc -l) -eq 0 ]]; then [[ -f /swapfile ]] || fallocate -l 4G /swapfile; chmod 600 /swapfile; mkswap /swapfile >/dev/null; swapon /swapfile; grep -qE '^/swapfile[[:space:]]' /etc/fstab || echo '/swapfile none swap sw 0 0' >>/etc/fstab; fi
@@ -73,7 +92,6 @@ phase_done checkout
 phase="runtime secrets"
 install -d -m 0700 "$RUNTIME_DIR" "$SECRETS_DIR"
 if [[ "$RESET_PG" == true ]]; then
-  [[ "TEST" == TEST ]] || fail "--reset-disposable-postgres is valid only for TEST"
   printf 'Resetting TEST PostgreSQL resources only: container=%s volume=%s\n' "$pg_container" "$pg_volume" >&2
   docker rm -f "$pg_container" >/dev/null 2>&1 || true
   docker volume rm "$pg_volume" >/dev/null 2>&1 || true
@@ -93,7 +111,7 @@ CUSTOMER_ORIGIN="https://app.$DOMAIN"; API_ORIGIN="https://api.$DOMAIN"; ADMIN_O
 BOT_TOKEN=""; if [[ -n "$TELEGRAM_BOT_TOKEN_FILE" ]]; then validate_secret_file "$TELEGRAM_BOT_TOKEN_FILE" || fail "telegram token file must exist, be non-empty, and have mode 0600"; BOT_TOKEN="$(tr -d '\r\n' <"$TELEGRAM_BOT_TOKEN_FILE")"; fi
 if [[ "$ENABLE_TELEGRAM" == true && -z "$BOT_TOKEN" && "$NON_INTERACTIVE" == false ]]; then read -r -s -p 'Telegram bot token: ' BOT_TOKEN </dev/tty; printf '\n' >/dev/tty; fi
 [[ "$ENABLE_TELEGRAM" == false || -n "$BOT_TOKEN" ]] || fail "telegram token required via --telegram-bot-token-file or hidden prompt"
-if [[ "$ENABLE_TELEGRAM" == true ]]; then BOT_TOKEN="$BOT_TOKEN"; me_json="$(printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$BOT_TOKEN" | curl -fsS --retry 2 --connect-timeout 5 --config -)"; [[ "$(jq -r '.ok' <<<"$me_json")" == true ]] || fail "Telegram getMe failed"; derived_username="$(jq -r '.result.username // empty' <<<"$me_json")"; [[ -n "$derived_username" ]] || fail "Telegram getMe returned no username"; [[ -z "$TELEGRAM_BOT_USERNAME" || "$TELEGRAM_BOT_USERNAME" == "$derived_username" ]] || fail "provided Telegram username does not match getMe"; TELEGRAM_BOT_USERNAME="$derived_username"; else TELEGRAM_BOT_USERNAME="disabled_bot"; fi
+if [[ "$ENABLE_TELEGRAM" == true ]]; then me_json="$(printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$BOT_TOKEN" | curl -fsS --retry 2 --connect-timeout 5 --config -)"; [[ "$(jq -r '.ok' <<<"$me_json")" == true ]] || fail "Telegram getMe failed"; derived_username="$(jq -r '.result.username // empty' <<<"$me_json")"; [[ -n "$derived_username" ]] || fail "Telegram getMe returned no username"; [[ -z "$TELEGRAM_BOT_USERNAME" || "$TELEGRAM_BOT_USERNAME" == "$derived_username" ]] || fail "provided Telegram username does not match getMe"; TELEGRAM_BOT_USERNAME="$derived_username"; else TELEGRAM_BOT_USERNAME="disabled_bot"; fi
 set_kv_atomic "$ENV_FILE" VPN_SALE_IDENTITY_ENCRYPTION_KEY_VERSION test-v1; set_kv_atomic "$ENV_FILE" VPN_SALE_API_PUBLIC_ORIGIN "$API_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_PUBLIC_APP_ORIGIN "$CUSTOMER_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_API_FRONTEND_URL "$API_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_CORS_ALLOWED_ORIGINS "[\"$CUSTOMER_ORIGIN\",\"$ADMIN_ORIGIN\",\"$RESELLER_ORIGIN\"]"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_APP_NAME "VPN-SALE Test"; set_kv_atomic "$ENV_FILE" VPN_SALE_TELEGRAM_BOT_USERNAME "$TELEGRAM_BOT_USERNAME"; set_kv_atomic "$ENV_FILE" VPN_SALE_TELEGRAM_BOT_TOKEN "$BOT_TOKEN"; set_kv_atomic "$ENV_FILE" VPN_SALE_BOT_ENABLED "$ENABLE_TELEGRAM"; set_kv_atomic "$ENV_FILE" VPN_SALE_BOT_MODE "$([[ "$ENABLE_TELEGRAM" == true ]] && echo polling || echo disabled)"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_MINI_APP_URL "$CUSTOMER_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_MINI_APP_ALLOWED_HOSTS "app.$DOMAIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_PROVIDER_WRITES_ENABLED false; set_kv_atomic "$ENV_FILE" VPN_SALE_PAYMENT_FAKE_SUCCESS_PUBLIC_ENABLED false; set_kv_atomic "$ENV_FILE" VPN_SALE_FAKE_CUSTOMER_AUTH_ENABLED false
 for k in POSTGRES_PASSWORD VPN_SALE_DATABASE_URL POSTGRES_USER POSTGRES_DB VPN_SALE_REDIS_URL VPN_SALE_API_PUBLIC_ORIGIN VPN_SALE_PUBLIC_APP_ORIGIN VPN_SALE_TELEGRAM_BOT_USERNAME; do [[ -n "$(get_env "$k" "$ENV_FILE")" ]] || fail "missing required config $k"; done
 phase_done secrets
