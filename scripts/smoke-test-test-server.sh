@@ -40,7 +40,8 @@ fi
 if systemctl is-active --quiet caddy; then caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile; check_caddyfile /etc/caddy/Caddyfile; fi
 if grep -q '^VPN_SALE_BOT_ENABLED=true' "$env_file"; then
   token="$(get_env VPN_SALE_TELEGRAM_BOT_TOKEN)"; app_url="$(get_env VPN_SALE_PUBLIC_APP_ORIGIN)"
-  compose_service_json_array telegram-bot "${compose[@]}" | jq -e --arg service telegram-bot 'map(select(.Service == $service)) | first | (.RestartCount == 0 and .State == "running")' >/dev/null
+  bot_status="$(compose_service_json_array telegram-bot "${compose[@]}" | jq -cer --arg service telegram-bot 'map(select(.Service == $service)) | first | if . == null then {State:"missing", RestartCount:null} else {State:(.State // "unknown"), RestartCount:(.RestartCount // 0)} end')"
+  jq -e '.State == "running" and .RestartCount == 0' <<<"$bot_status" >/dev/null || { echo "telegram bot enabled but not steadily running; redacted status=$bot_status" >&2; exit 1; }
   telegram_api "$token" getMe | jq -e '.ok == true' >/dev/null
   telegram_api "$token" getChatMenuButton | jq -e --arg u "$app_url" '.ok == true and .result.web_app.url == $u' >/dev/null
   telegram_api "$token" getWebhookInfo | jq -e '.ok == true and (.result.url == "")' >/dev/null
