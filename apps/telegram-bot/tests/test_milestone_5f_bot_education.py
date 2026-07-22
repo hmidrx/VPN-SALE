@@ -15,8 +15,10 @@ def test_education_and_status_safe_actions_and_menu_links_contain_no_tokens() ->
     assert BotCallback.parse(packed).action is CallbackAction.OPEN_STATUS_PAGE
     builder = MiniAppUrlBuilder("https://example.test", ("example.test",), production_like=True)
     rows = as_button_rows(default_menu_registry(), AccountStatus.ACTIVE, "fa", builder)
-    urls = [button["web_app_url"] for row in rows for button in row if "web_app_url" in button]
-    assert "https://example.test/education" in urls
-    assert "https://example.test/status" in urls
-    assert all("token" not in url and "initData" not in url for url in urls)
+    callbacks = [
+        button["callback_data"] for row in rows for button in row if "callback_data" in button
+    ]
+    assert BotCallback(CallbackAction.OPEN_EDUCATION).pack() in callbacks
+    assert BotCallback(CallbackAction.STATUS).pack() in callbacks
+    assert all("token" not in data and "initData" not in data for data in callbacks)
     assert MiniAppRoute.EDUCATION in MiniAppRoute

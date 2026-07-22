@@ -40,11 +40,15 @@ if [[ "$bot_enabled" == true ]]; then
   bot_state="$(compose_service_field telegram-bot State "${compose[@]}" 2>/dev/null || true)"
   [[ -n "$bot_state" ]] || fail "telegram bot container missing while VPN_SALE_BOT_ENABLED=true"
   [[ "$bot_state" == running ]] || fail "telegram bot must be running when enabled; redacted state=$bot_state mode=${bot_mode:-unset}"
-  [[ "$bot_mode" != disabled ]] || fail "telegram bot runtime mode is disabled while VPN_SALE_BOT_ENABLED=true"
+  [[ "$bot_mode" == polling ]] || fail "telegram bot must use polling mode on the TEST server when enabled; redacted mode=${bot_mode:-unset}"
+  started_at="$(compose_service_field telegram-bot StartedAt "${compose[@]}" 2>/dev/null || true)"
+  [[ -n "$started_at" && "$started_at" != "0001-01-01T00:00:00Z" ]] || fail "telegram bot has no valid start time"
   bot_env="$("${compose[@]}" exec -T telegram-bot env | awk -F= '$1=="VPN_SALE_BOT_ENABLED" || $1=="VPN_SALE_BOT_MODE" {print}' | sort)"
-  expected_bot_env=$'VPN_SALE_BOT_ENABLED=true\nVPN_SALE_BOT_MODE='"$bot_mode"
+  expected_bot_env=$'VPN_SALE_BOT_ENABLED=true\nVPN_SALE_BOT_MODE=polling'
   [[ "$bot_env" == "$expected_bot_env" ]] || fail "telegram bot container has unexpected redacted runtime environment"
-  ok "Telegram bot running with redacted runtime enabled=true mode=$bot_mode"
+  bot_logs="$("${compose[@]}" logs --no-color --tail=80 telegram-bot 2>/dev/null | sed -E 's/(token|secret|password|database_url|postgresql:\/\/)[^[:space:]]+/REDACTED/Ig')"
+  ! printf '%s\n' "$bot_logs" | rg -i 'disabled|bot_token|VPN_SALE_TELEGRAM_BOT_TOKEN|BEGIN ENV|POSTGRES_PASSWORD|DATABASE_URL|postgresql://' >/dev/null || fail "telegram bot recent safe logs contain disabled state or secret-shaped output"
+  ok "Telegram bot running with redacted runtime enabled=true mode=polling and safe recent logs"
 elif [[ "$bot_enabled" == false || -z "$bot_enabled" ]]; then
   ok "Telegram bot disabled by runtime configuration"
 else

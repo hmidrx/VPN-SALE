@@ -85,17 +85,19 @@ def test_menu_registry_contains_working_items_only() -> None:
     registry = default_menu_registry()
     ids = [item.item_id for item in registry.visible(AccountStatus.ACTIVE)]
     assert ids == [
-        "home",
+        "buy",
+        "services",
         "profile",
-        "security",
         "wallet",
+        "security",
         "support",
         "education",
-        "help",
         "status",
         "language",
         "privacy",
+        "help",
         "refresh",
+        "home",
     ]
     assert "products" not in ids
 
@@ -103,8 +105,8 @@ def test_menu_registry_contains_working_items_only() -> None:
 def test_locale_resolution_and_fallback() -> None:
     assert normalize_locale("fa-IR", ("fa", "en"), "fa") == "fa"
     assert normalize_locale("de", ("fa", "en"), "fa") == "fa"
-    assert t("en", "open_app") == "Open customer app"
-    assert t("unknown", "open_app") == "باز کردن پنل مشتری"
+    assert t("en", "open_app") == "Open customer app (optional)"
+    assert t("unknown", "open_app") == "باز کردن پنل مشتری (اختیاری)"
 
 
 def test_callback_data_is_versioned_and_strict() -> None:
@@ -142,7 +144,10 @@ def test_command_registration_inventory() -> None:
         "menu",
         "help",
         "profile",
+        "services",
+        "wallet",
         "security",
+        "support",
         "language",
         "privacy",
         "cancel",
@@ -204,14 +209,13 @@ def test_commands_help_profile_security_language_privacy_cancel() -> None:
         assert result.acknowledged and result.messages
 
 
-def test_mini_app_buttons_use_web_app_urls() -> None:
+def test_customer_menu_uses_bot_native_callbacks_not_required_web_app_urls() -> None:
     result = BotCommandHandler(settings(), InMemoryTelegramIdentityService()).handle_command(
         private_start(20)
     )
     rows = result.messages[0].rows
-    assert rows[0][0]["web_app_url"] == "https://customer.example.test/app/"
-    assert rows[1][0]["web_app_url"] == "https://customer.example.test/app/profile"
-    assert rows[2][0]["web_app_url"] == "https://customer.example.test/app/security"
+    assert rows[0][0]["callback_data"]
+    assert all("web_app_url" not in button for row in rows for button in row)
 
 
 def test_sanitized_logs_remove_identity_and_secret_fields() -> None:
@@ -232,4 +236,4 @@ def test_bot_blocked_state_can_be_marked_and_cleared_by_update() -> None:
     identity = InMemoryTelegramIdentityService()
     identity.mark_bot_blocked(42)
     BotCommandHandler(settings(), identity).handle_command(private_start(30))
-    assert 42 not in identity._blocked  # test fake inspection only
+    assert not identity.is_blocked(42)

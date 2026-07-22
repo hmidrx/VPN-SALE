@@ -30,7 +30,7 @@ class MenuItem:
 
 @dataclass
 class MenuRegistry:
-    _items: list[MenuItem] = field(default_factory=list)
+    _items: list[MenuItem] = field(default_factory=list[MenuItem])
 
     def register(self, item: MenuItem) -> None:
         if any(existing.item_id == item.item_id for existing in self._items):
@@ -46,43 +46,22 @@ class MenuRegistry:
 
 def default_menu_registry() -> MenuRegistry:
     registry = MenuRegistry()
-    registry.register(
-        MenuItem("home", "open_app", MenuTarget.MINI_APP, 10, route=MiniAppRoute.HOME)
-    )
-    registry.register(
-        MenuItem("profile", "profile", MenuTarget.MINI_APP, 20, route=MiniAppRoute.PROFILE)
-    )
-    registry.register(
-        MenuItem("security", "security", MenuTarget.MINI_APP, 30, route=MiniAppRoute.SECURITY)
-    )
-    registry.register(
-        MenuItem("wallet", "wallet", MenuTarget.MINI_APP, 35, route=MiniAppRoute.WALLET)
-    )
-    registry.register(
-        MenuItem("support", "support", MenuTarget.MINI_APP, 38, route=MiniAppRoute.SUPPORT)
-    )
-    registry.register(
-        MenuItem("education", "education", MenuTarget.MINI_APP, 39, route=MiniAppRoute.EDUCATION)
-    )
-    registry.register(
-        MenuItem("status", "status", MenuTarget.MINI_APP, 41, route=MiniAppRoute.STATUS)
-    )
-    registry.register(
-        MenuItem("help", "help_button", MenuTarget.CALLBACK, 40, action=CallbackAction.HELP)
-    )
-    registry.register(
-        MenuItem(
-            "language", "language_button", MenuTarget.CALLBACK, 50, action=CallbackAction.LANGUAGE
-        )
-    )
-    registry.register(
-        MenuItem(
-            "privacy", "privacy_button", MenuTarget.CALLBACK, 60, action=CallbackAction.PRIVACY
-        )
-    )
-    registry.register(
-        MenuItem("refresh", "refresh", MenuTarget.CALLBACK, 70, action=CallbackAction.MENU)
-    )
+    for item_id, label_key, order, action in (
+        ("buy", "buy_service", 10, CallbackAction.BUY_SERVICE),
+        ("services", "my_services", 20, CallbackAction.MY_SERVICES),
+        ("profile", "profile", 30, CallbackAction.PROFILE),
+        ("wallet", "wallet", 40, CallbackAction.WALLET),
+        ("security", "security", 50, CallbackAction.SECURITY),
+        ("support", "support", 60, CallbackAction.SUPPORT),
+        ("education", "education", 70, CallbackAction.OPEN_EDUCATION),
+        ("status", "status", 80, CallbackAction.STATUS),
+        ("language", "language_button", 90, CallbackAction.LANGUAGE),
+        ("privacy", "privacy_button", 100, CallbackAction.PRIVACY),
+        ("help", "help_button", 110, CallbackAction.HELP),
+        ("refresh", "refresh", 120, CallbackAction.MENU),
+        ("home", "open_app", 130, CallbackAction.MENU),
+    ):
+        registry.register(MenuItem(item_id, label_key, MenuTarget.CALLBACK, order, action=action))
     return registry
 
 

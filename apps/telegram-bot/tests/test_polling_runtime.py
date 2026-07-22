@@ -81,7 +81,7 @@ def test_polling_getme_webhook_offset_start_menu_and_duplicate() -> None:
         assert len(sent) == 1
         markup = cast(dict[str, Any], sent[0]["reply_markup"])
         keyboard = cast(list[list[dict[str, Any]]], markup["inline_keyboard"])
-        assert keyboard[0][0]["web_app"]["url"] == "https://app.example.test/"
+        assert keyboard[0][0]["callback_data"].startswith("b:v1:")
 
     asyncio.run(scenario())
 
