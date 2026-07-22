@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class BotMetrics:
-    counters: Counter[str] = field(default_factory=Counter)
+    counters: Counter[str] = field(default_factory=Counter[str])
 
     def inc(self, name: str) -> None:
         self.counters[name] += 1

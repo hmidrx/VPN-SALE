@@ -236,4 +236,4 @@ def test_bot_blocked_state_can_be_marked_and_cleared_by_update() -> None:
     identity = InMemoryTelegramIdentityService()
     identity.mark_bot_blocked(42)
     BotCommandHandler(settings(), identity).handle_command(private_start(30))
-    assert 42 not in identity._blocked  # test fake inspection only
+    assert not identity.is_blocked(42)

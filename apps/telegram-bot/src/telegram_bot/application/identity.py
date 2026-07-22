@@ -72,6 +72,19 @@ class InMemoryTelegramIdentityService(TelegramIdentityPort):
         with self._lock:
             self._blocked.add(telegram_user_id)
 
+    def customer_count(self) -> int:
+        with self._lock:
+            return len(self._records)
+
+    def customer_ref_for(self, telegram_user_id: int) -> str | None:
+        with self._lock:
+            record = self._records.get(telegram_user_id)
+            return None if record is None else record.user_id
+
+    def is_blocked(self, telegram_user_id: int) -> bool:
+        with self._lock:
+            return telegram_user_id in self._blocked
+
 
 def now_utc() -> datetime:
     return datetime.now(UTC)

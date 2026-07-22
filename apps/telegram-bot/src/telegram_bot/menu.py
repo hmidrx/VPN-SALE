@@ -30,7 +30,7 @@ class MenuItem:
 
 @dataclass
 class MenuRegistry:
-    _items: list[MenuItem] = field(default_factory=list)
+    _items: list[MenuItem] = field(default_factory=list[MenuItem])
 
     def register(self, item: MenuItem) -> None:
         if any(existing.item_id == item.item_id for existing in self._items):

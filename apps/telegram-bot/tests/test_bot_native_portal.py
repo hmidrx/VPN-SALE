@@ -3,10 +3,12 @@ from __future__ import annotations
 import logging
 from hashlib import sha256
 
+from _pytest.logging import LogCaptureFixture
+
 from telegram_bot.application.identity import InMemoryTelegramIdentityService
 from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.config import BotMode, BotSettings
-from telegram_bot.portal import InMemoryCustomerPortal
+from telegram_bot.portal import CustomerContext, InMemoryCustomerPortal
 from telegram_bot.runtime.handlers import (
     BotCommandHandler,
     IncomingCallback,
@@ -47,8 +49,8 @@ def test_start_resolves_canonical_customer_and_username_change_does_not_duplicat
     handler.handle_command(IncomingCommand(1, "private", _user("first"), "/start"))
     handler.handle_command(IncomingCommand(2, "private", _user("changed"), "/start"))
     assert identity.audit_events == 2
-    assert len(identity._records) == 1
-    assert identity._records[42].user_id == "user-42"
+    assert identity.customer_count() == 1
+    assert identity.customer_ref_for(42) == "user-42"
 
 
 def test_all_customer_menu_items_are_bot_native_callbacks_without_mini_app_requirement() -> None:
@@ -159,17 +161,16 @@ def test_conversation_cancel_timeout_restart_and_ticket_idempotency() -> None:
     # Durable stores can be reattached; repeated create_ticket is idempotent.
     portal = InMemoryCustomerPortal()
     handler1 = BotCommandHandler(_settings(), InMemoryTelegramIdentityService(), portal=portal)
-    first = portal.create_ticket(
-        type("C", (), {"customer_ref": "user-42"})(), "billing", "subject", "message"
-    )  # type: ignore[arg-type]
-    second = portal.create_ticket(
-        type("C", (), {"customer_ref": "user-42"})(), "billing", "subject", "message"
-    )  # type: ignore[arg-type]
+    context = CustomerContext("user-42", 42, "fa")
+    first = portal.create_ticket(context, "billing", "subject", "message")
+    second = portal.create_ticket(context, "billing", "subject", "message")
     assert first.ref == second.ref
     assert handler1.conversations.cancel("missing") is False
 
 
-def test_sensitive_values_do_not_appear_in_logs_or_callback_data(caplog) -> None:
+def test_sensitive_values_do_not_appear_in_logs_or_callback_data(
+    caplog: LogCaptureFixture,
+) -> None:
     caplog.set_level(logging.INFO)
     sensitive_value = "vless://" + "access-token"
     data = BotCallback(CallbackAction.OPEN_SERVICE, "opaque-ref").pack()

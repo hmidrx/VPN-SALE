@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from itertools import islice
-from typing import Literal
+from typing import Literal, Protocol
 
 from .application.identity import AccountStatus
 
@@ -84,7 +84,7 @@ class ConversationState:
     kind: ConversationKind
     started_at: datetime
     expires_at: datetime
-    data: dict[str, str] = field(default_factory=dict)
+    data: dict[str, str] = field(default_factory=lambda: dict[str, str]())
     nonce: str = ""
 
     def expired(self, at: datetime) -> bool:
@@ -109,7 +109,7 @@ class InMemoryConversationStore:
         return self._states.pop(key, None) is not None
 
 
-class CustomerPortalPort:
+class CustomerPortalPort(Protocol):
     def profile(self, context: CustomerContext) -> CustomerProfile: ...
     def set_language(self, context: CustomerContext, locale: str) -> None: ...
     def services(self, context: CustomerContext) -> list[ServiceSummary]: ...
@@ -211,7 +211,7 @@ class InMemoryCustomerPortal(CustomerPortalPort):
         return [t for t in self.created_tickets.values() if t.owner_ref == context.customer_ref]
 
 
-def page_items(items: list[object], page: int, per_page: int = 5) -> tuple[list[object], bool]:
+def page_items[TItem](items: list[TItem], page: int, per_page: int = 5) -> tuple[list[TItem], bool]:
     start = max(page, 0) * per_page
     chunk = list(islice(items, start, start + per_page + 1))
     return chunk[:per_page], len(chunk) > per_page
