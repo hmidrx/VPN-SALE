@@ -4,7 +4,19 @@ from dataclasses import dataclass
 
 from telegram_bot.localization import t
 
-COMMANDS = ("start", "menu", "help", "profile", "security", "language", "privacy", "cancel")
+COMMANDS = (
+    "start",
+    "menu",
+    "help",
+    "profile",
+    "services",
+    "wallet",
+    "security",
+    "support",
+    "language",
+    "privacy",
+    "cancel",
+)
 
 
 @dataclass(frozen=True)
@@ -19,6 +31,9 @@ def command_definitions(locale: str = "fa") -> tuple[BotCommandDefinition, ...]:
         "menu": t(locale, "refresh"),
         "help": t(locale, "help_button"),
         "profile": t(locale, "profile"),
+        "services": t(locale, "my_services"),
+        "wallet": t(locale, "wallet"),
+        "support": t(locale, "support"),
         "security": t(locale, "security"),
         "language": t(locale, "language_button"),
         "privacy": t(locale, "privacy_button"),

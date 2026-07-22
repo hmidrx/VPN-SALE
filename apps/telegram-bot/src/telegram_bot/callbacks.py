@@ -20,6 +20,18 @@ class CallbackAction(StrEnum):
     OPEN_CONFIGS = "cfg_open"
     OPEN_SUBSCRIPTION = "sub_open"
     OPEN_SERVICE_GUIDE = "svc_guide"
+    BUY_SERVICE = "buy"
+    WALLET = "wallet"
+    SUPPORT = "support"
+    STATUS = "status"
+    SET_LANGUAGE = "set_lang"
+    TOP_UP = "topup"
+    RENEW = "renew"
+    UPGRADE = "upgrade"
+    EXTRA_TRAFFIC = "extra"
+    REVOKE_SESSION = "revoke"
+    CONFIRM_REVOKE = "confirm_revoke"
+    CANCEL = "cancel"
 
 
 @dataclass(frozen=True)
