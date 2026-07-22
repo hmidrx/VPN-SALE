@@ -140,9 +140,10 @@ start_services=(api customer-web admin-web reseller-web); [[ "$ENABLE_TELEGRAM" 
 for p in 3000 3001 3002; do ./scripts/wait-for-http.sh "http://127.0.0.1:$p" 60; done
 phase_done services
 phase="Caddy"
-tmp_caddy="$(mktemp)"; render_managed_caddyfile "$DOMAIN" >"$tmp_caddy"; ! grep -Fq 'fast.dr-ping.com' "$tmp_caddy" || fail "forbidden hostname rendered"
-sha256sum "$tmp_caddy" | awk '{print $1}' | atomic_write_file "$CADDY_MARKER" 0600
-caddy validate --config "$tmp_caddy"; install -m 0644 "$tmp_caddy" /etc/caddy/Caddyfile.new; mv /etc/caddy/Caddyfile.new /etc/caddy/Caddyfile; systemctl enable caddy; systemctl restart caddy
+tmp_caddy="$(mktemp)"
+render_managed_caddyfile "$DOMAIN" >"$tmp_caddy"
+! grep -Fq 'fast.dr-ping.com' "$tmp_caddy" || fail "forbidden hostname rendered"
+activate_managed_caddyfile "$tmp_caddy" "$CADDY_MARKER" || fail "Caddy activation failed"
 phase_done caddy
 phase="Telegram setup"
 if [[ "$ENABLE_TELEGRAM" == true ]]; then printf 'url = "https://api.telegram.org/bot%s/deleteWebhook"\n' "$BOT_TOKEN" | curl -fsS --config - -d drop_pending_updates=true >/dev/null; fi

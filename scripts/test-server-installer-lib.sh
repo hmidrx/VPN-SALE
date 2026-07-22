@@ -101,7 +101,8 @@ is_installer_managed_caddy_source(){
 }
 
 caddy_keyring_is_valid(){
-  local keyring="$(rooted_path "$CADDY_KEYRING_PATH")"
+  local keyring
+  keyring="$(rooted_path "$CADDY_KEYRING_PATH")"
   [[ -s "$keyring" ]] || return 1
   gpg --batch --show-keys "$keyring" >/dev/null 2>&1
 }
@@ -234,4 +235,32 @@ reseller.$domain {
   }
 }
 CADDY
+}
+
+activate_managed_caddyfile(){
+  local tmp_caddy="$1" caddy_marker="$2" caddy_dir="${CADDY_CONFIG_DIR:-/etc/caddy}" caddyfile previous_caddy=""
+  caddyfile="$caddy_dir/Caddyfile"
+  [[ -f "$tmp_caddy" ]] || return 1
+  if [[ -f "$caddyfile" ]] && ! is_managed_caddyfile "$caddyfile" && ! is_default_caddyfile "$caddyfile"; then
+    printf 'ERROR: refusing to overwrite unrelated Caddyfile\n' >&2
+    return 1
+  fi
+  caddy validate --adapter caddyfile --config "$tmp_caddy" || return 1
+  install -d -m 0755 "$caddy_dir"
+  install -m 0644 "$tmp_caddy" "$caddyfile.new" || return 1
+  if [[ -f "$caddyfile" ]]; then
+    previous_caddy="$(mktemp "$caddy_dir/.Caddyfile.rollback.XXXXXX")" || return 1
+    install -m 0644 "$caddyfile" "$previous_caddy" || return 1
+  fi
+  mv "$caddyfile.new" "$caddyfile" || return 1
+  if ! systemctl enable caddy || ! systemctl restart caddy || ! systemctl is-active --quiet caddy; then
+    if [[ -n "$previous_caddy" && -f "$previous_caddy" ]]; then
+      install -m 0644 "$previous_caddy" "$caddyfile"
+      systemctl restart caddy >/dev/null 2>&1 || true
+    fi
+    printf 'ERROR: Caddy activation failed; restored previous Caddyfile when available\n' >&2
+    return 1
+  fi
+  rm -f "$previous_caddy"
+  sha256sum "$tmp_caddy" | awk '{print $1}' | atomic_write_file "$caddy_marker" 0600
 }
