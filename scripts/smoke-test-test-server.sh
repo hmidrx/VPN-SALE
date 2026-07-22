@@ -4,7 +4,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 env_file="${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}"
 domain="${VPN_SALE_TEST_SERVER_DOMAIN:-}"
 compose=("$repo_root/scripts/vpn-sale-compose-test-server" --env-file "$env_file")
-# shellcheck source=scripts/test-server-compose-json.sh
+# shellcheck source=scripts/test-server-compose-json.sh disable=SC1091
 source "$repo_root/scripts/test-server-compose-json.sh"
 telegram_api(){ local token="$1" method="$2"; shift 2; printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$token" "$method" | curl -fsS --config - "$@"; }
 redact(){ sed -E 's/(bot[0-9]+:)?[A-Za-z0-9_-]{24,}/<redacted>/g; s/(TOKEN|PASSWORD|SECRET|KEY)=([^[:space:]]+)/\1=<redacted>/g'; }
@@ -37,7 +37,7 @@ fi
 if [[ -n "$domain" ]]; then
   for url in "https://app.$domain" "https://api.$domain/health" "https://admin.$domain" "https://reseller.$domain"; do curl -fsSI --connect-timeout 5 "$url" >/dev/null; echo | openssl s_client -servername "$(awk -F/ '{print $3}' <<<"$url")" -connect "$(awk -F/ '{print $3}' <<<"$url")":443 2>/dev/null | openssl x509 -noout -subject >/dev/null; done
 fi
-if systemctl is-active --quiet caddy; then caddy validate --config /etc/caddy/Caddyfile; check_caddyfile /etc/caddy/Caddyfile; fi
+if systemctl is-active --quiet caddy; then caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile; check_caddyfile /etc/caddy/Caddyfile; fi
 if grep -q '^VPN_SALE_BOT_ENABLED=true' "$env_file"; then
   token="$(get_env VPN_SALE_TELEGRAM_BOT_TOKEN)"; app_url="$(get_env VPN_SALE_PUBLIC_APP_ORIGIN)"
   compose_service_json_array telegram-bot "${compose[@]}" | jq -e --arg service telegram-bot 'map(select(.Service == $service)) | first | (.RestartCount == 0 and .State == "running")' >/dev/null
