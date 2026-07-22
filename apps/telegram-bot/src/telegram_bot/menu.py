@@ -55,7 +55,6 @@ def default_menu_registry() -> MenuRegistry:
         ("support", "support", 60, CallbackAction.SUPPORT),
         ("education", "education", 70, CallbackAction.OPEN_EDUCATION),
         ("status", "status", 80, CallbackAction.STATUS),
-        ("language", "language_button", 90, CallbackAction.LANGUAGE),
         ("privacy", "privacy_button", 100, CallbackAction.PRIVACY),
         ("help", "help_button", 110, CallbackAction.HELP),
         ("refresh", "refresh", 120, CallbackAction.MENU),
@@ -111,7 +110,7 @@ def runtime_menu_rows(menu: list[dict[str, object]], locale: str) -> list[list[d
         label = action
         if isinstance(label_map, dict):
             labels = cast(dict[str, object], label_map)
-            localized = labels.get(locale) or labels.get("fa") or labels.get("en")
+            localized = labels.get("fa")
             if isinstance(localized, str) and localized.strip():
                 label = localized[:64]
         rows.append([{"text": label, "callback_data": f"cfg:{action}"}])

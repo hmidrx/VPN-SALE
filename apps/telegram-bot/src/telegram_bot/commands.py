@@ -13,7 +13,6 @@ COMMANDS = (
     "wallet",
     "security",
     "support",
-    "language",
     "privacy",
     "cancel",
 )
@@ -35,7 +34,6 @@ def command_definitions(locale: str = "fa") -> tuple[BotCommandDefinition, ...]:
         "wallet": t(locale, "wallet"),
         "support": t(locale, "support"),
         "security": t(locale, "security"),
-        "language": t(locale, "language_button"),
         "privacy": t(locale, "privacy_button"),
         "cancel": t(locale, "cancel"),
     }

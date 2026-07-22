@@ -5,6 +5,8 @@ from datetime import datetime
 from enum import StrEnum
 from html import escape
 
+from telegram_bot.formatting import fa_digits, format_date
+
 
 class ScreenId(StrEnum):
     HOME = "home"
@@ -40,11 +42,8 @@ class RenderedScreen:
     screen: ScreenId
 
 
-PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
-
-
 def fa_number(value: int) -> str:
-    return f"{value:,}".translate(PERSIAN_DIGITS)
+    return fa_digits(f"{value:,}")
 
 
 def safe_text(value: str | None, fallback: str = "—") -> str:
@@ -54,8 +53,6 @@ def safe_text(value: str | None, fallback: str = "—") -> str:
     return escape(cleaned or fallback, quote=True)
 
 
-def safe_date(value: datetime | None, locale: str) -> str:
-    if value is None:
-        return "—"
-    text = value.date().isoformat()
-    return text.translate(PERSIAN_DIGITS) if locale == "fa" else text
+def safe_date(value: datetime | None, locale: str = "fa") -> str:
+    _ = locale
+    return format_date(value)

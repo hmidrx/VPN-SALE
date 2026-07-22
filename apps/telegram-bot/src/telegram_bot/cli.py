@@ -48,7 +48,7 @@ def load_settings_from_environment() -> BotSettings:
             "VPN_SALE_CUSTOMER_MINI_APP_ALLOWED_HOSTS", ("localhost", "127.0.0.1")
         ),
         default_locale=os.environ.get("VPN_SALE_TELEGRAM_DEFAULT_LOCALE", "fa"),
-        supported_locales=_env_tuple("VPN_SALE_TELEGRAM_SUPPORTED_LOCALES", ("fa", "en")),
+        supported_locales=_env_tuple("VPN_SALE_TELEGRAM_SUPPORTED_LOCALES", ("fa",)),
         update_idempotency_ttl_seconds=_env_int(
             "VPN_SALE_TELEGRAM_UPDATE_IDEMPOTENCY_TTL_SECONDS", 86400
         ),

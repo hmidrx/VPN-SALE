@@ -14,7 +14,6 @@ STATE_TTL_SECONDS = 60 * 60 * 24
 class ConversationStateV2:
     current_screen: ScreenId = ScreenId.HOME
     navigation_stack: tuple[ScreenId, ...] = ()
-    language_selection_active: bool = False
     active_menu_message_id: int | None = None
     state_version: int = 1
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -34,7 +33,6 @@ class ConversationStateV2:
             self,
             current_screen=screen,
             navigation_stack=stack,
-            language_selection_active=screen == ScreenId.LANGUAGE,
             state_version=self.state_version + 1,
             updated_at=now,
             expires_at=now + timedelta(seconds=STATE_TTL_SECONDS),
@@ -48,7 +46,6 @@ class ConversationStateV2:
             self,
             current_screen=self.navigation_stack[-1],
             navigation_stack=self.navigation_stack[:-1],
-            language_selection_active=False,
             state_version=self.state_version + 1,
             updated_at=now,
             expires_at=now + timedelta(seconds=STATE_TTL_SECONDS),

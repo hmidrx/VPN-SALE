@@ -75,7 +75,6 @@ def test_navigation_refresh_retry_back_home_language_and_web_are_handled() -> No
             (CallbackAction.RETRY, ""),
             (CallbackAction.NAVIGATE, ScreenId.LANGUAGE.value),
             (CallbackAction.SET_LANGUAGE, "en"),
-            (CallbackAction.SET_LANGUAGE, "fa"),
             (CallbackAction.OPEN_WEB_APP, ""),
             (CallbackAction.CANCEL, ""),
         ],

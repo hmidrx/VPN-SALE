@@ -93,7 +93,6 @@ def test_menu_registry_contains_working_items_only() -> None:
         "support",
         "education",
         "status",
-        "language",
         "privacy",
         "help",
         "refresh",
@@ -104,9 +103,9 @@ def test_menu_registry_contains_working_items_only() -> None:
 
 def test_locale_resolution_and_fallback() -> None:
     assert normalize_locale("fa-IR", ("fa", "en"), "fa") == "fa"
-    assert normalize_locale("de", ("fa", "en"), "fa") == "fa"
-    assert t("en", "open_app") == "Open customer app (optional)"
-    assert t("unknown", "open_app") == "باز کردن پنل مشتری (اختیاری)"
+    assert normalize_locale("en", ("fa", "en"), "fa") == "fa"
+    assert normalize_locale("de", ("fa",), "fa") == "fa"
+    assert t("en", "open_app") == "باز کردن پنل مشتری (اختیاری)"
 
 
 def test_callback_data_is_versioned_and_strict() -> None:
@@ -148,7 +147,6 @@ def test_command_registration_inventory() -> None:
         "wallet",
         "security",
         "support",
-        "language",
         "privacy",
         "cancel",
     ]
@@ -201,7 +199,7 @@ def test_account_status_restrictions_hide_mini_app() -> None:
 def test_commands_help_profile_security_language_privacy_cancel() -> None:
     handler = BotCommandHandler(settings(), InMemoryTelegramIdentityService())
     for idx, command in enumerate(
-        ["/menu", "/help", "/profile", "/security", "/language", "/privacy", "/cancel"], start=10
+        ["/menu", "/help", "/profile", "/security", "/privacy", "/cancel"], start=10
     ):
         result = handler.handle_command(
             IncomingCommand(idx, "private", IncomingUser(42, language_code="fa"), command)

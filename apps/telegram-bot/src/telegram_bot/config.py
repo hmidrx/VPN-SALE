@@ -29,7 +29,7 @@ class BotSettings:
     mini_app_base_url: str = "http://localhost:3000"
     mini_app_allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1")
     default_locale: str = "fa"
-    supported_locales: tuple[str, ...] = ("fa", "en")
+    supported_locales: tuple[str, ...] = ("fa",)
     update_idempotency_ttl_seconds: int = 86400
     command_rate_limit: int = 12
     command_rate_limit_window_seconds: int = 60
