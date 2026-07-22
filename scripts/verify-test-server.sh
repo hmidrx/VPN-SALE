@@ -46,9 +46,16 @@ if [[ "$bot_enabled" == true ]]; then
   bot_env="$("${compose[@]}" exec -T telegram-bot env | awk -F= '$1=="VPN_SALE_BOT_ENABLED" || $1=="VPN_SALE_BOT_MODE" {print}' | sort)"
   expected_bot_env=$'VPN_SALE_BOT_ENABLED=true\nVPN_SALE_BOT_MODE=polling'
   [[ "$bot_env" == "$expected_bot_env" ]] || fail "telegram bot container has unexpected redacted runtime environment"
-  bot_logs="$("${compose[@]}" logs --no-color --tail=80 telegram-bot 2>/dev/null | sed -E 's/(token|secret|password|database_url|postgresql:\/\/)[^[:space:]]+/REDACTED/Ig')"
-  ! printf '%s\n' "$bot_logs" | rg -i 'disabled|bot_token|VPN_SALE_TELEGRAM_BOT_TOKEN|BEGIN ENV|POSTGRES_PASSWORD|DATABASE_URL|postgresql://' >/dev/null || fail "telegram bot recent safe logs contain disabled state or secret-shaped output"
-  ok "Telegram bot running with redacted runtime enabled=true mode=polling and safe recent logs"
+  restart_count="$(compose_service_field telegram-bot RestartCount "${compose[@]}" 2>/dev/null || printf '0')"
+  [[ "$restart_count" == 0 ]] || fail "telegram bot container is restarting"
+  bot_logs="$("${compose[@]}" logs --no-color --tail=120 telegram-bot 2>/dev/null | sed -E 's/(token|secret|password|database_url|postgresql:\/\/)[^[:space:]]+/REDACTED/Ig')"
+  ! printf '%s\n' "$bot_logs" | rg -i 'disabled runtime|bot_token|VPN_SALE_TELEGRAM_BOT_TOKEN|BEGIN ENV|POSTGRES_PASSWORD|DATABASE_URL|postgresql://' >/dev/null || fail "telegram bot recent safe logs contain disabled runtime or secret-shaped output"
+  printf '%s\n' "$bot_logs" | rg -F 'telegram bot polling initialization successful' >/dev/null || fail "telegram bot startup did not report successful polling initialization"
+  "${compose[@]}" exec -T telegram-bot python - <<'PYBOTV2' | rg -Fx 'vpn-sale-telegram-bot-v2-foundation' >/dev/null || fail "telegram bot image missing Bot V2 version marker"
+from telegram_bot.version import BOT_V2_VERSION_MARKER
+print(BOT_V2_VERSION_MARKER)
+PYBOTV2
+  ok "Telegram bot running with redacted runtime enabled=true mode=polling, no restarts, safe logs, and Bot V2 marker"
 elif [[ "$bot_enabled" == false || -z "$bot_enabled" ]]; then
   ok "Telegram bot disabled by runtime configuration"
 else
