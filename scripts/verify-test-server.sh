@@ -34,7 +34,22 @@ for p in 80 443; do ss -ltnp "sport = :$p" | grep -Fq caddy || fail "port $p not
 for bind in '127.0.0.1:8000' '127.0.0.1:3000' '127.0.0.1:3001' '127.0.0.1:3002'; do ss -ltn | grep -Fq "$bind" || fail "missing loopback binding $bind"; ok "$bind loopback-bound"; done
 "${compose[@]}" config --format json | jq -e '(.services.postgres.ports // []) == [] and (.services.redis.ports // []) == [] and (.services.worker.ports // []) == [] and (.services["telegram-bot"].ports // []) == []' >/dev/null || fail "private services publish ports"; ok "PostgreSQL/Redis/worker/Telegram publish no ports"
 for u in "https://app.$DOMAIN" "https://api.$DOMAIN/health" "https://admin.$DOMAIN" "https://reseller.$DOMAIN"; do curl -fsS --max-time 20 "$u" >/dev/null || fail "HTTPS smoke failed: $u"; ok "HTTPS $u"; done
-if [[ "$(get_env VPN_SALE_BOT_ENABLED "$ENV_FILE")" == true ]]; then compose_service_field telegram-bot State "${compose[@]}" >/dev/null || fail "telegram bot container missing"; ok "Telegram bot container present (identity derived from getMe during install)"; fi
+bot_enabled="$(get_env VPN_SALE_BOT_ENABLED "$ENV_FILE")"
+bot_mode="$(get_env VPN_SALE_BOT_MODE "$ENV_FILE")"
+if [[ "$bot_enabled" == true ]]; then
+  bot_state="$(compose_service_field telegram-bot State "${compose[@]}" 2>/dev/null || true)"
+  [[ -n "$bot_state" ]] || fail "telegram bot container missing while VPN_SALE_BOT_ENABLED=true"
+  [[ "$bot_state" == running ]] || fail "telegram bot must be running when enabled; redacted state=$bot_state mode=${bot_mode:-unset}"
+  [[ "$bot_mode" != disabled ]] || fail "telegram bot runtime mode is disabled while VPN_SALE_BOT_ENABLED=true"
+  bot_env="$("${compose[@]}" exec -T telegram-bot env | awk -F= '$1=="VPN_SALE_BOT_ENABLED" || $1=="VPN_SALE_BOT_MODE" {print}' | sort)"
+  expected_bot_env=$'VPN_SALE_BOT_ENABLED=true\nVPN_SALE_BOT_MODE='"$bot_mode"
+  [[ "$bot_env" == "$expected_bot_env" ]] || fail "telegram bot container has unexpected redacted runtime environment"
+  ok "Telegram bot running with redacted runtime enabled=true mode=$bot_mode"
+elif [[ "$bot_enabled" == false || -z "$bot_enabled" ]]; then
+  ok "Telegram bot disabled by runtime configuration"
+else
+  fail "invalid VPN_SALE_BOT_ENABLED value in runtime env"
+fi
 systemctl is-active --quiet fail2ban || fail "fail2ban inactive"; ok "fail2ban active"
 swapon --show --noheadings | grep -q . || fail "swap missing"; ok "swap present"
 ! rg -n 'fast\.dr-ping\.com' "$RUNTIME_DIR" /etc/caddy/Caddyfile >/dev/null || fail "fast.dr-ping.com present in generated deployment configuration"; ok "fast.dr-ping.com absent from generated deployment configuration"

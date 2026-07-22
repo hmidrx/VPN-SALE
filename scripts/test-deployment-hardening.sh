@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 installer="$repo_root/scripts/install-test-server.sh"
@@ -65,6 +66,11 @@ bash "$smoke" --check-caddyfile "$valid_caddyfile" >/dev/null
 bash "$repo_root/scripts/test-compose-ps-json.sh" >/dev/null
 if bash "$smoke" --check-caddyfile "$invalid_caddyfile" >/dev/null 2>&1; then echo 'invalid Caddy email off directive passed smoke check' >&2; exit 1; fi
 if command -v docker >/dev/null 2>&1; then "$repo_root/scripts/verify-test-server-compose.sh"; else printf 'docker unavailable; skipped compose render\n' >&2; fi
+require_match 'VPN_SALE_BOT_ENABLED: "[$]\{VPN_SALE_BOT_ENABLED:-false\}"|VPN_SALE_BOT_MODE: "[$]\{VPN_SALE_BOT_MODE:-disabled\}"' "$repo_root/docker-compose.yml"
+require_match 'env -i HOME=.*PATH=.*VPN_SALE_TEST_SERVER_ENV_FILE="[$]env_file"|--env-file "[$]env_file"' "$repo_root/scripts/vpn-sale-compose-test-server"
+require_match 'telegram bot must be running when enabled|VPN_SALE_BOT_ENABLED|VPN_SALE_BOT_MODE|telegram bot runtime mode is disabled' "$repo_root/scripts/verify-test-server.sh"
+require_match 'telegram bot enabled but not steadily running; redacted status=' "$smoke"
+reject_match 'env \| docker|printenv|VPN_SALE_TELEGRAM_BOT_TOKEN' "$repo_root/scripts/verify-test-server.sh"
 printf 'deployment hardening tests passed\n'
 # Hardened installer state, Caddy ownership, PostgreSQL lifecycle and verifier coverage.
 require_match 'test-server-installer-lib.sh' "$installer" "$repo_root/scripts/verify-test-server.sh"
