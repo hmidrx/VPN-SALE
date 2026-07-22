@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from telegram_bot.config import BotMode, BotSettings
 from telegram_bot.observability import BotMetrics
+from telegram_bot.version import BOT_V2_VERSION_MARKER
 
 
 @dataclass
@@ -25,6 +26,7 @@ class BotRuntime:
             "service": "telegram-bot",
             "enabled": self.settings.enabled,
             "mode": self.settings.mode.value,
+            "version_marker": BOT_V2_VERSION_MARKER,
         }
 
     def ready(self) -> BotRuntimeStatus:

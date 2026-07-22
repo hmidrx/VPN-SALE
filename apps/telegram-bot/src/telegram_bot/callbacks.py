@@ -5,17 +5,25 @@ from enum import StrEnum
 
 
 class CallbackAction(StrEnum):
-    MENU = "menu"
+    NAVIGATE = "nav"
+    BACK = "back"
+    HOME = "home"
+    REFRESH = "ref"
+    RETRY = "retry"
+    CANCEL = "cancel"
+    SET_LANGUAGE = "lang"
+    OPEN_WEB_APP = "web"
+    MENU = "home"  # compatibility
     HELP = "help"
-    LANGUAGE = "lang"
+    LANGUAGE = "language"
     PRIVACY = "privacy"
     PROFILE = "profile"
     SECURITY = "security"
-    OPEN_EDUCATION = "edu"
+    OPEN_EDUCATION = "education"
     SEARCH_GUIDES = "guide_search"
     SHOW_FAQ = "faq"
     OPEN_STATUS_PAGE = "status"
-    MY_SERVICES = "svc"
+    MY_SERVICES = "services"
     OPEN_SERVICE = "svc_open"
     OPEN_CONFIGS = "cfg_open"
     OPEN_SUBSCRIPTION = "sub_open"
@@ -24,14 +32,15 @@ class CallbackAction(StrEnum):
     WALLET = "wallet"
     SUPPORT = "support"
     STATUS = "status"
-    SET_LANGUAGE = "set_lang"
+    DISCOUNTS = "discounts"
+    ANNOUNCEMENTS = "announcements"
+    SETTINGS = "settings"
     TOP_UP = "topup"
     RENEW = "renew"
     UPGRADE = "upgrade"
     EXTRA_TRAFFIC = "extra"
     REVOKE_SESSION = "revoke"
     CONFIRM_REVOKE = "confirm_revoke"
-    CANCEL = "cancel"
 
 
 @dataclass(frozen=True)
@@ -50,7 +59,7 @@ class BotCallback:
     def parse(cls, data: str | None) -> BotCallback:
         if not data or len(data.encode()) > 64:
             raise ValueError("invalid callback data")
-        parts = data.split(":")
-        if len(parts) != 4 or parts[0] != "b" or parts[1] != "v1":
+        parts = data.split(":", 3)
+        if len(parts) != 4 or parts[0] != "b" or parts[1] not in {"v1", "v2"}:
             raise ValueError("unsupported callback data")
         return cls(action=CallbackAction(parts[2]), value=parts[3], version=parts[1])

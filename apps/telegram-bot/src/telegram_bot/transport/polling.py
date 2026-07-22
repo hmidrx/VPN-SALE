@@ -12,10 +12,12 @@ from telegram_bot.application.identity import TelegramIdentityPort
 from telegram_bot.config import BotMode, BotSettings
 from telegram_bot.runtime.handlers import (
     BotCommandHandler,
+    IncomingCallback,
     IncomingCommand,
     IncomingUser,
     OutgoingMessage,
 )
+from telegram_bot.version import BOT_V2_VERSION_MARKER
 
 LOG = logging.getLogger(__name__)
 
@@ -102,6 +104,10 @@ class TelegramPollingRuntime:
         )
         await self.transport.call("deleteWebhook", {"drop_pending_updates": False})
         self.stats = PollingStats(True, True, self.offset)
+        LOG.info(
+            "telegram bot polling initialization successful",
+            extra={"version_marker": BOT_V2_VERSION_MARKER, "mode": self.settings.mode.value},
+        )
         backoff = self.retry_base_seconds
         while not self._stop.is_set():
             try:
@@ -131,6 +137,29 @@ class TelegramPollingRuntime:
                 backoff = min(self.retry_max_seconds, backoff * 2)
 
     async def _dispatch(self, update: dict[str, Any]) -> None:
+        callback = _callback_from_update(update)
+        if callback is not None:
+            result = self.handler.handle_callback(callback)
+            await self.transport.call(
+                "answerCallbackQuery", {"callback_query_id": callback.callback_id}
+            )
+            chat_id, message_id = _callback_message_ref(update)
+            if chat_id is None:
+                return
+            for message in result.messages:
+                payload = _send_message_payload(chat_id, message)
+                if message_id is not None:
+                    try:
+                        edit_payload = dict(payload)
+                        edit_payload["message_id"] = message_id
+                        await self.transport.call("editMessageText", edit_payload)
+                        continue
+                    except Exception as exc:  # noqa: BLE001 - fallback to new menu message
+                        LOG.info(
+                            "telegram edit fallback", extra={"result_class": type(exc).__name__}
+                        )
+                await self.transport.call("sendMessage", payload)
+            return
         command = _command_from_update(update)
         if command is None:
             return
@@ -211,3 +240,47 @@ def _send_message_payload(chat_id: int, message: OutgoingMessage) -> dict[str, o
 def _optional_str(data: dict[str, Any], key: str) -> str | None:
     value = data.get(key)
     return value if isinstance(value, str) else None
+
+
+def _callback_from_update(update: dict[str, Any]) -> IncomingCallback | None:
+    obj = update.get("callback_query")
+    if not isinstance(obj, dict):
+        return None
+    data = cast(dict[str, Any], obj)
+    user_data = data.get("from") if isinstance(data.get("from"), dict) else None
+    user_dict = cast(dict[str, Any], user_data) if isinstance(user_data, dict) else None
+    user = None
+    if user_dict and isinstance(user_dict.get("id"), int):
+        user = IncomingUser(
+            telegram_user_id=int(user_dict["id"]),
+            username=_optional_str(user_dict, "username"),
+            first_name=_optional_str(user_dict, "first_name"),
+            last_name=_optional_str(user_dict, "last_name"),
+            language_code=_optional_str(user_dict, "language_code"),
+        )
+    message_obj = data.get("message")
+    message = cast(dict[str, Any], message_obj) if isinstance(message_obj, dict) else {}
+    chat_obj = message.get("chat")
+    chat = cast(dict[str, Any], chat_obj) if isinstance(chat_obj, dict) else {}
+    return IncomingCallback(
+        update_id=int(cast(int, update["update_id"])),
+        callback_id=str(data.get("id", "")),
+        chat_type=_optional_str(chat, "type") or "private",
+        user=user,
+        data=_optional_str(data, "data"),
+    )
+
+
+def _callback_message_ref(update: dict[str, Any]) -> tuple[int | None, int | None]:
+    obj = update.get("callback_query")
+    data = cast(dict[str, Any], obj) if isinstance(obj, dict) else {}
+    msg_obj = data.get("message")
+    msg = cast(dict[str, Any], msg_obj) if isinstance(msg_obj, dict) else {}
+    chat_obj = msg.get("chat")
+    chat = cast(dict[str, Any], chat_obj) if isinstance(chat_obj, dict) else {}
+    chat_id = chat.get("id")
+    message_id = msg.get("message_id")
+    return (
+        chat_id if isinstance(chat_id, int) else None,
+        message_id if isinstance(message_id, int) else None,
+    )

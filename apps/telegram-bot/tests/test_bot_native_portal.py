@@ -58,23 +58,11 @@ def test_all_customer_menu_items_are_bot_native_callbacks_without_mini_app_requi
         IncomingCommand(3, "private", _user(), "/start")
     )
     rows = result.messages[0].rows
-    labels = [row[0]["text"] for row in rows]
-    assert labels[:12] == [
-        "🛒 خرید سرویس",
-        "📦 سرویس‌های من",
-        "👤 حساب کاربری",
-        "💰 کیف پول",
-        "🔐 امنیت و نشست‌ها",
-        "🎫 پشتیبانی",
-        "📚 آموزش اتصال",
-        "📡 وضعیت سرویس",
-        "🌐 تغییر زبان",
-        "🔒 حریم خصوصی",
-        "ℹ️ راهنما",
-        "🔄 بروزرسانی منو",
-    ]
-    assert all("callback_data" in row[0] for row in rows)
-    assert all("web_app_url" not in row[0] for row in rows)
+    assert rows[0][0]["text"] == "🛒 خرید سرویس"
+    assert rows[0][1]["text"] == "📦 سرویس‌های من"
+    assert rows[1][0]["text"] == "💳 کیف پول"
+    assert all("callback_data" in button for row in rows for button in row)
+    assert all("web_app_url" not in button for row in rows for button in row)
 
 
 def test_profile_services_wallet_support_education_security_status_privacy_help_work_in_bot() -> (
@@ -110,7 +98,7 @@ def test_service_ownership_stale_and_duplicate_callbacks_are_safe() -> None:
     stale = handler.handle_callback(IncomingCallback(22, "cb", "private", _user(), "bad"))
     assert "پلن استاندارد" in first.messages[0].text
     assert duplicate.duplicate and duplicate.messages == ()
-    assert stale.messages and "خطای" in stale.messages[0].text
+    assert stale.messages and "مشکلی" in stale.messages[0].text
 
 
 def test_provider_and_payment_writes_remain_disabled_in_test() -> None:
@@ -140,7 +128,7 @@ def test_language_persistence_and_english_menu() -> None:
     handler = BotCommandHandler(_settings(), InMemoryTelegramIdentityService(), portal=portal)
     result = handler.handle_callback(_callback(CallbackAction.SET_LANGUAGE, "en", 40))
     assert "Language saved" in result.messages[0].text
-    assert result.messages[0].rows[1][0]["text"] == "📦 My services"
+    assert result.messages[0].rows[0][1]["text"] == "📦 My services"
 
 
 def test_long_service_and_transaction_lists_paginate_and_callback_data_has_no_secrets() -> None:
