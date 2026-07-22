@@ -111,7 +111,6 @@ class InMemoryConversationStore:
 
 class CustomerPortalPort(Protocol):
     def profile(self, context: CustomerContext) -> CustomerProfile: ...
-    def set_language(self, context: CustomerContext, locale: str) -> None: ...
     def services(self, context: CustomerContext) -> list[ServiceSummary]: ...
     def service(self, context: CustomerContext, service_ref: str) -> ServiceSummary | None: ...
     def wallet_balance(self, context: CustomerContext) -> tuple[int, str]: ...
@@ -170,11 +169,8 @@ class InMemoryCustomerPortal(CustomerPortalPort):
             True,
             AccountStatus.ACTIVE,
             datetime(2026, 1, 1, tzinfo=UTC),
-            self._languages.get(context.customer_ref, context.locale),
+            "fa",
         )
-
-    def set_language(self, context: CustomerContext, locale: str) -> None:
-        self._languages[context.customer_ref] = locale
 
     def services(self, context: CustomerContext) -> list[ServiceSummary]:
         return [s for s in self._services if s.owner_ref == context.customer_ref]

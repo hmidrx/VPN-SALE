@@ -123,12 +123,12 @@ def test_provider_and_payment_writes_remain_disabled_in_test() -> None:
         )
 
 
-def test_language_persistence_and_english_menu() -> None:
+def test_stale_language_callback_stays_persian() -> None:
     portal = InMemoryCustomerPortal()
     handler = BotCommandHandler(_settings(), InMemoryTelegramIdentityService(), portal=portal)
     result = handler.handle_callback(_callback(CallbackAction.SET_LANGUAGE, "en", 40))
-    assert "Language saved" in result.messages[0].text
-    assert result.messages[0].rows[0][1]["text"] == "📦 My services"
+    assert "دکمه قدیمی" in result.messages[0].text
+    assert result.messages[0].rows == [[{"text": "🏠 منوی اصلی", "callback_data": "b:v1:home:"}]]
 
 
 def test_long_service_and_transaction_lists_paginate_and_callback_data_has_no_secrets() -> None:

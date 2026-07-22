@@ -119,10 +119,18 @@ class BotCommandHandler:
             return self._single(t(locale, "rate_limited"), [])
         if command.command == "/start":
             return self._start(command)
-        if command.command in {"/menu", "/help"}:
+        if command.command == "/menu":
             return self._render(user, self._screen_id.HOME, locale, push=False)
-        if command.command == "/language":
-            return self._render(user, self._screen_id.LANGUAGE, locale)
+        command_screens = {
+            "/help": self._screen_id.HELP,
+            "/profile": self._screen_id.PROFILE,
+            "/services": self._screen_id.SERVICES,
+            "/wallet": self._screen_id.WALLET,
+            "/security": self._screen_id.HELP,
+            "/support": self._screen_id.SUPPORT,
+        }
+        if command.command in command_screens:
+            return self._render(user, command_screens[command.command], locale, push=False)
         if command.command == "/privacy":
             return self._render(user, self._screen_id.PRIVACY, locale)
         if command.command == "/cancel":
@@ -205,15 +213,8 @@ class BotCommandHandler:
             return self._render(user, state.current_screen, locale, push=False)
         if callback.action == CallbackAction.CANCEL:
             return self.cancel_for(user, locale)
-        if callback.action == CallbackAction.SET_LANGUAGE and callback.value in {"fa", "en"}:
-            context = self._portal_context(user, callback.value)
-            self.portal.set_language(context, callback.value)
-            result = self._render(user, state.current_screen, callback.value, push=False)
-            prefix = "زبان ذخیره شد.\n\n" if callback.value == "fa" else "Language saved.\n\n"
-            if result.messages:
-                msg = result.messages[0]
-                return HandlerResult(True, False, (OutgoingMessage(prefix + msg.text, msg.rows),))
-            return result
+        if callback.action == CallbackAction.SET_LANGUAGE:
+            return self._stale(locale)
         if callback.action == CallbackAction.OPEN_WEB_APP:
             return self._callback_message(
                 "🌐 نسخه وب اختیاری است و ربات بدون وب‌سایت قابل استفاده است.",
@@ -303,15 +304,15 @@ class BotCommandHandler:
             return None
 
     def _stale(self, locale: str) -> HandlerResult:
+        _ = locale
         return self._callback_message(
-            "این دکمه قدیمی است. لطفاً منو را بروزرسانی کنید."
-            if locale == "fa"
-            else "This button is stale. Please refresh.",
-            self.renderer.nav_rows(locale),
+            t("fa", "stale"),
+            [[{"text": "🏠 منوی اصلی", "callback_data": BotCallback(CallbackAction.HOME).pack()}]],
         )
 
     def _customer_locale(self, user: IncomingUser) -> str:
-        return self.settings.default_locale
+        _ = user
+        return "fa"
 
     def menu_rows(self, status: AccountStatus, locale: str) -> ButtonRows:
         return self.renderer.home_rows(locale)
@@ -332,7 +333,7 @@ class BotCommandHandler:
         return HandlerResult(True, False, (OutgoingMessage(text, rows),))
 
     def _portal_context(self, user: IncomingUser, locale: str) -> CustomerContext:
-        return CustomerContext(f"user-{user.telegram_user_id}", user.telegram_user_id, locale)
+        return CustomerContext(f"user-{user.telegram_user_id}", user.telegram_user_id, "fa")
 
     def _conversation_key(self, user: IncomingUser) -> str:
         return f"tg:{user.telegram_user_id}"

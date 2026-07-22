@@ -58,11 +58,9 @@ class InMemoryTelegramIdentityService(TelegramIdentityPort):
                 user_id=f"user-{command.telegram_user_id}",
                 status=AccountStatus.ACTIVE,
                 created=True,
-                locale=command.language_code,
+                locale="fa",
             )
-            result = TelegramIdentityResult(
-                result.user_id, result.status, created, command.language_code
-            )
+            result = TelegramIdentityResult(result.user_id, result.status, created, "fa")
             self._records[command.telegram_user_id] = result
             self._blocked.discard(command.telegram_user_id)
             self.audit_events += 1
