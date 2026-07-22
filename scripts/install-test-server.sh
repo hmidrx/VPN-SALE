@@ -70,6 +70,7 @@ for h in "app.$DOMAIN" "api.$DOMAIN" "admin.$DOMAIN" "reseller.$DOMAIN"; do [[ "
 if [[ "$SKIP_DNS" != true ]]; then for h in "app.$DOMAIN" "api.$DOMAIN" "admin.$DOMAIN" "reseller.$DOMAIN"; do getent ahosts "$h" >/dev/null || fail "DNS missing for $h"; done; fi
 phase_done preflight
 phase="install packages"
+quarantine_broken_installer_caddy_source
 apt-get update
 apt-get install -y ca-certificates curl gnupg debian-keyring debian-archive-keyring apt-transport-https
 apt-get install -y git jq openssl python3 fail2ban ripgrep nodejs npm

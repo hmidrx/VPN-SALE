@@ -79,10 +79,57 @@ CADDY_KEY_URL="https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
 CADDY_SOURCE_URL="https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt"
 CADDY_KEYRING_PATH="/usr/share/keyrings/caddy-stable-archive-keyring.gpg"
 CADDY_SOURCE_LIST_PATH="/etc/apt/sources.list.d/caddy-stable.list"
+CADDY_DISABLED_SOURCE_PATH="/etc/apt/sources.list.d/caddy-stable.list.vpn-sale-disabled"
+CADDY_SOURCE_MARKER="# vpn-sale-installer-managed-caddy-apt"
 
 rooted_path(){ local root="${CADDY_APT_ROOT:-}" path="$1"; printf '%s%s\n' "$root" "$path"; }
 file_mode(){ stat -c %a "$1"; }
 ensure_mode_0644(){ local file="$1"; chmod 0644 "$file"; [[ "$(file_mode "$file")" == "644" ]]; }
+
+caddy_source_has_active_repo(){
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  grep -E '^[[:space:]]*deb[[:space:]].*dl[.]cloudsmith[.]io/public/caddy/stable' "$file" >/dev/null
+}
+
+is_installer_managed_caddy_source(){
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  grep -Fq "$CADDY_SOURCE_MARKER" "$file" && return 0
+  grep -Fxq "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" "$file" && return 0
+  grep -Fxq "deb [signed-by=/etc/apt/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" "$file"
+}
+
+caddy_keyring_is_valid(){
+  local keyring="$(rooted_path "$CADDY_KEYRING_PATH")"
+  [[ -s "$keyring" ]] || return 1
+  gpg --batch --show-keys "$keyring" >/dev/null 2>&1
+}
+
+quarantine_broken_installer_caddy_source(){
+  local source_list disabled source_dir other
+  source_list="$(rooted_path "$CADDY_SOURCE_LIST_PATH")"
+  disabled="$(rooted_path "$CADDY_DISABLED_SOURCE_PATH")"
+  source_dir="$(dirname "$source_list")"
+  if [[ -d "$source_dir" ]]; then
+    for other in "$source_dir"/*.list; do
+      [[ -e "$other" ]] || continue
+      [[ "$other" == "$source_list" ]] && continue
+      if caddy_source_has_active_repo "$other"; then
+        printf 'ERROR: refusing to alter unrelated active Caddy APT source: %s\n' "$other" >&2
+        return 1
+      fi
+    done
+  fi
+  if [[ -f "$source_list" ]] && caddy_source_has_active_repo "$source_list"; then
+    is_installer_managed_caddy_source "$source_list" || { printf 'ERROR: refusing custom Caddy APT source: %s\n' "$source_list" >&2; return 1; }
+    if ! caddy_keyring_is_valid; then
+      install -d -m 0755 "$(dirname "$disabled")"
+      mv -f "$source_list" "$disabled"
+      chmod 0644 "$disabled"
+    fi
+  fi
+}
 
 install_caddy_apt_repository(){
   local keyring source_list keyring_dir source_dir tmp_key tmp_keyring tmp_source
@@ -95,7 +142,7 @@ install_caddy_apt_repository(){
   tmp_keyring="$(mktemp "$keyring_dir/.tmp.caddy-keyring.XXXXXX")"
   tmp_source="$(mktemp "$source_dir/.tmp.caddy-source.XXXXXX")"
   rm -f "$tmp_keyring"
-  cleanup_caddy_repo_tmp(){ rm -f "$tmp_key" "$tmp_keyring" "$tmp_source"; }
+  cleanup_caddy_repo_tmp(){ rm -f "$tmp_key" "$tmp_keyring" "$tmp_source" "$tmp_source.marked"; }
 
   curl -1fsSL "$CADDY_KEY_URL" -o "$tmp_key" || { cleanup_caddy_repo_tmp; return 1; }
   [[ -s "$tmp_key" ]] || { cleanup_caddy_repo_tmp; return 1; }
@@ -104,9 +151,13 @@ install_caddy_apt_repository(){
   curl -1fsSL "$CADDY_SOURCE_URL" -o "$tmp_source" || { cleanup_caddy_repo_tmp; return 1; }
   [[ -s "$tmp_source" ]] || { cleanup_caddy_repo_tmp; return 1; }
   grep -Fq "$CADDY_KEYRING_PATH" "$tmp_source" || { cleanup_caddy_repo_tmp; return 1; }
+  { printf '%s\n' "$CADDY_SOURCE_MARKER"; cat "$tmp_source"; } >"$tmp_source.marked"
+  mv -f "$tmp_source.marked" "$tmp_source"
+  gpg --batch --show-keys "$tmp_keyring" >/dev/null 2>&1 || { cleanup_caddy_repo_tmp; return 1; }
   ensure_mode_0644 "$tmp_keyring" || { cleanup_caddy_repo_tmp; return 1; }
   ensure_mode_0644 "$tmp_source" || { cleanup_caddy_repo_tmp; return 1; }
   mv -f "$tmp_keyring" "$keyring"
+  rm -f "$(rooted_path "$CADDY_DISABLED_SOURCE_PATH")"
   mv -f "$tmp_source" "$source_list"
   ensure_mode_0644 "$keyring" || { cleanup_caddy_repo_tmp; return 1; }
   ensure_mode_0644 "$source_list" || { cleanup_caddy_repo_tmp; return 1; }
