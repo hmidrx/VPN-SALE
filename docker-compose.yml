@@ -33,7 +33,7 @@ services:
       dockerfile: infra/docker/api.Dockerfile
     env_file: .env.example
     environment:
-      VPN_SALE_DATABASE_URL: postgresql+asyncpg://vpnsale:vpnsale_dev_password@postgres:5432/vpnsale
+      VPN_SALE_DATABASE_URL: ${VPN_SALE_DATABASE_URL:-postgresql+asyncpg://vpnsale:vpnsale_dev_password@postgres:5432/vpnsale}
       VPN_SALE_REDIS_URL: redis://redis:6379/0
     ports: ["8000:8000"]
     depends_on:
