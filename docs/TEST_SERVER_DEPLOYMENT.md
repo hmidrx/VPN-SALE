@@ -161,6 +161,8 @@ The TEST deployment uses the configured `POSTGRES_USER` and `POSTGRES_DB` (defau
 
 ### Caddy ownership and rerun behavior
 
+The installer configures the official Caddy Debian/Ubuntu APT repository using the Cloudsmith `gpg.key` and `debian.deb.txt` endpoints. It installs prerequisite keyring/HTTPS packages first, writes only `/usr/share/keyrings/caddy-stable-archive-keyring.gpg` and `/etc/apt/sources.list.d/caddy-stable.list` with temporary files plus atomic renames, keeps both files mode `0644`, never uses `apt-key`, and leaves unrelated APT repositories and trusted keys untouched. `apt-get update` runs only after both Caddy repository files are in place; if the Caddy repository reports `NO_PUBKEY`, the installer refreshes its managed keyring and retries exactly once without disabling signature verification.
+
 The installer performs port preflight before package installation where possible. After the Caddy package is installed, it immediately stops `caddy.service` only when the service is proven to be either installer-managed (`# vpn-sale-test-server-managed`) or still using the untouched package-default Caddyfile. It rejects unrelated listeners on ports 80/443 and does not rely only on the process name. Managed Caddy configuration is validated with `caddy validate`, contains only the four required host blocks, preserves forwarding headers, blocks public metrics/internal diagnostic paths, and is activated only after application services are ready.
 
 ### Post-install verification

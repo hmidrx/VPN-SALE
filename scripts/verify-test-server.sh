@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
+usage(){ cat <<USAGE
+Usage: scripts/verify-test-server.sh --domain DOMAIN [options]
+
+Options:
+  --domain DOMAIN        Root test domain to verify.
+  --env-file FILE        Runtime env file (default: /opt/vpn-sale-runtime/test.env).
+  --runtime-dir DIR      Runtime state directory (default: /opt/vpn-sale-runtime).
+  --help                 Show this help and exit.
+USAGE
+}
 DOMAIN=""; ENV_FILE="${VPN_SALE_TEST_SERVER_ENV_FILE:-/opt/vpn-sale-runtime/test.env}"; RUNTIME_DIR="/opt/vpn-sale-runtime"
-while [[ $# -gt 0 ]]; do case "$1" in --domain) DOMAIN="${2:?}"; shift 2;; --env-file) ENV_FILE="${2:?}"; shift 2;; --runtime-dir) RUNTIME_DIR="${2:?}"; shift 2;; *) echo "unknown option $1" >&2; exit 64;; esac; done
+while [[ $# -gt 0 ]]; do case "$1" in --help) usage; exit 0;; --domain) DOMAIN="${2:?}"; shift 2;; --env-file) ENV_FILE="${2:?}"; shift 2;; --runtime-dir) RUNTIME_DIR="${2:?}"; shift 2;; *) echo "unknown option $1" >&2; exit 64;; esac; done
 [[ -n "$DOMAIN" ]] || { echo "--domain is required" >&2; exit 64; }
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=scripts/test-server-compose-json.sh
+# shellcheck source=scripts/test-server-compose-json.sh disable=SC1091
 source "$repo_root/scripts/test-server-compose-json.sh"
-# shellcheck source=scripts/test-server-installer-lib.sh
+# shellcheck source=scripts/test-server-installer-lib.sh disable=SC1091
 source "$repo_root/scripts/test-server-installer-lib.sh"
 compose=("$repo_root/scripts/vpn-sale-compose-test-server" --env-file "$ENV_FILE")
 ok(){ printf 'OK: %s\n' "$*"; }

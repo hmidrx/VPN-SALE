@@ -75,6 +75,61 @@ print(json.dumps({
 PY
 }
 
+CADDY_KEY_URL="https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
+CADDY_SOURCE_URL="https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt"
+CADDY_KEYRING_PATH="/usr/share/keyrings/caddy-stable-archive-keyring.gpg"
+CADDY_SOURCE_LIST_PATH="/etc/apt/sources.list.d/caddy-stable.list"
+
+rooted_path(){ local root="${CADDY_APT_ROOT:-}" path="$1"; printf '%s%s\n' "$root" "$path"; }
+file_mode(){ stat -c %a "$1"; }
+ensure_mode_0644(){ local file="$1"; chmod 0644 "$file"; [[ "$(file_mode "$file")" == "644" ]]; }
+
+install_caddy_apt_repository(){
+  local keyring source_list keyring_dir source_dir tmp_key tmp_keyring tmp_source
+  keyring="$(rooted_path "$CADDY_KEYRING_PATH")"
+  source_list="$(rooted_path "$CADDY_SOURCE_LIST_PATH")"
+  keyring_dir="$(dirname "$keyring")"
+  source_dir="$(dirname "$source_list")"
+  install -d -m 0755 "$keyring_dir" "$source_dir"
+  tmp_key="$(mktemp "$keyring_dir/.tmp.caddy-key.XXXXXX")"
+  tmp_keyring="$(mktemp "$keyring_dir/.tmp.caddy-keyring.XXXXXX")"
+  tmp_source="$(mktemp "$source_dir/.tmp.caddy-source.XXXXXX")"
+  rm -f "$tmp_keyring"
+  cleanup_caddy_repo_tmp(){ rm -f "$tmp_key" "$tmp_keyring" "$tmp_source"; }
+
+  curl -1fsSL "$CADDY_KEY_URL" -o "$tmp_key" || { cleanup_caddy_repo_tmp; return 1; }
+  [[ -s "$tmp_key" ]] || { cleanup_caddy_repo_tmp; return 1; }
+  gpg --batch --yes --dearmor --output "$tmp_keyring" "$tmp_key" || { cleanup_caddy_repo_tmp; return 1; }
+  [[ -s "$tmp_keyring" ]] || { cleanup_caddy_repo_tmp; return 1; }
+  curl -1fsSL "$CADDY_SOURCE_URL" -o "$tmp_source" || { cleanup_caddy_repo_tmp; return 1; }
+  [[ -s "$tmp_source" ]] || { cleanup_caddy_repo_tmp; return 1; }
+  grep -Fq "$CADDY_KEYRING_PATH" "$tmp_source" || { cleanup_caddy_repo_tmp; return 1; }
+  ensure_mode_0644 "$tmp_keyring" || { cleanup_caddy_repo_tmp; return 1; }
+  ensure_mode_0644 "$tmp_source" || { cleanup_caddy_repo_tmp; return 1; }
+  mv -f "$tmp_keyring" "$keyring"
+  mv -f "$tmp_source" "$source_list"
+  ensure_mode_0644 "$keyring" || { cleanup_caddy_repo_tmp; return 1; }
+  ensure_mode_0644 "$source_list" || { cleanup_caddy_repo_tmp; return 1; }
+  rm -f "$tmp_key"
+}
+
+apt_get_update_with_caddy_retry(){
+  local output status
+  output="$(mktemp)"
+  if apt-get update >"$output" 2>&1; then rm -f "$output"; return 0; fi
+  status=$?
+  if grep -Fq 'NO_PUBKEY' "$output" && grep -Fq 'dl.cloudsmith.io/public/caddy/stable' "$output"; then
+    cat "$output" >&2
+    install_caddy_apt_repository || { rm -f "$output"; return 1; }
+    if apt-get update; then rm -f "$output"; return 0; fi
+    status=$?
+  else
+    cat "$output" >&2
+  fi
+  rm -f "$output"
+  return "$status"
+}
+
 is_default_caddyfile(){
   local file="${1:-/etc/caddy/Caddyfile}"
   [[ -f "$file" ]] || return 1
