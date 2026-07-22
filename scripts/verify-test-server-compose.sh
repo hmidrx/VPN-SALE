@@ -161,6 +161,104 @@ if errors:
 PYVALIDATOR
 }
 
+
+assert_database_urls() {
+  local config_json="$1"
+  local env_file="$2"
+  CONFIG_JSON="$config_json" ENV_FILE="$env_file" python3 - <<'PYVALIDATOR'
+import json
+import os
+import sys
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+SENSITIVE_NAMES = {"POSTGRES_PASSWORD", "DATABASE_URL", "VPN_SALE_DATABASE_URL", "VPN_SALE_SYNC_DATABASE_URL"}
+DEV_SENTINEL = "vpnsale_" + "dev_" + "password"
+
+
+def read_env(path: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for raw_line in Path(path).read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key] = value
+    return values
+
+
+def service_environment(service: dict) -> dict[str, str]:
+    env = service.get("environment") or {}
+    if isinstance(env, dict):
+        return {str(key): "" if value is None else str(value) for key, value in env.items()}
+    result: dict[str, str] = {}
+    for item in env:
+        if isinstance(item, str) and "=" in item:
+            key, value = item.split("=", 1)
+            result[key] = value
+    return result
+
+
+def parse_db_url(name: str, value: str):
+    parsed = urlparse(value)
+    return {
+        "name": name,
+        "scheme": parsed.scheme,
+        "username": unquote(parsed.username or ""),
+        "password": unquote(parsed.password or ""),
+        "hostname": parsed.hostname or "",
+        "database": (parsed.path or "").lstrip("/"),
+    }
+
+runtime = read_env(os.environ["ENV_FILE"])
+model = json.loads(os.environ["CONFIG_JSON"])
+api_env = service_environment((model.get("services") or {}).get("api") or {})
+errors: list[str] = []
+
+for key in ["POSTGRES_USER", "POSTGRES_DB", "POSTGRES_PASSWORD", "DATABASE_URL", "VPN_SALE_DATABASE_URL", "VPN_SALE_SYNC_DATABASE_URL"]:
+    if not runtime.get(key):
+        errors.append(f"runtime env missing {key}")
+
+for key in ["DATABASE_URL", "VPN_SALE_DATABASE_URL", "VPN_SALE_SYNC_DATABASE_URL"]:
+    if key not in api_env:
+        errors.append(f"api environment missing {key}")
+    elif runtime.get(key) != api_env[key]:
+        errors.append(f"api environment {key} does not match runtime env file")
+    if DEV_SENTINEL in api_env.get(key, ""):
+        errors.append(f"api environment {key} contains development password")
+
+postgres_password = runtime.get("POSTGRES_PASSWORD", "")
+postgres_user = runtime.get("POSTGRES_USER", "")
+postgres_db = runtime.get("POSTGRES_DB", "")
+
+expected_schemes = {
+    "DATABASE_URL": "postgresql+asyncpg",
+    "VPN_SALE_DATABASE_URL": "postgresql+asyncpg",
+    "VPN_SALE_SYNC_DATABASE_URL": "postgresql",
+}
+
+for key, expected_scheme in expected_schemes.items():
+    value = api_env.get(key) or runtime.get(key) or ""
+    parsed = parse_db_url(key, value)
+    if parsed["scheme"] != expected_scheme:
+        errors.append(f"{key} uses unexpected PostgreSQL driver")
+    if parsed["password"] != postgres_password:
+        errors.append(f"{key} password does not match POSTGRES_PASSWORD")
+    if parsed["hostname"] != "postgres":
+        errors.append(f"{key} host is not postgres")
+    if parsed["username"] != postgres_user:
+        errors.append(f"{key} user does not match POSTGRES_USER")
+    if parsed["database"] != postgres_db:
+        errors.append(f"{key} database does not match POSTGRES_DB")
+
+if errors:
+    for error in errors:
+        print(f"FAIL: {error}", file=sys.stderr)
+    sys.exit(1)
+print("PASS: database URL variables match runtime env file and decode to POSTGRES_PASSWORD")
+PYVALIDATOR
+}
+
 resolve_env_file "$@"
 env_file="$resolved_env_file"
 export VPN_SALE_TEST_SERVER_ENV_FILE="$env_file"
@@ -171,15 +269,13 @@ if xtrace_was_enabled; then
   restore_xtrace=true
   set +x
 fi
-config_json="$(docker compose \
-  -f "$repo_root/docker-compose.yml" \
-  -f "$repo_root/docker-compose.test-server.yml" \
-  --env-file "$env_file" \
+config_json="$("$repo_root/scripts/vpn-sale-compose-test-server" --env-file "$env_file" \
   --profile telegram \
   --profile web \
   --profile ops \
   config --format json)"
 assert_ports "$config_json" || fail "test-server Compose port isolation check failed"
+assert_database_urls "$config_json" "$env_file" || fail "test-server Compose database URL consistency check failed"
 if [[ "$restore_xtrace" == true ]]; then
   set -x
 fi
