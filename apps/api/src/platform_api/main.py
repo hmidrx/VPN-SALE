@@ -21,6 +21,7 @@ from .knowledge_status import public_router as knowledge_router
 from .logging import configure_logging
 from .management import public_router as admin_invitation_router
 from .management import router as management_router
+from .notification_preferences import router as customer_notification_preferences_router
 from .operations import assert_startup_configuration
 from .operations import router as operations_router
 from .orders import (
@@ -72,6 +73,7 @@ app.include_router(catalog_router)
 app.include_router(admin_catalog_router)
 app.include_router(wallet_router)
 app.include_router(order_router)
+app.include_router(customer_notification_preferences_router)
 app.include_router(payment_router)
 app.include_router(admin_order_router)
 app.include_router(admin_invoice_router)

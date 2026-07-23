@@ -41,6 +41,7 @@ class CallbackAction(StrEnum):
     EXTRA_TRAFFIC = "extra"
     REVOKE_SESSION = "revoke"
     CONFIRM_REVOKE = "confirm_revoke"
+    TOGGLE_NOTIFICATION = "ntf"
 
 
 @dataclass(frozen=True)

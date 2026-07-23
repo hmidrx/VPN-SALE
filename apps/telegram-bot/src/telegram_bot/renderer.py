@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.formatting import format_toman
-from telegram_bot.portal import CustomerProfile, ServiceSummary, Ticket
+from telegram_bot.portal import CustomerProfile, NotificationPreferences, ServiceSummary, Ticket
 from telegram_bot.screens import (
     DashboardData,
     RenderedScreen,
@@ -75,6 +75,64 @@ class ScreenRenderer:
             ],
         ]
 
+    def notifications(
+        self,
+        locale: str,
+        preferences: NotificationPreferences,
+        *,
+        mutation_error: bool = False,
+    ) -> RenderedScreen:
+        _ = locale
+        labels = (
+            ("service_expiry_enabled", "پایان اعتبار سرویس"),
+            ("low_traffic_enabled", "کمبود حجم"),
+            ("payment_enabled", "پرداخت‌ها"),
+            ("support_reply_enabled", "پاسخ پشتیبانی"),
+            ("announcements_enabled", "اطلاعیه‌های مهم"),
+        )
+        state = {
+            "service_expiry_enabled": preferences.service_expiry_enabled,
+            "low_traffic_enabled": preferences.low_traffic_enabled,
+            "payment_enabled": preferences.payment_enabled,
+            "support_reply_enabled": preferences.support_reply_enabled,
+            "announcements_enabled": preferences.announcements_enabled,
+        }
+        prefix = "⚠️ تغییر تنظیمات ذخیره نشد.\nلطفاً دوباره تلاش کنید.\n\n" if mutation_error else ""
+        text = (
+            f"{prefix}🔔 تنظیمات اعلان‌ها\n\n"
+            "اعلان‌هایی را که مایل به دریافت آن‌ها هستید مدیریت کنید.\n\n"
+            f"{'✅' if preferences.service_expiry_enabled else '❌'} پایان اعتبار سرویس\n"
+            f"{'✅' if preferences.low_traffic_enabled else '❌'} کمبود حجم\n"
+            f"{'✅' if preferences.payment_enabled else '❌'} پرداخت‌ها و تراکنش‌ها\n"
+            f"{'✅' if preferences.support_reply_enabled else '❌'} پاسخ پشتیبانی\n"
+            f"{'✅' if preferences.announcements_enabled else '❌'} اطلاعیه‌های مهم"
+        )
+        buttons = [
+            {
+                "text": f"{'✅' if state[key] else '❌'} {label}",
+                "callback_data": cb(CallbackAction.TOGGLE_NOTIFICATION, key),
+            }
+            for key, label in labels
+        ]
+        rows = [
+            [buttons[0], buttons[1]],
+            [buttons[2], buttons[3]],
+            [buttons[4]],
+            *self.nav_rows(locale)[:2],
+        ]
+        return RenderedScreen(text, rows, ScreenId.NOTIFICATIONS)
+
+    def notification_error(self, locale: str) -> RenderedScreen:
+        _ = locale
+        return RenderedScreen(
+            "⚠️ در دریافت تنظیمات اعلان‌ها مشکلی پیش آمد.\nچند لحظه دیگر دوباره تلاش کنید.",
+            [
+                [{"text": "🔄 تلاش دوباره", "callback_data": cb(CallbackAction.RETRY)}],
+                [{"text": "🏠 منوی اصلی", "callback_data": cb(CallbackAction.HOME)}],
+            ],
+            ScreenId.NOTIFICATIONS,
+        )
+
     def info(
         self,
         screen: ScreenId,
@@ -83,6 +141,9 @@ class ScreenRenderer:
         profile: CustomerProfile | None = None,
         services: list[ServiceSummary] | None = None,
         tickets: list[Ticket] | None = None,
+        notification_preferences: NotificationPreferences | None = None,
+        notification_error: bool = False,
+        mutation_error: bool = False,
     ) -> RenderedScreen:
         fa: dict[ScreenId, str] = {
             ScreenId.BUY: "🛒 خرید سرویس\n\nفروش سرویس در حال آماده‌سازی است.\nدر نسخه آزمایشی هنوز پرداخت و ساخت واقعی سرویس فعال نشده است.\nمحیط TEST: موفقیت ساختگی نمایش داده نمی‌شود.",  # noqa: E501
@@ -136,7 +197,10 @@ class ScreenRenderer:
                         "text": "🔒 حریم خصوصی",
                         "callback_data": cb(CallbackAction.NAVIGATE, ScreenId.PRIVACY.value),
                     },
-                    {"text": "🔔 اعلان‌ها", "callback_data": cb(CallbackAction.RETRY)},
+                    {
+                        "text": "🔔 اعلان‌ها",
+                        "callback_data": cb(CallbackAction.NAVIGATE, ScreenId.NOTIFICATIONS.value),
+                    },
                 ],
                 [
                     {
@@ -147,7 +211,11 @@ class ScreenRenderer:
                 *self.nav_rows(locale),
             ]
             return RenderedScreen(
-                "⚙️ تنظیمات\n\n- اعلان‌ها\n- حریم خصوصی\n- نشست‌ها\n- باز کردن نسخه وب، اختیاری",
+                (
+                    "⚙️ تنظیمات\n\n"
+                    "برای مدیریت هر بخش از دکمه همان بخش استفاده کنید.\n\n"
+                    "• اعلان‌ها\n• حریم خصوصی\n• نسخه وب، اختیاری"
+                ),
                 rows,
                 screen,
             )
