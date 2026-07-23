@@ -1,6 +1,6 @@
 """customer notification preferences
 
-Revision ID: 0028_customer_notification_preferences
+Revision ID: 0028_customer_notification_prefs
 Revises: 0027_m7b_prod_rollout
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0028_customer_notification_preferences"
+revision: str = "0028_customer_notification_prefs"
 down_revision: str = "0027_m7b_prod_rollout"
 branch_labels = None
 depends_on = None

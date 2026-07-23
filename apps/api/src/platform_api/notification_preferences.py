@@ -75,7 +75,13 @@ router = APIRouter(
 )
 
 
-def _customer_from_telegram(db: Session, telegram_user_id: int) -> str:
+def required_customer_id_from_telegram_account(user_id: str | None) -> str:
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="customer_not_found")
+    return user_id
+
+
+def customer_id_from_telegram(db: Session, telegram_user_id: int) -> str:
     row = db.scalar(
         select(TelegramAccountModel).where(
             TelegramAccountModel.telegram_user_id == telegram_user_id
@@ -83,7 +89,7 @@ def _customer_from_telegram(db: Session, telegram_user_id: int) -> str:
     )
     if row is None:
         raise HTTPException(status_code=404, detail="customer_not_found")
-    return row.user_id
+    return required_customer_id_from_telegram_account(row.user_id)
 
 
 def _ensure(db: Session, customer_id: str) -> CustomerNotificationPreferenceModel:
@@ -124,7 +130,7 @@ def _out(row: CustomerNotificationPreferenceModel) -> NotificationPreferencesOut
 def get_preferences(
     telegram_user_id: int, db: Annotated[Session, Depends(get_db_session)]
 ) -> NotificationPreferencesOut:
-    return _out(_ensure(db, _customer_from_telegram(db, telegram_user_id)))
+    return _out(_ensure(db, customer_id_from_telegram(db, telegram_user_id)))
 
 
 @router.patch("/telegram/{telegram_user_id}", response_model=NotificationPreferencesOut)
@@ -134,7 +140,7 @@ def patch_preferences(
     db: Annotated[Session, Depends(get_db_session)],
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)],
 ) -> NotificationPreferencesOut:
-    customer_id = _customer_from_telegram(db, telegram_user_id)
+    customer_id = customer_id_from_telegram(db, telegram_user_id)
     row = _ensure(db, customer_id)
     idem = NotificationPreferenceIdempotencyModel(
         customer_id=customer_id, idempotency_key=idempotency_key, created_at=datetime.now(UTC)

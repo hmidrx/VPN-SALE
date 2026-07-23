@@ -150,3 +150,16 @@ def test_back_home_and_refresh_navigation_for_notifications() -> None:
     )
     refresh = handler.handle_callback(incoming(BotCallback(CallbackAction.REFRESH).pack(), 406))
     assert "❌ پرداخت‌ها و تراکنش‌ها" in refresh.messages[0].text
+
+
+def test_customer_preferences_are_isolated_between_customers() -> None:
+    portal = InMemoryCustomerPortal()
+    portal.update_notification_preference(
+        CustomerContext("user-a", 100, "fa"), "payment_enabled", False, "idem-a"
+    )
+
+    prefs_a = portal.notification_preferences(CustomerContext("user-a", 100, "fa"))
+    prefs_b = portal.notification_preferences(CustomerContext("user-b", 200, "fa"))
+
+    assert prefs_a.payment_enabled is False
+    assert prefs_b.payment_enabled is True
