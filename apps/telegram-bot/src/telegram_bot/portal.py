@@ -28,6 +28,55 @@ class CustomerContext:
 
 
 @dataclass(frozen=True)
+class NotificationPreferences:
+    service_expiry_enabled: bool = True
+    low_traffic_enabled: bool = True
+    payment_enabled: bool = True
+    support_reply_enabled: bool = True
+    announcements_enabled: bool = True
+
+    def with_toggled(self, key: str) -> NotificationPreferences:
+        if key not in NOTIFICATION_PREFERENCE_KEYS:
+            raise ValueError("unknown notification preference")
+        return NotificationPreferences(
+            service_expiry_enabled=(
+                not self.service_expiry_enabled
+                if key == "service_expiry_enabled"
+                else self.service_expiry_enabled
+            ),
+            low_traffic_enabled=(
+                not self.low_traffic_enabled
+                if key == "low_traffic_enabled"
+                else self.low_traffic_enabled
+            ),
+            payment_enabled=(
+                not self.payment_enabled if key == "payment_enabled" else self.payment_enabled
+            ),
+            support_reply_enabled=(
+                not self.support_reply_enabled
+                if key == "support_reply_enabled"
+                else self.support_reply_enabled
+            ),
+            announcements_enabled=(
+                not self.announcements_enabled
+                if key == "announcements_enabled"
+                else self.announcements_enabled
+            ),
+        )
+
+
+NOTIFICATION_PREFERENCE_KEYS = frozenset(
+    {
+        "service_expiry_enabled",
+        "low_traffic_enabled",
+        "payment_enabled",
+        "support_reply_enabled",
+        "announcements_enabled",
+    }
+)
+
+
+@dataclass(frozen=True)
 class CustomerProfile:
     display_name: str
     telegram_linked: bool
@@ -121,6 +170,10 @@ class CustomerPortalPort(Protocol):
         self, context: CustomerContext, category: str, subject: str, message: str
     ) -> Ticket: ...
     def tickets(self, context: CustomerContext) -> list[Ticket]: ...
+    def notification_preferences(self, context: CustomerContext) -> NotificationPreferences: ...
+    def update_notification_preference(
+        self, context: CustomerContext, key: str, enabled: bool, idempotency_key: str
+    ) -> NotificationPreferences: ...
 
 
 class InMemoryCustomerPortal(CustomerPortalPort):
@@ -162,6 +215,8 @@ class InMemoryCustomerPortal(CustomerPortalPort):
             SessionSummary("sess-web", "Customer web", now - timedelta(days=1)),
         ]
         self._languages: dict[str, str] = {}
+        self._notification_preferences: dict[str, NotificationPreferences] = {}
+        self._notification_idempotency: dict[tuple[str, str], NotificationPreferences] = {}
 
     def profile(self, context: CustomerContext) -> CustomerProfile:
         return CustomerProfile(
@@ -205,6 +260,35 @@ class InMemoryCustomerPortal(CustomerPortalPort):
 
     def tickets(self, context: CustomerContext) -> list[Ticket]:
         return [t for t in self.created_tickets.values() if t.owner_ref == context.customer_ref]
+
+    def notification_preferences(self, context: CustomerContext) -> NotificationPreferences:
+        prefs = self._notification_preferences.get(context.customer_ref)
+        if prefs is None:
+            prefs = NotificationPreferences()
+            self._notification_preferences[context.customer_ref] = prefs
+        return prefs
+
+    def update_notification_preference(
+        self, context: CustomerContext, key: str, enabled: bool, idempotency_key: str
+    ) -> NotificationPreferences:
+        idem = (context.customer_ref, idempotency_key)
+        if idem in self._notification_idempotency:
+            return self._notification_idempotency[idem]
+        current = self.notification_preferences(context)
+        values = {
+            "service_expiry_enabled": current.service_expiry_enabled,
+            "low_traffic_enabled": current.low_traffic_enabled,
+            "payment_enabled": current.payment_enabled,
+            "support_reply_enabled": current.support_reply_enabled,
+            "announcements_enabled": current.announcements_enabled,
+        }
+        if key not in values:
+            raise ValueError("unknown notification preference")
+        values[key] = enabled
+        updated = NotificationPreferences(**values)
+        self._notification_preferences[context.customer_ref] = updated
+        self._notification_idempotency[idem] = updated
+        return updated
 
 
 def page_items[TItem](items: list[TItem], page: int, per_page: int = 5) -> tuple[list[TItem], bool]:

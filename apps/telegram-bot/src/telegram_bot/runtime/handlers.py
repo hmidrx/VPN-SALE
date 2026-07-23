@@ -156,7 +156,7 @@ class BotCommandHandler:
                 self.settings.command_rate_limit_window_seconds,
             )
             parsed = BotCallback.parse(callback.data)
-            return self._route_callback(user, locale, parsed)
+            return self._route_callback(user, locale, parsed, callback.update_id)
         except RateLimitExceeded:
             return self._callback_message(t(locale, "rate_limited"), self.renderer.nav_rows(locale))
         except Exception:  # noqa: BLE001 - customer-safe boundary
@@ -177,7 +177,7 @@ class BotCommandHandler:
             )
 
     def _route_callback(
-        self, user: IncomingUser, locale: str, callback: BotCallback
+        self, user: IncomingUser, locale: str, callback: BotCallback, update_id: int
     ) -> HandlerResult:
         from telegram_bot.screens import ScreenId
 
@@ -198,6 +198,39 @@ class BotCommandHandler:
             CallbackAction.PRIVACY: ScreenId.PRIVACY,
             CallbackAction.HELP: ScreenId.HELP,
         }
+
+        if callback.action == CallbackAction.TOGGLE_NOTIFICATION:
+            context = self._portal_context(user, locale)
+            try:
+                current = self.portal.notification_preferences(context)
+                values = {
+                    "service_expiry_enabled": current.service_expiry_enabled,
+                    "low_traffic_enabled": current.low_traffic_enabled,
+                    "payment_enabled": current.payment_enabled,
+                    "support_reply_enabled": current.support_reply_enabled,
+                    "announcements_enabled": current.announcements_enabled,
+                }
+                if callback.value not in values:
+                    return self._stale(locale)
+                prefs = self.portal.update_notification_preference(
+                    context,
+                    callback.value,
+                    not values[callback.value],
+                    f"tg-callback:{update_id}:{callback.action.value}:{callback.value}",
+                )
+                state = state.move_to(ScreenId.NOTIFICATIONS, push=False)
+                self.conversations.save(key, state)
+                rendered = self.renderer.notifications(locale, prefs)
+            except Exception:  # noqa: BLE001 - customer-safe mutation failure
+                try:
+                    prefs = self.portal.notification_preferences(context)
+                except Exception:  # noqa: BLE001
+                    prefs = None
+                if prefs is None:
+                    rendered = self.renderer.notification_error(locale)
+                else:
+                    rendered = self.renderer.notifications(locale, prefs, mutation_error=True)
+            return self._callback_message(rendered.text, rendered.rows)
         if callback.action == CallbackAction.NAVIGATE:
             try:
                 return self._render(user, ScreenId(callback.value), locale)
@@ -293,6 +326,13 @@ class BotCommandHandler:
             rendered = self.renderer.info(screen_id, locale, profile=self.portal.profile(context))
         elif screen_id == ScreenId.SERVICES:
             rendered = self.renderer.info(screen_id, locale, services=self.portal.services(context))
+        elif screen_id == ScreenId.NOTIFICATIONS:
+            try:
+                rendered = self.renderer.notifications(
+                    locale, self.portal.notification_preferences(context)
+                )
+            except Exception:  # noqa: BLE001 - customer-safe API failure
+                rendered = self.renderer.notification_error(locale)
         else:
             rendered = self.renderer.info(screen_id, locale)
         return self._callback_message(rendered.text, rendered.rows)

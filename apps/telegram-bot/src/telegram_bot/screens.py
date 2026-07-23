@@ -23,6 +23,7 @@ class ScreenId(StrEnum):
     LANGUAGE = "language"
     PRIVACY = "privacy"
     HELP = "help"
+    NOTIFICATIONS = "notifications"
 
 
 @dataclass(frozen=True)
