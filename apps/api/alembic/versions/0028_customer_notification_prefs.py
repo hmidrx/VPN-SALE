@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
+
+UUID_T: postgresql.UUID[str] = postgresql.UUID(as_uuid=False)
 
 revision: str = "0028_customer_notification_prefs"
 down_revision: str = "0027_m7b_prod_rollout"
@@ -18,8 +21,8 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "customer_notification_preferences",
-        sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("customer_id", sa.String(length=36), nullable=False),
+        sa.Column("id", UUID_T, nullable=False),
+        sa.Column("customer_id", UUID_T, nullable=False),
         sa.Column("service_expiry_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("low_traffic_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("payment_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
@@ -32,8 +35,8 @@ def upgrade() -> None:
     )
     op.create_table(
         "customer_notification_preference_idempotency",
-        sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("customer_id", sa.String(length=36), nullable=False),
+        sa.Column("id", UUID_T, nullable=False),
+        sa.Column("customer_id", UUID_T, nullable=False),
         sa.Column("idempotency_key", sa.String(length=128), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),

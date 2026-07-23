@@ -8,6 +8,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, select
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -26,9 +27,11 @@ class NotificationEventType(StrEnum):
 class CustomerNotificationPreferenceModel(IdentityBase):
     __tablename__ = "customer_notification_preferences"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
     customer_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("identity_users.id", ondelete="RESTRICT"), nullable=False
+        UUID(as_uuid=False), ForeignKey("identity_users.id", ondelete="RESTRICT"), nullable=False
     )
     service_expiry_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     low_traffic_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -45,8 +48,10 @@ class CustomerNotificationPreferenceModel(IdentityBase):
 class NotificationPreferenceIdempotencyModel(IdentityBase):
     __tablename__ = "customer_notification_preference_idempotency"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    customer_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    customer_id: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
