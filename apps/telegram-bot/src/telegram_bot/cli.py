@@ -56,6 +56,21 @@ def load_settings_from_environment() -> BotSettings:
         command_rate_limit_window_seconds=_env_int(
             "VPN_SALE_TELEGRAM_COMMAND_RATE_LIMIT_WINDOW_SECONDS", 60
         ),
+        navigation_rate_limit=_env_int("VPN_SALE_TELEGRAM_NAVIGATION_RATE_LIMIT", 30),
+        navigation_rate_limit_window_seconds=_env_int(
+            "VPN_SALE_TELEGRAM_NAVIGATION_RATE_LIMIT_WINDOW_SECONDS", 10
+        ),
+        mutation_rate_limit=_env_int("VPN_SALE_TELEGRAM_MUTATION_RATE_LIMIT", 1),
+        mutation_rate_limit_window_seconds=_env_int(
+            "VPN_SALE_TELEGRAM_MUTATION_RATE_LIMIT_WINDOW_SECONDS", 3
+        ),
+        sensitive_rate_limit=_env_int("VPN_SALE_TELEGRAM_SENSITIVE_RATE_LIMIT", 12),
+        sensitive_rate_limit_window_seconds=_env_int(
+            "VPN_SALE_TELEGRAM_SENSITIVE_RATE_LIMIT_WINDOW_SECONDS", 60
+        ),
+        throttle_notice_cooldown_seconds=_env_int(
+            "VPN_SALE_TELEGRAM_THROTTLE_NOTICE_COOLDOWN_SECONDS", 3
+        ),
         rate_limit_secret=os.environ.get("VPN_SALE_TELEGRAM_RATE_LIMIT_KEY", ""),
         help_url=os.environ.get("VPN_SALE_TELEGRAM_HELP_URL", ""),
         privacy_url=os.environ.get("VPN_SALE_TELEGRAM_PRIVACY_URL", ""),

@@ -33,3 +33,28 @@ class InMemoryBotRateLimiter:
                 raise RateLimitExceeded
             hits.append(now)
             self._hits[key] = hits
+
+
+class InFlightCallbackDeduplicator:
+    """Process-local guard; durable update-id claims remain the cross-process defense."""
+
+    def __init__(self, secret: str) -> None:
+        self._secret = secret.encode()
+        self._active: set[str] = set()
+        self._lock = threading.Lock()
+
+    def _key(self, telegram_user_id: int, callback_data: str) -> str:
+        material = f"{telegram_user_id}:{callback_data}".encode()
+        return hmac.new(self._secret, material, hashlib.sha256).hexdigest()
+
+    def claim(self, telegram_user_id: int, callback_data: str) -> str | None:
+        key = self._key(telegram_user_id, callback_data)
+        with self._lock:
+            if key in self._active:
+                return None
+            self._active.add(key)
+        return key
+
+    def release(self, key: str) -> None:
+        with self._lock:
+            self._active.discard(key)
