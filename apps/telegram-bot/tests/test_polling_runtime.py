@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from hashlib import sha256
 from typing import Any, cast
 
 import pytest
 
 from telegram_bot.application.identity import InMemoryTelegramIdentityService
+from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.config import BotMode, BotSettings
 from telegram_bot.transport.polling import TelegramPollingRuntime
 
@@ -97,3 +99,47 @@ def test_polling_invalid_production_config_rejected() -> None:
     )
     with pytest.raises(ValueError):
         TelegramPollingRuntime(bad, InMemoryTelegramIdentityService(), FakeTransport([]))
+
+
+def test_callback_throttle_is_alert_only_and_never_sends_chat_message() -> None:
+    class CallbackTransport(FakeTransport):
+        async def call(
+            self, method: str, payload: dict[str, object] | None = None
+        ) -> dict[str, Any]:
+            self.calls.append((method, payload or {}))
+            return {"ok": True, "result": True}
+
+    class TestRuntime(TelegramPollingRuntime):
+        async def dispatch(self, update: dict[str, Any]) -> None:
+            await self._dispatch(update)
+
+    async def scenario() -> None:
+        configured = replace(_settings(), mutation_rate_limit=0)
+        transport = CallbackTransport([])
+        runtime = TestRuntime(configured, InMemoryTelegramIdentityService(), transport)
+        await runtime.dispatch(
+            {
+                "update_id": 90,
+                "callback_query": {
+                    "id": "callback-90",
+                    "from": {"id": 42, "first_name": "کاربر"},
+                    "data": BotCallback(
+                        CallbackAction.TOGGLE_NOTIFICATION, "payment_enabled"
+                    ).pack(),
+                    "message": {"message_id": 7, "chat": {"id": 100, "type": "private"}},
+                },
+            }
+        )
+        answers = [
+            payload for method, payload in transport.calls if method == "answerCallbackQuery"
+        ]
+        assert answers == [
+            {
+                "callback_query_id": "callback-90",
+                "text": "لطفاً چند لحظه صبر کنید.",
+                "show_alert": True,
+            }
+        ]
+        assert not any(method == "sendMessage" for method, _ in transport.calls)
+
+    asyncio.run(scenario())

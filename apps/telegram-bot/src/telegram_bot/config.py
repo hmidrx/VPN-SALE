@@ -33,6 +33,13 @@ class BotSettings:
     update_idempotency_ttl_seconds: int = 86400
     command_rate_limit: int = 12
     command_rate_limit_window_seconds: int = 60
+    navigation_rate_limit: int = 30
+    navigation_rate_limit_window_seconds: int = 10
+    mutation_rate_limit: int = 1
+    mutation_rate_limit_window_seconds: int = 3
+    sensitive_rate_limit: int = 12
+    sensitive_rate_limit_window_seconds: int = 60
+    throttle_notice_cooldown_seconds: int = 3
     rate_limit_secret: str = "dev-bot-rate-limit-secret-change-me"  # noqa: S105
     help_url: str = ""
     privacy_url: str = ""

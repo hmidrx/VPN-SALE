@@ -140,9 +140,10 @@ class TelegramPollingRuntime:
         callback = _callback_from_update(update)
         if callback is not None:
             result = self.handler.handle_callback(callback)
-            await self.transport.call(
-                "answerCallbackQuery", {"callback_query_id": callback.callback_id}
-            )
+            answer: dict[str, object] = {"callback_query_id": callback.callback_id}
+            if result.callback_notice:
+                answer.update({"text": result.callback_notice, "show_alert": result.callback_alert})
+            await self.transport.call("answerCallbackQuery", answer)
             chat_id, message_id = _callback_message_ref(update)
             if chat_id is None:
                 return
@@ -154,11 +155,13 @@ class TelegramPollingRuntime:
                         edit_payload["message_id"] = message_id
                         await self.transport.call("editMessageText", edit_payload)
                         continue
-                    except Exception as exc:  # noqa: BLE001 - fallback to new menu message
+                    except Exception as exc:  # noqa: BLE001 - callback stays in-place only
                         LOG.info(
-                            "telegram edit fallback", extra={"result_class": type(exc).__name__}
+                            "telegram callback edit skipped",
+                            extra={"result_class": type(exc).__name__},
                         )
-                await self.transport.call("sendMessage", payload)
+                else:
+                    await self.transport.call("sendMessage", payload)
             return
         command = _command_from_update(update)
         if command is None:

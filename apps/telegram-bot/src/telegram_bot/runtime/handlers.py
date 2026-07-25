@@ -22,7 +22,12 @@ from telegram_bot.portal import (
     CustomerPortalPort,
     InMemoryCustomerPortal,
 )
-from telegram_bot.rate_limit import InMemoryBotRateLimiter, RateLimitExceeded
+from telegram_bot.rate_limit import (
+    InFlightCallbackDeduplicator,
+    InMemoryBotRateLimiter,
+    RateLimitExceeded,
+    RateLimitUnavailable,
+)
 
 ButtonRows = list[list[dict[str, str]]]
 
@@ -65,6 +70,8 @@ class HandlerResult:
     acknowledged: bool
     duplicate: bool
     messages: tuple[OutgoingMessage, ...]
+    callback_notice: str | None = None
+    callback_alert: bool = False
 
 
 class BotCommandHandler:
@@ -86,6 +93,7 @@ class BotCommandHandler:
         self.identity = identity
         self.idempotency = idempotency or InMemoryUpdateIdempotency()
         self.rate_limiter = rate_limiter or InMemoryBotRateLimiter(settings.rate_limit_secret)
+        self.in_flight_callbacks = InFlightCallbackDeduplicator(settings.rate_limit_secret)
         self.registry = registry or default_menu_registry()
         self.metrics = metrics or BotMetrics()
         self.url_builder = MiniAppUrlBuilder(
@@ -116,7 +124,7 @@ class BotCommandHandler:
                 self.settings.command_rate_limit_window_seconds,
             )
         except RateLimitExceeded:
-            return self._single(t(locale, "rate_limited"), [])
+            return HandlerResult(True, False, ())
         if command.command == "/start":
             return self._start(command)
         if command.command == "/menu":
@@ -148,17 +156,15 @@ class BotCommandHandler:
             return self._callback_message(t(locale, "group_ignored"), [])
         user = callback.user
         locale = self._customer_locale(user)
+        in_flight_key = self.in_flight_callbacks.claim(user.telegram_user_id, callback.data or "")
+        if in_flight_key is None:
+            return HandlerResult(True, True, ())
         try:
-            self.rate_limiter.check(
-                "callback",
-                user.telegram_user_id,
-                self.settings.command_rate_limit,
-                self.settings.command_rate_limit_window_seconds,
-            )
             parsed = BotCallback.parse(callback.data)
+            policy = callback_policy(parsed)
+            if not self._allow_callback(user.telegram_user_id, policy):
+                return self._limited_callback(user.telegram_user_id, policy)
             return self._route_callback(user, locale, parsed, callback.update_id)
-        except RateLimitExceeded:
-            return self._callback_message(t(locale, "rate_limited"), self.renderer.nav_rows(locale))
         except Exception:  # noqa: BLE001 - customer-safe boundary
             return self._callback_message(
                 t(locale, "error"),
@@ -175,6 +181,42 @@ class BotCommandHandler:
                     ]
                 ],
             )
+        finally:
+            self.in_flight_callbacks.release(in_flight_key)
+
+    def _allow_callback(self, telegram_user_id: int, policy: str) -> bool:
+        if policy == "navigation":
+            limit = self.settings.navigation_rate_limit
+            window = self.settings.navigation_rate_limit_window_seconds
+        elif policy == "mutation":
+            limit = self.settings.mutation_rate_limit
+            window = self.settings.mutation_rate_limit_window_seconds
+        else:
+            limit = self.settings.sensitive_rate_limit
+            window = self.settings.sensitive_rate_limit_window_seconds
+        try:
+            self.rate_limiter.check(policy, telegram_user_id, limit, window)
+        except RateLimitExceeded:
+            return False
+        except RateLimitUnavailable:
+            # Navigation remains available if limiter infrastructure is unhealthy;
+            # writes fail closed so an outage cannot weaken mutation protection.
+            return policy == "navigation"
+        return True
+
+    def _limited_callback(self, telegram_user_id: int, policy: str) -> HandlerResult:
+        if policy == "navigation":
+            return HandlerResult(True, False, ())
+        try:
+            self.rate_limiter.check(
+                "throttle-notice",
+                telegram_user_id,
+                1,
+                self.settings.throttle_notice_cooldown_seconds,
+            )
+        except (RateLimitExceeded, RateLimitUnavailable):
+            return HandlerResult(True, False, ())
+        return HandlerResult(True, False, (), t("fa", "rate_limited"), True)
 
     def _route_callback(
         self, user: IncomingUser, locale: str, callback: BotCallback, update_id: int
@@ -377,3 +419,47 @@ class BotCommandHandler:
 
     def _conversation_key(self, user: IncomingUser) -> str:
         return f"tg:{user.telegram_user_id}"
+
+
+NAVIGATION_CALLBACKS = frozenset(
+    {
+        CallbackAction.NAVIGATE,
+        CallbackAction.BACK,
+        CallbackAction.HOME,
+        CallbackAction.REFRESH,
+        CallbackAction.RETRY,
+        CallbackAction.MENU,
+        CallbackAction.HELP,
+        CallbackAction.LANGUAGE,
+        CallbackAction.PRIVACY,
+        CallbackAction.PROFILE,
+        CallbackAction.SECURITY,
+        CallbackAction.OPEN_EDUCATION,
+        CallbackAction.SEARCH_GUIDES,
+        CallbackAction.SHOW_FAQ,
+        CallbackAction.OPEN_STATUS_PAGE,
+        CallbackAction.MY_SERVICES,
+        CallbackAction.OPEN_SERVICE,
+        CallbackAction.OPEN_CONFIGS,
+        CallbackAction.OPEN_SERVICE_GUIDE,
+        CallbackAction.BUY_SERVICE,
+        CallbackAction.WALLET,
+        CallbackAction.SUPPORT,
+        CallbackAction.STATUS,
+        CallbackAction.DISCOUNTS,
+        CallbackAction.ANNOUNCEMENTS,
+        CallbackAction.SETTINGS,
+        CallbackAction.OPEN_WEB_APP,
+        CallbackAction.CANCEL,
+    }
+)
+
+MUTATION_CALLBACKS = frozenset({CallbackAction.TOGGLE_NOTIFICATION})
+
+
+def callback_policy(callback: BotCallback) -> str:
+    if callback.action in NAVIGATION_CALLBACKS:
+        return "navigation"
+    if callback.action in MUTATION_CALLBACKS:
+        return "mutation"
+    return "sensitive"
