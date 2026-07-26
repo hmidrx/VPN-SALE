@@ -36,7 +36,7 @@ reject_match 'apt-get install .*ufw|ufw enable|email off|docker compose down -v|
 require_match '--reset-disposable-postgres' "$installer" "$doc"
 require_match 'chmod 600 "[$]ENV_FILE"|install -d -m 0700 "[$]RUNTIME_DIR"' "$installer"
 require_match 'urlencode\(\)|urllib.parse.quote\(os.environ\["RAW_VALUE"\], safe=""\)' "$installer"
-require_match 'alembic -c apps/api/alembic.ini upgrade head' "$installer" "$smoke"
+require_match 'alembic -c /app/apps/api/alembic.ini upgrade head' "$installer" "$smoke"
 require_match 'build api customer-web admin-web reseller-web telegram-bot|up -d postgres redis|up -d "\$\{start_services\[@\]\}"|Caddy|wait-for-http|smoke-test-test-server.sh' "$installer"
 require_match 'test-server-compose-json.sh|wait_compose_service_healthy|# vpn-sale-test-server-managed|is_installer_managed_caddy|ripgrep nodejs npm' "$installer"
 require_match 'deleteWebhook|setMyCommands|setChatMenuButton|getChatMenuButton|getMe' "$installer" "$smoke"
