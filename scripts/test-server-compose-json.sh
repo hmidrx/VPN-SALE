@@ -29,8 +29,14 @@ wait_compose_service_healthy(){
   local deadline=$((SECONDS + timeout_seconds))
   local health=""
   while (( SECONDS < deadline )); do
-    if health="$(compose_service_field "$service" Health "${compose_cmd[@]}" 2>/dev/null)" && [[ "$health" == "healthy" ]]; then
-      return 0
+    if health="$(compose_service_field "$service" Health "${compose_cmd[@]}" 2>/dev/null)"; then
+      case "$health" in
+        healthy) return 0 ;;
+        unhealthy)
+          printf 'Service %s reported unhealthy while waiting for readiness (diagnostics redacted; inspect service logs).\n' "$service" >&2
+          return 1
+          ;;
+      esac
     fi
     sleep 2
   done

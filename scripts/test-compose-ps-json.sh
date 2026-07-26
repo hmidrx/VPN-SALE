@@ -50,7 +50,15 @@ make_compose $'{"Service":"redis","Health":"healthy"}\n{"Service":"postgres","He
 [[ "$(compose_service_field redis Health "$tmpdir/compose")" == healthy ]]
 make_compose '{"Service":"postgres","Health":"unhealthy"}'
 if wait_compose_service_healthy postgres 1 "$tmpdir/compose" 2>"$tmpdir/timeout.err"; then echo 'unhealthy service passed' >&2; exit 1; fi
-grep -Fq 'did not become healthy within 1s' "$tmpdir/timeout.err"
+grep -Fq 'reported unhealthy' "$tmpdir/timeout.err"
+grep -Fq 'diagnostics redacted' "$tmpdir/timeout.err"
+make_compose '{"Service":"postgres","Health":"starting"}'
+if wait_compose_service_healthy postgres 1 "$tmpdir/compose" 2>"$tmpdir/starting.err"; then echo 'permanently starting service passed' >&2; exit 1; fi
+grep -Fq 'did not become healthy within 1s' "$tmpdir/starting.err"
+grep -Fq 'last health: starting' "$tmpdir/starting.err"
+make_compose '{"Service":"redis","Health":"healthy"}'
+if wait_compose_service_healthy postgres 1 "$tmpdir/compose" 2>"$tmpdir/missing.err"; then echo 'missing service passed' >&2; exit 1; fi
+grep -Fq 'last health: unavailable' "$tmpdir/missing.err"
 make_compose '{not json}'
 if compose_ps_json_array "$tmpdir/compose" >/dev/null 2>"$tmpdir/malformed.err"; then echo 'malformed JSON passed' >&2; exit 1; fi
 make_compose '{"Service":"postgres","Health":"healthy"}' "$tmpdir/delay.count"

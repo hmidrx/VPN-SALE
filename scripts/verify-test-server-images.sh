@@ -102,8 +102,16 @@ compose=(docker compose --env-file "$env_file" -p "$project" -f docker-compose.y
 # shellcheck source=scripts/test-server-compose-json.sh disable=SC1091
 source scripts/test-server-compose-json.sh
 "${compose[@]}" up -d postgres redis
-[[ "$(compose_service_field postgres Health "${compose[@]}")" == healthy ]]
-[[ "$(compose_service_field redis Health "${compose[@]}")" == healthy ]]
+wait_compose_service_healthy postgres 120 "${compose[@]}" || {
+  "${compose[@]}" ps
+  "${compose[@]}" logs --no-color postgres
+  exit 1
+}
+wait_compose_service_healthy redis 120 "${compose[@]}" || {
+  "${compose[@]}" ps
+  "${compose[@]}" logs --no-color redis
+  exit 1
+}
 "${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini upgrade head
 "${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini upgrade head
 "${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini current | grep -q '(head)'
