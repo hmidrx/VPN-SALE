@@ -10,9 +10,16 @@ from .config import get_settings
 
 
 def sync_database_url(url: str) -> str:
-    return url.replace("postgresql+asyncpg://", "postgresql://").replace(
-        "sqlite+aiosqlite://", "sqlite://"
-    )
+    scheme, separator, remainder = url.partition("://")
+    if not separator:
+        return url
+    sync_schemes = {
+        "postgresql+asyncpg": "postgresql+psycopg",
+        "postgresql": "postgresql+psycopg",
+        "postgres": "postgresql+psycopg",
+        "sqlite+aiosqlite": "sqlite",
+    }
+    return f"{sync_schemes.get(scheme, scheme)}://{remainder}"
 
 
 @lru_cache

@@ -121,6 +121,9 @@ printf 'second migration complete\n'
 printf 'migration head confirmed\n'
 "${compose[@]}" up -d api customer admin reseller
 printf 'application containers started\n'
+sync_check="$("${compose[@]}" exec -T api python -m platform_api.sync_database_check)"
+[[ "$sync_check" == "PASS" ]]
+printf '%s\n' "$sync_check"
 wait_endpoint(){
   local label="$1" url="$2" service="$3"
   if ! "$tmp/scripts/wait-for-http.sh" "$url" 120; then

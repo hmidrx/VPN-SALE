@@ -1,12 +1,13 @@
-from fastapi import FastAPI, Response, status
+from fastapi import APIRouter, FastAPI, Response, status
 
 from .admin_auth.routes import router as admin_auth_router
 from .catalog import admin_router as admin_catalog_router
 from .catalog import customer_router as catalog_router
-from .config import get_settings
+from .config import Settings, get_settings
 from .configuration import admin_router as admin_configuration_router
 from .configuration import public_router as runtime_configuration_router
 from .customer_admin import router as admin_customer_router
+from .customer_auth.routes import password_login_router, registration_router
 from .customer_auth.routes import router as customer_auth_router
 from .delivery import admin_router as admin_delivery_router
 from .delivery import customer_router as customer_delivery_router
@@ -63,80 +64,20 @@ from .usage import reseller_router as reseller_usage_router
 from .wallet import admin_ledger_router, admin_wallet_router
 from .wallet import customer_router as wallet_router
 
-configure_logging()
-assert_startup_configuration(get_settings())
-app = FastAPI(title=get_settings().app_name, version=get_settings().version)
-app.include_router(admin_auth_router)
-app.include_router(customer_auth_router)
-app.include_router(management_router)
-app.include_router(catalog_router)
-app.include_router(admin_catalog_router)
-app.include_router(wallet_router)
-app.include_router(order_router)
-app.include_router(customer_notification_preferences_router)
-app.include_router(payment_router)
-app.include_router(admin_order_router)
-app.include_router(admin_invoice_router)
-app.include_router(admin_checkout_router)
-app.include_router(admin_wallet_payment_router)
-app.include_router(admin_wallet_reservation_router)
-app.include_router(admin_outbox_router)
-app.include_router(admin_commerce_router)
-app.include_router(admin_payment_router)
-app.include_router(admin_reseller_router)
-app.include_router(reseller_router)
-app.include_router(payment_webhook_router)
-app.include_router(admin_wallet_router)
-app.include_router(admin_customer_router)
-app.include_router(admin_ledger_router)
-app.include_router(admin_invitation_router)
-app.include_router(runtime_configuration_router)
-app.include_router(admin_configuration_router)
-app.include_router(customer_support_router)
-app.include_router(reseller_support_router)
-app.include_router(admin_support_router)
-app.include_router(knowledge_router)
-app.include_router(admin_knowledge_router)
-app.include_router(status_router)
-app.include_router(admin_status_router)
-app.include_router(admin_service_router)
-app.include_router(customer_service_router)
-app.include_router(admin_allocation_router)
-app.include_router(admin_service_reconciliation_router)
-app.include_router(admin_service_operation_router)
-app.include_router(admin_service_migration_router)
-app.include_router(customer_service_migration_router)
-app.include_router(reseller_service_migration_router)
-app.include_router(admin_failover_router)
-app.include_router(admin_orphan_router)
-app.include_router(customer_service_operation_router)
-app.include_router(reseller_service_operation_router)
-app.include_router(admin_delivery_router)
-app.include_router(customer_delivery_router)
-app.include_router(subscription_router)
-app.include_router(customer_usage_router)
-app.include_router(reseller_usage_router)
-app.include_router(admin_usage_router)
-app.include_router(admin_usage_policy_router)
-app.include_router(admin_usage_anomaly_router)
-app.include_router(admin_lifecycle_automation_router)
-app.include_router(operations_router)
-app.include_router(admin_fleet_router)
-app.include_router(customer_fleet_router)
-app.include_router(reseller_fleet_router)
+system_router = APIRouter()
 
 
-@app.get("/live")
+@system_router.get("/live")
 async def live() -> dict[str, str]:
     return {"status": "alive"}
 
 
-@app.get("/health")
+@system_router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/version")
+@system_router.get("/version")
 async def version() -> dict[str, str]:
     settings = get_settings()
     return {
@@ -146,7 +87,7 @@ async def version() -> dict[str, str]:
     }
 
 
-@app.get("/ready")
+@system_router.get("/ready")
 async def ready(response: Response) -> dict[str, object]:
     checks = {"database": await check_database(), "redis": await check_redis()}
     if not all(checks.values()):
@@ -154,7 +95,7 @@ async def ready(response: Response) -> dict[str, object]:
     return {"status": "ready" if all(checks.values()) else "not_ready", "checks": checks}
 
 
-@app.get("/metrics")
+@system_router.get("/metrics")
 async def metrics() -> Response:
     body = (
         "# HELP vpnsale_api_info Milestone 0 API info\n"
@@ -162,3 +103,81 @@ async def metrics() -> Response:
         'vpnsale_api_info{version="0.0.0-milestone0"} 1\n'
     )
     return Response(content=body, media_type="text/plain; version=0.0.4")
+
+
+def create_app(settings: Settings) -> FastAPI:
+    configure_logging()
+    assert_startup_configuration(settings)
+    application = FastAPI(title=settings.app_name, version=settings.version)
+    routers = [
+        admin_auth_router,
+        customer_auth_router,
+        management_router,
+        catalog_router,
+        admin_catalog_router,
+        wallet_router,
+        order_router,
+        customer_notification_preferences_router,
+        payment_router,
+        admin_order_router,
+        admin_invoice_router,
+        admin_checkout_router,
+        admin_wallet_payment_router,
+        admin_wallet_reservation_router,
+        admin_outbox_router,
+        admin_commerce_router,
+        admin_payment_router,
+        admin_reseller_router,
+        reseller_router,
+        payment_webhook_router,
+        admin_wallet_router,
+        admin_customer_router,
+        admin_ledger_router,
+        admin_invitation_router,
+        runtime_configuration_router,
+        admin_configuration_router,
+        customer_support_router,
+        reseller_support_router,
+        admin_support_router,
+        knowledge_router,
+        admin_knowledge_router,
+        status_router,
+        admin_status_router,
+        admin_service_router,
+        customer_service_router,
+        admin_allocation_router,
+        admin_service_reconciliation_router,
+        admin_service_operation_router,
+        admin_service_migration_router,
+        customer_service_migration_router,
+        reseller_service_migration_router,
+        admin_failover_router,
+        admin_orphan_router,
+        customer_service_operation_router,
+        reseller_service_operation_router,
+        admin_delivery_router,
+        customer_delivery_router,
+        subscription_router,
+        customer_usage_router,
+        reseller_usage_router,
+        admin_usage_router,
+        admin_usage_policy_router,
+        admin_usage_anomaly_router,
+        admin_lifecycle_automation_router,
+        operations_router,
+        admin_fleet_router,
+        customer_fleet_router,
+        reseller_fleet_router,
+        system_router,
+    ]
+    for api_router in routers:
+        application.include_router(api_router)
+    if settings.public_account_registration_enabled:
+        application.include_router(registration_router)
+    if settings.password_account_login_enabled:
+        application.include_router(password_login_router)
+    application.dependency_overrides[get_settings] = lambda: settings
+    return application
+
+
+app = create_app(get_settings())
