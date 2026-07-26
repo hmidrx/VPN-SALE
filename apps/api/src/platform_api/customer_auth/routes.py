@@ -25,6 +25,8 @@ from .service import GENERIC_REGISTRATION_CONFLICT, CustomerAuthService
 from .telegram import TelegramInitDataError
 
 router = APIRouter(prefix="/api/v1/customer/auth", tags=["customer-auth"])
+registration_router = APIRouter(prefix="/api/v1/customer/auth", tags=["customer-auth"])
+password_login_router = APIRouter(prefix="/api/v1/customer/auth", tags=["customer-auth"])
 
 
 class ApiError(BaseModel):
@@ -233,7 +235,7 @@ async def telegram_login(
     )
 
 
-@router.post("/register", response_model=AuthResponse)
+@registration_router.post("/register", response_model=AuthResponse)
 async def register(
     body: RegisterRequest,
     request: Request,
@@ -242,8 +244,6 @@ async def register(
     settings: Annotated[Settings, Depends(get_settings)],
     limiter: Annotated[RateLimiter, Depends(get_customer_rate_limiter)],
 ) -> AuthResponse:
-    if not settings.public_account_registration_enabled:
-        raise HTTPException(404)
     ip_key = hardened_rate_key(
         "ip", request.client.host if request.client else "", salt=settings.opaque_token_hash_salt
     )
@@ -295,7 +295,7 @@ async def register(
     )
 
 
-@router.post("/password-login", response_model=AuthResponse)
+@password_login_router.post("/password-login", response_model=AuthResponse)
 async def password_login(
     body: PasswordLoginRequest,
     request: Request,
@@ -304,8 +304,6 @@ async def password_login(
     settings: Annotated[Settings, Depends(get_settings)],
     limiter: Annotated[RateLimiter, Depends(get_customer_rate_limiter)],
 ) -> AuthResponse:
-    if not settings.password_account_login_enabled:
-        raise HTTPException(404)
     try:
         normalized = normalize_account_username(body.username)
     except ValueError as exc:

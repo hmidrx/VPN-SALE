@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from platform_api.admin_auth.service import AdminAuthService
 from platform_api.config import get_settings
+from platform_api.database import sync_database_url
 from platform_api.identity.security import (
     Argon2idPasswordHasher,
     deterministic_development_fernet_key,
@@ -30,8 +31,7 @@ def main() -> int:
         if args.password_stdin
         else getpass.getpass("Admin password: ")
     )
-    url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
-    engine = create_engine(url)
+    engine = create_engine(sync_database_url(settings.database_url))
     try:
         with Session(engine) as session, session.begin():
             svc = AdminAuthService(

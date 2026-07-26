@@ -37,6 +37,10 @@ scripts/wait-for-http.sh http://localhost:8080/metrics 90
 scripts/wait-for-http.sh http://localhost:8080/ready 90
 log "Compose status"
 docker compose ps
+log "Synchronous PostgreSQL runtime check"
+sync_check="$(docker compose exec -T api python -m platform_api.sync_database_check)"
+[[ "$sync_check" == "PASS" ]]
+printf '%s\n' "$sync_check"
 log "Verify endpoint responses"
 health="$(curl --fail --silent http://localhost:8080/health)"
 ready="$(curl --fail --silent http://localhost:8080/ready)"
@@ -46,6 +50,15 @@ printf '%s' "$health" | jq -e '.status == "ok"' >/dev/null
 printf '%s' "$ready" | jq -e '.status == "ready" and .checks.database == true and .checks.redis == true' >/dev/null
 printf '%s' "$version" | jq -e '.version and .environment' >/dev/null
 printf '%s' "$metrics" | grep -q 'vpnsale_api_info'
+for endpoint in register password-login; do
+  code="$(curl --silent --output /dev/null --dump-header /tmp/vpnsale-disabled-auth-headers \
+    --write-out '%{http_code}' \
+    -X POST -H 'content-type: application/json' --data '{}' \
+    "http://localhost:8080/api/v1/customer/auth/$endpoint")"
+  [[ "$code" == 404 ]]
+  ! grep -qi '^set-cookie:' /tmp/vpnsale-disabled-auth-headers
+done
+rm -f /tmp/vpnsale-disabled-auth-headers
 combined="$health$ready$version$metrics"
 if printf '%s' "$combined" | grep -Eiq '(password|secret|token|cookie|vless://|vmess://|trojan://)'; then
   echo "Endpoint response contained a forbidden sensitive marker." >&2
