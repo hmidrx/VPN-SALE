@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     telegram_init_data_max_length: int = 4096
     telegram_customer_auth_enabled: bool = True
     fake_customer_auth_enabled: bool = False
+    public_account_registration_enabled: bool = False
+    password_account_login_enabled: bool = False
+    account_email_verification_enabled: bool = False
+    account_recovery_enabled: bool = False
+    telegram_account_linking_enabled: bool = False
+    unified_admin_identity_enabled: bool = False
     customer_access_token_signing_key: str = (
         "dev-disposable-customer-access-token-signing-key-change-me"  # noqa: S105
     )
@@ -112,6 +118,16 @@ def get_settings() -> Settings:
 
 
 def validate_security_configuration(settings: Settings) -> None:
+    incomplete_features = (
+        settings.public_account_registration_enabled,
+        settings.password_account_login_enabled,
+        settings.account_email_verification_enabled,
+        settings.account_recovery_enabled,
+        settings.telegram_account_linking_enabled,
+        settings.unified_admin_identity_enabled,
+    )
+    if any(incomplete_features):
+        raise ValueError("unified account features are schema-only and must remain disabled")
     production_like = settings.environment.lower() in {"production", "prod", "staging"}
     if production_like:
         if not settings.identity_encryption_key:

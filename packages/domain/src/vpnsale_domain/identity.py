@@ -8,6 +8,7 @@ from typing import Any, cast
 from uuid import UUID
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+ACCOUNT_USERNAME_RE = re.compile(r"^[A-Za-z0-9._]{4,32}$")
 PERMISSION_CODE_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
 SENSITIVE_KEY_RE = re.compile(
     r"(password|secret|token|credential|hash|init[_-]?data|recovery|totp)", re.I
@@ -67,6 +68,23 @@ def normalize_email(email: str) -> str:
     normalized = email.strip().casefold()
     if not EMAIL_RE.fullmatch(normalized):
         raise ValueError("invalid administrator email")
+    return normalized
+
+
+def normalize_account_username(username: str) -> str:
+    """Return the canonical login key without altering the display spelling."""
+    if not ACCOUNT_USERNAME_RE.fullmatch(username):
+        raise ValueError(
+            "account username must be 4-32 ASCII letters, digits, periods or underscores"
+        )
+    return username.lower()
+
+
+def normalize_account_email(email: str) -> str:
+    """Normalize an optional account email independently from admin login code."""
+    normalized = email.strip().casefold()
+    if not EMAIL_RE.fullmatch(normalized):
+        raise ValueError("invalid account email")
     return normalized
 
 
@@ -138,6 +156,64 @@ class CustomerProfile:
     user_id: UUID
     display_name: str | None = None
     locale: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AccountUsername:
+    value: str
+    normalized: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "normalized", normalize_account_username(self.value))
+
+
+@dataclass(frozen=True, slots=True)
+class AccountCredential:
+    user_id: UUID
+    username: AccountUsername
+    password_hash: str
+    password_changed_at: datetime
+    failed_login_count: int = 0
+    credential_version: int = 1
+
+    def __post_init__(self) -> None:
+        if not self.password_hash.startswith("$argon2id$"):
+            raise ValueError("account credential requires an Argon2id hash")
+        if self.failed_login_count < 0 or self.credential_version < 1:
+            raise ValueError("invalid account credential counters")
+
+
+@dataclass(frozen=True, slots=True)
+class AccountEmail:
+    user_id: UUID
+    normalized_email: str
+    verified_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "normalized_email", normalize_account_email(self.normalized_email))
+
+    @property
+    def recovery_eligible(self) -> bool:
+        return self.verified_at is not None
+
+
+@dataclass(frozen=True, slots=True)
+class UserRoleAssignment:
+    user_id: UUID
+    role_id: UUID
+    assigned_at: datetime = field(default_factory=utc_now)
+    assigned_by_admin_id: UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AdminAccountLink:
+    admin_id: UUID
+    user_id: UUID
+
+
+def validate_telegram_ownership(existing_user_id: UUID | None, requested_user_id: UUID) -> None:
+    if existing_user_id is not None and existing_user_id != requested_user_id:
+        raise ValueError("Telegram account is already linked to another account")
 
 
 @dataclass(frozen=True, slots=True)
