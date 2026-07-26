@@ -114,6 +114,10 @@ INITIAL_PERMISSIONS: tuple[tuple[str, str], ...] = (
     ("production_releases.review_completion", "Review production completion reports"),
 )
 INITIAL_ROLES: tuple[tuple[str, str], ...] = (
+    ("customer", "Customer"),
+    ("reseller", "Reseller"),
+    ("support", "Support"),
+    ("admin", "Administrator"),
     ("super_admin", "Super Admin"),
     ("security_admin", "Security Administrator"),
     ("support_viewer", "Support Viewer"),

@@ -55,6 +55,56 @@ class CustomerProfileModel(IdentityBase):
     locale: Mapped[str | None] = mapped_column(String(16))
 
 
+class AccountCredentialModel(IdentityBase):
+    __tablename__ = "account_credentials"
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("identity_users.id", ondelete="RESTRICT"), primary_key=True
+    )
+    username: Mapped[str] = mapped_column(String(32), nullable=False)
+    normalized_username: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    password_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    failed_login_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lock_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_successful_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_failed_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    credential_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "failed_login_count >= 0", name="ck_account_credentials_failed_login_count"
+        ),
+        CheckConstraint("credential_version > 0", name="ck_account_credentials_version"),
+        CheckConstraint("password_hash LIKE '$argon2id$%'", name="ck_account_credentials_argon2id"),
+    )
+
+
+class AccountEmailModel(IdentityBase):
+    __tablename__ = "account_emails"
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("identity_users.id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    )
+    normalized_email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class TelegramAccountModel(IdentityBase):
     __tablename__ = "telegram_accounts"
     id: Mapped[str] = mapped_column(
@@ -76,7 +126,7 @@ class TelegramAccountModel(IdentityBase):
     start_attribution: Mapped[str | None] = mapped_column(String(128))
     __table_args__ = (
         UniqueConstraint("telegram_user_id", name="uq_telegram_accounts_telegram_user_id"),
-        Index("ix_telegram_accounts_user_id", "user_id"),
+        Index("ix_telegram_accounts_user_id", "user_id", unique=True),
         CheckConstraint("telegram_user_id > 0", name="ck_telegram_accounts_positive_id"),
     )
 
@@ -85,6 +135,9 @@ class AdminModel(IdentityBase):
     __tablename__ = "admins"
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("identity_users.id", ondelete="RESTRICT"), unique=True
     )
     normalized_email: Mapped[str] = mapped_column(String(320), nullable=False)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
@@ -172,6 +225,27 @@ class AdminRoleAssignmentModel(IdentityBase):
     )
     __table_args__ = (
         UniqueConstraint("admin_id", "role_id", name="uq_admin_role_assignments_pair"),
+    )
+
+
+class UserRoleAssignmentModel(IdentityBase):
+    __tablename__ = "user_role_assignments"
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("identity_users.id", ondelete="CASCADE"), primary_key=True
+    )
+    role_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("roles.id", ondelete="RESTRICT"), primary_key=True
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    assigned_by_admin_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("admins.id", ondelete="SET NULL")
+    )
+    __table_args__ = (
+        UniqueConstraint("user_id", "role_id", name="uq_user_role_assignments_pair"),
+        Index("ix_user_role_assignments_role_id", "role_id"),
+        Index("ix_user_role_assignments_assigned_by", "assigned_by_admin_id"),
     )
 
 
