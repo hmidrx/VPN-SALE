@@ -54,17 +54,14 @@ docker_container_restart_count(){
 }
 
 compose_service_safe_diagnostics(){
-  local service="$1" container_id="${2:-unavailable}"; shift 2
-  local -a compose_cmd=("$@")
+  local service="$1" container_id="${2:-unavailable}"
   local docker_bin="${VPN_SALE_DOCKER_BIN:-docker}" state="unavailable" health="unavailable" restarts="unavailable"
   if [[ "$container_id" != unavailable ]]; then
     state="$("$docker_bin" inspect --format '{{.State.Status}}' "$container_id" 2>/dev/null || printf unavailable)"
     health="$("$docker_bin" inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}unavailable{{end}}' "$container_id" 2>/dev/null || printf unavailable)"
     restarts="$("$docker_bin" inspect --format '{{.RestartCount}}' "$container_id" 2>/dev/null || printf unavailable)"
   fi
-  printf 'Service %s diagnostics: state=%s health=%s restart_count=%s\n' "$service" "$state" "$health" "$restarts" >&2
-  "${compose_cmd[@]}" ps 2>&1 | sanitize_service_diagnostics >&2 || true
-  "${compose_cmd[@]}" logs --no-color "$service" 2>&1 | sanitize_service_diagnostics >&2 || true
+  printf 'Service %s diagnostics (runtime environment omitted): state=%s health=%s restart_count=%s\n' "$service" "$state" "$health" "$restarts" | sanitize_service_diagnostics >&2
 }
 
 assert_compose_service_not_restarted(){

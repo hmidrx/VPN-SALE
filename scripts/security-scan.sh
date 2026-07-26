@@ -58,7 +58,11 @@ is_safe_assigned_secret_line() {
   [[ "$line" =~ package-lock\.json:.*\"(version|license|name)\"[[:space:]]*: ]] && return 0
   # Runtime expansion or command substitution reads/generates a value at install
   # time rather than committing a literal secret.
+  # Literal shell syntax marker in scanned text.
+  # shellcheck disable=SC2016
   [[ "$line" == *'${'* ]] && return 0
+  # Literal command-substitution marker in scanned text.
+  # shellcheck disable=SC2016
   [[ "$line" == *'$('* ]] && return 0
   [[ "$line" == *'`'* ]] && return 0
   [[ "$line" == *'_hash'* || "$line" == *'bot_token = bot_token'* || "$line" == *'# noqa: S105'* ]] && return 0
@@ -89,6 +93,8 @@ report_credential_urls() {
   local tmp files
   tmp="$(mktemp)"
   while IFS= read -r line; do
+    # Match a literal expansion marker in scanned text.
+    # shellcheck disable=SC2016
     if [[ "$line" == *'${'* || "$line" == *'REDACTED'* || "$line" == *'REPLACE_WITH_'* || "$line" == *'vpnsale_dev_password'* || "$line" == *'ci-placeholder'* || "$line" == *'127.0.0.1'* || "$line" == *'localhost'* || "$line" == *'encoded}@'* ]]; then
       continue
     fi
