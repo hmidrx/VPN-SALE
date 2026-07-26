@@ -7,7 +7,7 @@ if [[ -d .venv ]]; then
   source .venv/bin/activate
 fi
 export VPN_SALE_ENVIRONMENT="test"
-export VPN_SALE_VERSION="ci-milestone0"
+export VPN_SALE_VERSION="${VPN_SALE_VERSION:-ci}"
 export POSTGRES_DB="${POSTGRES_DB:-vpnsale_test}"
 export POSTGRES_USER="${POSTGRES_USER:-vpnsale}"
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required for backend verification}"
