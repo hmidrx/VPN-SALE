@@ -5,8 +5,8 @@ RUN addgroup --system vpnsale && adduser --system --ingroup vpnsale --home /home
 COPY requirements-dev.txt ./requirements.txt
 RUN pip install --no-cache-dir --upgrade pip==24.3.1 \
     && pip install --no-cache-dir -r requirements.txt
-COPY apps/worker ./apps/worker
-COPY packages ./packages
+COPY --chown=vpnsale:vpnsale apps/worker ./apps/worker
+COPY --chown=vpnsale:vpnsale packages ./packages
 ENV PYTHONPATH=/app/apps/worker/src:/app/apps/api/src:/app/packages/domain/src:/app/packages/panel-adapters/src:/app/packages/payment-adapters/src
 USER vpnsale
 STOPSIGNAL SIGTERM
