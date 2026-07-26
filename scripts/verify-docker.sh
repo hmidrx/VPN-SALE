@@ -26,8 +26,23 @@ docker compose config
 
 log "Test-server Compose port isolation"
 "$repo_root/scripts/verify-test-server-compose.sh"
+
+log "Simulate a hardened umask-077 checkout"
+find apps/api packages -type d -exec chmod 0700 {} +
+find apps/api packages -type f -exec chmod 0600 {} +
+
 log "Build core images"
 docker compose build api
+
+log "Verify non-root API image source access"
+docker compose run --rm --no-deps api sh -lc '
+  test "$(id -u)" -ne 0
+  test -r /app/apps/api/alembic.ini
+  test -x /app/apps/api/alembic
+  python -c "from platform_api.main import app; assert app"
+  alembic -c /app/apps/api/alembic.ini heads >/dev/null
+'
+
 log "Start core stack"
 docker compose up -d postgres redis api reverse-proxy
 log "Wait for proxy endpoints"
