@@ -58,6 +58,13 @@ preflight_ports(){
     fail "port $p is already in use by an unmanaged listener; installer will not stop unrelated processes"
   done
 }
+normalize_checkout_permissions(){
+  find "$INSTALL_DIR" -path "$INSTALL_DIR/.git" -prune -o -type d -exec chmod 0755 {} +
+  find "$INSTALL_DIR" -path "$INSTALL_DIR/.git" -prune -o -type f -exec chmod 0644 {} +
+  while IFS=$'\t' read -r -d '' meta path; do
+    [[ "${meta%% *}" == "100755" ]] && chmod 0755 "$INSTALL_DIR/$path"
+  done < <(git -C "$INSTALL_DIR" ls-files --stage -z)
+}
 phase="preflight"
 # shellcheck source=/etc/os-release disable=SC1091
 source /etc/os-release
@@ -87,6 +94,7 @@ if [[ $(swapon --show --noheadings | wc -l) -eq 0 ]]; then [[ -f /swapfile ]] ||
 phase_done swap
 phase="checkout"
 if [[ -d "$INSTALL_DIR/.git" ]]; then git -C "$INSTALL_DIR" diff --quiet || fail "tracked worktree is dirty"; git -C "$INSTALL_DIR" fetch origin "$REF" --prune; git -C "$INSTALL_DIR" checkout "$REF"; git -C "$INSTALL_DIR" merge --ff-only "origin/$REF"; else git clone --branch "$REF" "$REPO" "$INSTALL_DIR"; fi
+normalize_checkout_permissions
 printf 'Deploying commit: %s\n' "$(git -C "$INSTALL_DIR" rev-parse HEAD)"
 cd "$INSTALL_DIR"; repo_root="$INSTALL_DIR"; compose=("$repo_root/scripts/vpn-sale-compose-test-server" --env-file "$ENV_FILE")
 phase_done checkout
@@ -131,7 +139,7 @@ for svc in postgres redis; do wait_compose_service_healthy "$svc" 120 "${compose
 "${compose[@]}" exec -T postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null || fail "PostgreSQL is not ready for configured role/database"
 phase_done database
 phase="migrations"
-"${compose[@]}" run --rm --no-deps api alembic -c apps/api/alembic.ini upgrade head
+"${compose[@]}" run --rm --no-deps api alembic -c /app/apps/api/alembic.ini upgrade head
 phase_done migrations
 phase="start services"
 start_services=(api customer-web admin-web reseller-web); [[ "$ENABLE_TELEGRAM" == true ]] && start_services+=(telegram-bot)
