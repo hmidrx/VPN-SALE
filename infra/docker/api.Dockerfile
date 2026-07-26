@@ -7,8 +7,8 @@ RUN addgroup --system vpnsale && adduser --system --ingroup vpnsale --home /home
 COPY requirements-dev.txt ./requirements.txt
 RUN pip install --no-cache-dir --upgrade pip==24.3.1 \
     && pip install --no-cache-dir -r requirements.txt
-COPY apps/api ./apps/api
-COPY packages ./packages
+COPY --chown=vpnsale:vpnsale apps/api ./apps/api
+COPY --chown=vpnsale:vpnsale packages ./packages
 ENV PYTHONPATH=/app/apps/api/src:/app/packages/domain/src:/app/packages/panel-adapters/src:/app/packages/payment-adapters/src
 USER vpnsale
 EXPOSE 8000
