@@ -43,6 +43,16 @@ indexes, ownership/session foreign keys, failed-attempt count, and consumption t
 challenges and identity attributes are excluded from audit/security metadata. Stable event codes
 record challenge creation, success, generic failure/conflict, enrollment, and unlink outcomes.
 Expired rows can be deleted by `expires_at`; downgrade safely drops only this ephemeral table.
+The feature model lives in `customer_auth.models`, outside the identity module imported during
+historical upgrades. Alembic imports it only for autogenerate discovery, so revision 0030 alone
+creates the table. PostgreSQL lifecycle verification covers 0029 → 0030, a repeated no-op
+upgrade, downgrade to 0029, and re-upgrade while checking identity ownership is unchanged.
+
+Challenge creation locks the stable central-user row before replacing an active challenge.
+Completion locks the challenge and both ownership sides, and uses a savepoint so a uniqueness
+race rolls back only the attempted link before its sanitized failure event is persisted. An
+unowned Telegram row is locked before ordinary authentication may reclaim it. Credential
+enrollment and unlink password checks share bounded user, session, and IP rate limits.
 
 ## Rollout and rollback
 

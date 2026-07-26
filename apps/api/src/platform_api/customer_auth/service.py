@@ -27,12 +27,12 @@ from platform_api.identity.models import (
     RoleModel,
     SecurityEventModel,
     TelegramAccountModel,
-    TelegramLinkChallengeModel,
     UserModel,
     UserRoleAssignmentModel,
 )
 from platform_api.identity.security import Argon2idPasswordHasher, OpaqueTokenService
 
+from .models import TelegramLinkChallengeModel
 from .telegram import TelegramInitData, TelegramInitDataError, TelegramInitDataVerifier
 
 GENERIC_CUSTOMER_AUTH_ERROR = "Invalid credentials or authentication state"
@@ -209,9 +209,9 @@ class CustomerAuthService:
 
     def _link_identity(self, verified: TelegramInitData, *, now: datetime) -> UserModel:
         tg = self.session.scalar(
-            select(TelegramAccountModel).where(
-                TelegramAccountModel.telegram_user_id == verified.user.telegram_user_id
-            )
+            select(TelegramAccountModel)
+            .where(TelegramAccountModel.telegram_user_id == verified.user.telegram_user_id)
+            .with_for_update()
         )
         if tg and tg.user_id:
             user = self.session.get(UserModel, tg.user_id)
@@ -309,12 +309,18 @@ class CustomerAuthService:
         self, user_id: str, session_id: str, password: str, *, now: datetime | None = None
     ) -> tuple[str, datetime]:
         now = now or datetime.now(UTC)
+        # The central identity is the stable serialization point even when no prior
+        # challenge exists yet.
+        user = self.session.scalar(
+            select(UserModel).where(UserModel.id == user_id).with_for_update()
+        )
         credential = self.session.get(AccountCredentialModel, user_id)
         linked = self.session.scalar(
             select(TelegramAccountModel).where(TelegramAccountModel.user_id == user_id)
         )
         if (
-            not credential
+            not user
+            or not credential
             or linked
             or not self.passwords.verify(password, credential.password_hash)
         ):
@@ -375,6 +381,7 @@ class CustomerAuthService:
         # start_param is covered by Telegram's signature and binds the two channels.
         if verified.start_param != raw_challenge:
             raise AccountLinkConflict(GENERIC_LINK_CONFLICT)
+        mutation = self.session.begin_nested()
         challenge = self.session.scalar(
             select(TelegramLinkChallengeModel)
             .where(TelegramLinkChallengeModel.token_hash == self.tokens.hash(raw_challenge))
@@ -386,6 +393,7 @@ class CustomerAuthService:
             or _cmp(challenge.expires_at) <= now
             or challenge.failed_attempt_count >= self.settings.telegram_link_challenge_max_attempts
         ):
+            mutation.rollback()
             raise AccountLinkConflict(GENERIC_LINK_CONFLICT)
         challenge.failed_attempt_count += 1
         target_has_tg = self.session.scalar(
@@ -408,9 +416,11 @@ class CustomerAuthService:
                 metadata={"reason": "conflict"},
                 now=now,
             )
+            mutation.commit()
             raise AccountLinkConflict(GENERIC_LINK_CONFLICT)
         user = self.session.get(UserModel, challenge.user_id)
         if user is None or user.status != UserStatus.ACTIVE.value:
+            mutation.rollback()
             raise AccountLinkConflict(GENERIC_LINK_CONFLICT)
         if tg is None:
             tg = TelegramAccountModel(
@@ -446,7 +456,7 @@ class CustomerAuthService:
         try:
             self.session.flush()
         except IntegrityError as exc:
-            self.session.rollback()
+            mutation.rollback()
             _event(
                 self.session,
                 SecurityEventModel,
@@ -455,6 +465,7 @@ class CustomerAuthService:
                 now=now,
             )
             raise AccountLinkConflict(GENERIC_LINK_CONFLICT) from exc
+        mutation.commit()
         return result
 
     def enroll_web_credentials(

@@ -595,12 +595,13 @@ async def complete_telegram_link(
 
 
 @account_linking_router.post("/account-credentials/enroll", response_model=OkResponse)
-def enroll_account_credentials(
+async def enroll_account_credentials(
     body: CredentialEnrollmentRequest,
     request: Request,
     response: Response,
     db: Annotated[Session, Depends(get_db_session)],
     settings: Annotated[Settings, Depends(get_settings)],
+    limiter: Annotated[RateLimiter, Depends(get_customer_rate_limiter)],
     authorization: Annotated[str | None, Header()] = None,
     x_csrf_token: Annotated[str | None, Header()] = None,
 ) -> OkResponse:
@@ -608,6 +609,7 @@ def enroll_account_credentials(
     cur = _current(authorization, db, settings, request)
     svc = _svc(db, settings)
     _require_csrf(svc, cur, x_csrf_token, request)
+    await _rate_sensitive_account_mutation(limiter, request, settings, cur, "credential-enroll")
     try:
         svc.enroll_web_credentials(cur.user_id, body.username, body.password, body.init_data)
     except (AccountLinkConflict, TelegramInitDataError, ValueError) as exc:
@@ -618,12 +620,13 @@ def enroll_account_credentials(
 
 
 @account_linking_router.post("/telegram-link/unlink", response_model=OkResponse)
-def unlink_telegram(
+async def unlink_telegram(
     body: PasswordReauthenticationRequest,
     request: Request,
     response: Response,
     db: Annotated[Session, Depends(get_db_session)],
     settings: Annotated[Settings, Depends(get_settings)],
+    limiter: Annotated[RateLimiter, Depends(get_customer_rate_limiter)],
     authorization: Annotated[str | None, Header()] = None,
     x_csrf_token: Annotated[str | None, Header()] = None,
 ) -> OkResponse:
@@ -633,6 +636,7 @@ def unlink_telegram(
     cur = _current(authorization, db, settings, request)
     svc = _svc(db, settings)
     _require_csrf(svc, cur, x_csrf_token, request)
+    await _rate_sensitive_account_mutation(limiter, request, settings, cur, "telegram-unlink")
     try:
         svc.unlink_telegram(cur.user_id, body.password)
     except AccountLinkConflict as exc:
@@ -640,6 +644,35 @@ def unlink_telegram(
         raise _err(409, request) from exc
     _clear_cookie(response, settings)
     return OkResponse()
+
+
+async def _rate_sensitive_account_mutation(
+    limiter: RateLimiter,
+    request: Request,
+    settings: Settings,
+    session: CustomerSessionModel,
+    purpose: str,
+) -> None:
+    for dimension, key in (
+        ("user", session.user_id),
+        ("session", session.id),
+        (
+            "ip",
+            hardened_rate_key(
+                "ip",
+                request.client.host if request.client else "",
+                salt=settings.opaque_token_hash_salt,
+            ),
+        ),
+    ):
+        await _rate(
+            limiter,
+            request,
+            f"{purpose}-{dimension}",
+            key,
+            limit=settings.telegram_link_rate_limit,
+            window_seconds=settings.customer_login_rate_limit_window_seconds,
+        )
 
 
 @router.post("/refresh", response_model=AuthResponse)

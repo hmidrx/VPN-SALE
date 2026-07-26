@@ -80,14 +80,32 @@ log "Python linting"
 ruff check .
 log "Python typing"
 pyright
-log "Pytest"
-mkdir -p test-reports
-pytest --junitxml=test-reports/backend-pytest.xml
-log "Alembic upgrade/current/downgrade/re-upgrade"
+log "Clean Alembic 0029/0030 lifecycle before tests"
+if [[ "$VPN_SALE_ENVIRONMENT" != "test" || "$POSTGRES_DB" != *_test ]]; then
+  printf 'Refusing destructive migration lifecycle outside a *_test database\n' >&2
+  exit 1
+fi
+alembic -c apps/api/alembic.ini downgrade base
+alembic -c apps/api/alembic.ini upgrade 0029_unified_account_schema
+python - <<'PY'
+import asyncio, os, asyncpg
+async def main():
+    conn = await asyncpg.connect(os.environ["VPN_SALE_DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://"))
+    try:
+        assert await conn.fetchval("SELECT to_regclass('public.telegram_link_challenges')") is None
+    finally:
+        await conn.close()
+asyncio.run(main())
+PY
 alembic -c apps/api/alembic.ini upgrade head
 alembic -c apps/api/alembic.ini current
-alembic -c apps/api/alembic.ini downgrade base
 alembic -c apps/api/alembic.ini upgrade head
+alembic -c apps/api/alembic.ini downgrade 0029_unified_account_schema
+alembic -c apps/api/alembic.ini upgrade head
+log "Pytest"
+mkdir -p test-reports
+export VPN_SALE_RUN_MIGRATION_LIFECYCLE_TEST=1
+pytest --junitxml=test-reports/backend-pytest.xml
 log "API import/startup smoke"
 python - <<'PY'
 from platform_api.main import app
