@@ -3,7 +3,7 @@ set -euo pipefail
 phase="initialization"
 fail(){ printf 'ERROR during %s: %s\n' "$phase" "$*" >&2; printf 'Safe diagnostics are redacted. Run scripts/verify-test-server.sh for details after fixing the error.\n' >&2; exit 1; }
 trap 'fail "command failed on line $LINENO"' ERR
-DOMAIN=""; REPO="https://github.com/hmidrx/VPN-SALE.git"; REF="main"; RUNTIME_DIR="/opt/vpn-sale-runtime"; INSTALL_DIR="/opt/vpn-sale"; PROJECT="vpn-sale"
+DOMAIN=""; REPO="https://github.com/hmidrx/VPN-SALE.git"; REF="main"; EXPECTED_COMMIT=""; RUNTIME_DIR="/opt/vpn-sale-runtime"; INSTALL_DIR="/opt/vpn-sale"; PROJECT="vpn-sale"
 ENABLE_TELEGRAM=false; RESET_PG=false; SKIP_DNS=false; NON_INTERACTIVE=false; OVERRIDE_OS=false; TELEGRAM_BOT_TOKEN_FILE=""; TELEGRAM_BOT_USERNAME=""
 usage(){ cat <<USAGE
 Usage: scripts/install-test-server.sh --domain DOMAIN [options]
@@ -12,6 +12,7 @@ Options:
   --domain DOMAIN                    Root test domain to deploy.
   --repo URL                         Git repository to clone (default: hmidrx/VPN-SALE).
   --ref REF                          Git ref to deploy (default: main).
+  --expected-commit SHA              Require the bootstrap-resolved commit.
   --runtime-dir DIR                  Runtime state directory.
   --install-dir DIR                  Checkout directory.
   --enable-telegram                  Enable Telegram polling bot.
@@ -24,17 +25,12 @@ Options:
   --help                             Show this help and exit.
 USAGE
 }
-while [[ $# -gt 0 ]]; do case "$1" in --help) usage; exit 0;; --domain) DOMAIN="${2:?}"; shift 2;; --repo) REPO="${2:?}"; shift 2;; --ref) REF="${2:?}"; shift 2;; --runtime-dir) RUNTIME_DIR="${2:?}"; shift 2;; --install-dir) INSTALL_DIR="${2:?}"; shift 2;; --enable-telegram) ENABLE_TELEGRAM=true; shift;; --telegram-bot-token-file) TELEGRAM_BOT_TOKEN_FILE="${2:?}"; shift 2;; --telegram-bot-username) TELEGRAM_BOT_USERNAME="${2:?}"; shift 2;; --reset-disposable-postgres) RESET_PG=true; shift;; --skip-dns-wait) SKIP_DNS=true; shift;; --non-interactive) NON_INTERACTIVE=true; shift;; --allow-unsupported-os) OVERRIDE_OS=true; shift;; *) fail "unknown option $1";; esac; done
+while [[ $# -gt 0 ]]; do case "$1" in --help) usage; exit 0;; --domain) DOMAIN="${2:?}"; shift 2;; --repo) REPO="${2:?}"; shift 2;; --ref) REF="${2:?}"; shift 2;; --expected-commit) EXPECTED_COMMIT="${2:?}"; shift 2;; --runtime-dir) RUNTIME_DIR="${2:?}"; shift 2;; --install-dir) INSTALL_DIR="${2:?}"; shift 2;; --enable-telegram) ENABLE_TELEGRAM=true; shift;; --telegram-bot-token-file) TELEGRAM_BOT_TOKEN_FILE="${2:?}"; shift 2;; --telegram-bot-username) TELEGRAM_BOT_USERNAME="${2:?}"; shift 2;; --reset-disposable-postgres) RESET_PG=true; shift;; --skip-dns-wait) SKIP_DNS=true; shift;; --non-interactive) NON_INTERACTIVE=true; shift;; --allow-unsupported-os) OVERRIDE_OS=true; shift;; *) fail "unknown option $1";; esac; done
 [[ $(id -u) -eq 0 ]] || fail "must run as root"
 [[ -n "$DOMAIN" ]] || fail "--domain is required; no implicit production domain is used"
 [[ "$DOMAIN" != "fast.dr-ping.com" && "$DOMAIN" != *".fast.dr-ping.com" ]] || fail "refusing unrelated hostname fast.dr-ping.com"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if [[ ! -f "$repo_root/scripts/test-server-installer-lib.sh" ]]; then
-  bootstrap_dir="$(mktemp -d)"
-  curl -fsSL "https://raw.githubusercontent.com/hmidrx/VPN-SALE/${REF}/scripts/test-server-installer-lib.sh" -o "$bootstrap_dir/test-server-installer-lib.sh"
-  curl -fsSL "https://raw.githubusercontent.com/hmidrx/VPN-SALE/${REF}/scripts/test-server-compose-json.sh" -o "$bootstrap_dir/test-server-compose-json.sh"
-  repo_root="$bootstrap_dir"
-fi
+[[ -d "$repo_root/.git" && -f "$repo_root/scripts/test-server-installer-lib.sh" ]] || fail "installer must run from a complete Git checkout; use scripts/bootstrap-test-server.sh"
 # shellcheck source=scripts/test-server-installer-lib.sh disable=SC1091
 source "$repo_root/scripts/test-server-installer-lib.sh"
 # shellcheck source=scripts/test-server-compose-json.sh disable=SC1091
@@ -86,8 +82,12 @@ phase="swap"
 if [[ $(swapon --show --noheadings | wc -l) -eq 0 ]]; then [[ -f /swapfile ]] || fallocate -l 4G /swapfile; chmod 600 /swapfile; mkswap /swapfile >/dev/null; swapon /swapfile; grep -qE '^/swapfile[[:space:]]' /etc/fstab || echo '/swapfile none swap sw 0 0' >>/etc/fstab; fi
 phase_done swap
 phase="checkout"
-if [[ -d "$INSTALL_DIR/.git" ]]; then git -C "$INSTALL_DIR" diff --quiet || fail "tracked worktree is dirty"; git -C "$INSTALL_DIR" fetch origin "$REF" --prune; git -C "$INSTALL_DIR" checkout "$REF"; git -C "$INSTALL_DIR" merge --ff-only "origin/$REF"; else git clone --branch "$REF" "$REPO" "$INSTALL_DIR"; fi
-printf 'Deploying commit: %s\n' "$(git -C "$INSTALL_DIR" rev-parse HEAD)"
+[[ "$repo_root" == "$INSTALL_DIR" ]] || fail "installer checkout must equal --install-dir; use the standalone bootstrap"
+git -C "$INSTALL_DIR" diff --quiet --ignore-submodules -- || fail "tracked worktree is dirty"
+current_commit="$(git -C "$INSTALL_DIR" rev-parse HEAD)"
+[[ -z "$EXPECTED_COMMIT" || "$current_commit" == "$EXPECTED_COMMIT" ]] || fail "checkout does not match bootstrap-selected commit"
+printf 'Selected ref: %s\nDeploying commit: %s\n' "$REF" "$current_commit"
+normalize_checkout_permissions "$INSTALL_DIR" || fail "checkout permission normalization failed"
 cd "$INSTALL_DIR"; repo_root="$INSTALL_DIR"; compose=("$repo_root/scripts/vpn-sale-compose-test-server" --env-file "$ENV_FILE")
 phase_done checkout
 phase="runtime secrets"
@@ -123,7 +123,7 @@ phase="compose render"
 phase_done compose
 phase="build images"
 profiles=( ); [[ "$ENABLE_TELEGRAM" == true ]] && profiles=(--profile telegram)
-"${compose[@]}" "${profiles[@]}" build api customer-web admin-web reseller-web telegram-bot
+"${compose[@]}" "${profiles[@]}" build api worker customer-web admin-web reseller-web telegram-bot
 phase_done build
 phase="database and redis"
 "${compose[@]}" up -d postgres redis
@@ -131,7 +131,7 @@ for svc in postgres redis; do wait_compose_service_healthy "$svc" 120 "${compose
 "${compose[@]}" exec -T postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null || fail "PostgreSQL is not ready for configured role/database"
 phase_done database
 phase="migrations"
-"${compose[@]}" run --rm --no-deps api alembic -c apps/api/alembic.ini upgrade head
+"${compose[@]}" run --rm --no-deps api alembic -c /app/apps/api/alembic.ini upgrade head
 phase_done migrations
 phase="start services"
 start_services=(api customer-web admin-web reseller-web); [[ "$ENABLE_TELEGRAM" == true ]] && start_services+=(telegram-bot)
