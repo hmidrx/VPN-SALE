@@ -38,6 +38,26 @@ GENERIC_CUSTOMER_AUTH_ERROR = "Invalid credentials or authentication state"
 GENERIC_REGISTRATION_CONFLICT = "Account registration could not be completed"
 
 
+class CustomerAuthStateChangedError(ValueError):
+    """Authentication failed after deliberate security state was changed."""
+
+
+class RefreshReuseDetected(CustomerAuthStateChangedError):
+    """A consumed refresh credential was presented and its family was revoked."""
+
+
+class PasswordAuthenticationFailed(CustomerAuthStateChangedError):
+    """A password attempt failed and its counter/security event was recorded."""
+
+
+class RegistrationConflict(CustomerAuthStateChangedError):
+    """Registration conflicted after its isolated work was rolled back."""
+
+
+class AuthenticationBlocked(CustomerAuthStateChangedError):
+    """Authentication was blocked and a security event was recorded."""
+
+
 def _cmp(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
@@ -172,7 +192,7 @@ class CustomerAuthService:
                 metadata={"reason": "status"},
                 now=now,
             )
-            raise ValueError(GENERIC_CUSTOMER_AUTH_ERROR)
+            raise AuthenticationBlocked(GENERIC_CUSTOMER_AUTH_ERROR)
         result = self.issue_session(
             user, now=now, ip=ip, user_agent=user_agent, device_label="Telegram Mini App"
         )
@@ -240,6 +260,10 @@ class CustomerAuthService:
                 target_id=tg.id,
                 now=now,
             )
+        if user.status not in {UserStatus.PENDING.value, UserStatus.ACTIVE.value}:
+            # A blocked authentication may commit its security event; do not stage unrelated
+            # identity-profile updates in that narrowly persisted failure transaction.
+            return user
         changed = (
             tg.username,
             tg.first_name,
@@ -411,7 +435,7 @@ class CustomerAuthService:
                 metadata={"method": "password", "reason": "conflict"},
                 now=now,
             )
-            raise ValueError(GENERIC_REGISTRATION_CONFLICT) from exc
+            raise RegistrationConflict(GENERIC_REGISTRATION_CONFLICT) from exc
 
     def authenticate_password(
         self,
@@ -473,7 +497,7 @@ class CustomerAuthService:
                     metadata={"method": "password", "reason": "authentication_failed"},
                     now=now,
                 )
-            raise ValueError(GENERIC_CUSTOMER_AUTH_ERROR)
+            raise PasswordAuthenticationFailed(GENERIC_CUSTOMER_AUTH_ERROR)
         credential.failed_login_count = 0
         credential.lock_until = None
         credential.last_successful_login_at = now
@@ -552,7 +576,7 @@ class CustomerAuthService:
                 actor_id=sess.user_id,
                 now=now,
             )
-            raise ValueError(GENERIC_CUSTOMER_AUTH_ERROR)
+            raise RefreshReuseDetected(GENERIC_CUSTOMER_AUTH_ERROR)
         if (
             sess.revoked_at
             or _cmp(sess.idle_expires_at) < now

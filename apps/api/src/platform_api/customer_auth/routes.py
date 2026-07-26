@@ -27,7 +27,11 @@ from platform_api.identity.models import (
     UserModel,
 )
 
-from .service import GENERIC_REGISTRATION_CONFLICT, CustomerAuthService
+from .service import (
+    GENERIC_REGISTRATION_CONFLICT,
+    CustomerAuthService,
+    CustomerAuthStateChangedError,
+)
 from .telegram import TelegramInitDataError
 
 router = APIRouter(prefix="/api/v1/customer/auth", tags=["customer-auth"])
@@ -143,6 +147,11 @@ def _svc(db: Session, settings: Settings) -> CustomerAuthService:
     return CustomerAuthService(db, settings)
 
 
+def _persist_auth_failure(db: Session, exc: CustomerAuthStateChangedError) -> None:
+    """Persist only service failures explicitly declaring intentional security state."""
+    db.commit()
+
+
 def _set_cookie(response: Response, settings: Settings, refresh: str) -> None:
     response.set_cookie(
         settings.customer_refresh_cookie_name,
@@ -255,6 +264,9 @@ async def browser_bootstrap(
     )
     try:
         result = _svc(db, settings).refresh(presented)
+    except CustomerAuthStateChangedError as exc:
+        _persist_auth_failure(db, exc)
+        raise _err(401, request) from exc
     except ValueError as exc:
         raise _err(401, request) from exc
     _set_cookie(response, settings, result.refresh_token)
@@ -342,6 +354,9 @@ async def telegram_login(
             ip=request.client.host if request.client else "",
             user_agent=request.headers.get("user-agent", ""),
         )
+    except CustomerAuthStateChangedError as exc:
+        _persist_auth_failure(db, exc)
+        raise _err(401, request) from exc
     except (ValueError, TelegramInitDataError) as exc:
         raise _err(401, request) from exc
     _set_cookie(response, settings, result.refresh_token)
@@ -400,6 +415,11 @@ async def register(
             user_agent=request.headers.get("user-agent", ""),
             correlation_id=_cid(request),
         )
+    except CustomerAuthStateChangedError as exc:
+        _persist_auth_failure(db, exc)
+        if str(exc) == GENERIC_REGISTRATION_CONFLICT:
+            raise _registration_err(409, request, "customer.registration.conflict") from exc
+        raise _registration_err(422, request, "customer.registration.validation_failed") from exc
     except ValueError as exc:
         if str(exc) == GENERIC_REGISTRATION_CONFLICT:
             raise _registration_err(409, request, "customer.registration.conflict") from exc
@@ -452,6 +472,9 @@ async def password_login(
             ip=request.client.host if request.client else "",
             user_agent=request.headers.get("user-agent", ""),
         )
+    except CustomerAuthStateChangedError as exc:
+        _persist_auth_failure(db, exc)
+        raise _err(401, request) from exc
     except ValueError as exc:
         raise _err(401, request) from exc
     _set_cookie(response, settings, result.refresh_token)
@@ -487,6 +510,9 @@ async def refresh(
     )
     try:
         result = svc.refresh(presented)
+    except CustomerAuthStateChangedError as exc:
+        _persist_auth_failure(db, exc)
+        raise _err(401, request) from exc
     except ValueError as exc:
         raise _err(401, request) from exc
     _set_cookie(response, settings, result.refresh_token)
