@@ -1,5 +1,6 @@
 from fastapi import APIRouter, FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.datastructures import Headers
 
 from .admin_auth.routes import router as admin_auth_router
 from .catalog import admin_router as admin_catalog_router
@@ -68,6 +69,17 @@ from .wallet import customer_router as wallet_router
 system_router = APIRouter()
 
 
+class FirstPartyCORSMiddleware(CORSMiddleware):
+    """Avoid advertising credential support to origins outside the allowlist."""
+
+    def preflight_response(self, request_headers: Headers) -> Response:
+        response = super().preflight_response(request_headers)
+        origin = request_headers["origin"]
+        if not self.is_allowed_origin(origin=origin):
+            del response.headers["access-control-allow-credentials"]
+        return response
+
+
 @system_router.get("/live")
 async def live() -> dict[str, str]:
     return {"status": "alive"}
@@ -111,10 +123,10 @@ def create_app(settings: Settings) -> FastAPI:
     assert_startup_configuration(settings)
     application = FastAPI(title=settings.app_name, version=settings.version)
     application.add_middleware(
-        CORSMiddleware,
+        FirstPartyCORSMiddleware,
         allow_origins=[origin.rstrip("/") for origin in settings.cors_allowed_origins],
         allow_credentials=settings.cors_allow_credentials,
-        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
         allow_headers=[
             "Authorization",
             "Content-Type",

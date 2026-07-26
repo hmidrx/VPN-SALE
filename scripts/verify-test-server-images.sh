@@ -37,6 +37,8 @@ values={
  "VPN_SALE_DATABASE_URL":async_url, "DATABASE_URL":async_url,
  "VPN_SALE_SYNC_DATABASE_URL":sync_url,
  "VPN_SALE_REDIS_URL":"redis://redis:6379/0",
+ "VPN_SALE_PUBLIC_APP_ORIGIN":"https://app.dr-ping.com",
+ "VPN_SALE_CORS_ALLOWED_ORIGINS":"[\"https://app.dr-ping.com\",\"https://admin.dr-ping.com\",\"https://reseller.dr-ping.com\"]",
  "VPN_SALE_IDENTITY_ENCRYPTION_KEY":secrets.token_urlsafe(48),
  "VPN_SALE_IDENTITY_ENCRYPTION_KEY_VERSION":"ci-v1",
  "VPN_SALE_ADMIN_ACCESS_TOKEN_SIGNING_KEY":secrets.token_urlsafe(48),
@@ -117,7 +119,7 @@ printf 'database services healthy\n'
 printf 'first migration complete\n'
 "${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini upgrade head
 printf 'second migration complete\n'
-"${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini current | grep -q '(head)'
+"${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini current | grep -Eq '0029.*\(head\)'
 printf 'migration head confirmed\n'
 "${compose[@]}" up -d api customer admin reseller
 printf 'application containers started\n'
@@ -137,6 +139,43 @@ wait_endpoint 'API health' http://127.0.0.1:8000/health api
 wait_endpoint 'API readiness' http://127.0.0.1:8000/ready api
 wait_endpoint 'API version' http://127.0.0.1:8000/version api
 wait_endpoint 'API metrics' http://127.0.0.1:8000/metrics api
+
+bootstrap_url='http://127.0.0.1:8000/api/v1/customer/auth/browser-bootstrap'
+assert_bootstrap_status(){
+  local origin="$1" expected="$2" body_file="$tmp/bootstrap-body.json" status
+  status="$(curl -sS -o "$body_file" -w '%{http_code}' -X POST "$bootstrap_url" \
+    -H "Origin: $origin" -H 'X-VPN-Sale-Client: customer-web')"
+  [[ "$status" == "$expected" ]]
+  python3 - "$body_file" <<'PY'
+import json,sys
+body=json.load(open(sys.argv[1],encoding="utf-8"))
+assert not ({"access_token","csrf_token","session_id"} & body.keys()), body
+PY
+}
+assert_bootstrap_status 'https://app.dr-ping.com' 401
+assert_bootstrap_status 'https://admin.dr-ping.com' 403
+assert_bootstrap_status 'https://reseller.dr-ping.com' 403
+printf 'customer bootstrap Origin boundary confirmed\n'
+
+curl -fsS -o /dev/null -X OPTIONS "$bootstrap_url" \
+  -H 'Origin: https://app.dr-ping.com' \
+  -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: X-VPN-Sale-Client,X-CSRF-Token'
+curl -fsS -o /dev/null -X OPTIONS \
+  'http://127.0.0.1:8000/api/v1/admin/configuration/drafts/example/sections' \
+  -H 'Origin: https://admin.dr-ping.com' \
+  -H 'Access-Control-Request-Method: PATCH' \
+  -H 'Access-Control-Request-Headers: Authorization,Content-Type,X-CSRF-Token,X-Request-ID'
+printf 'customer POST and admin PATCH preflights confirmed\n'
+
+capabilities="$(curl -fsS 'http://127.0.0.1:8000/api/v1/customer/auth/capabilities')"
+python3 - "$capabilities" <<'PY'
+import json,sys
+body=json.loads(sys.argv[1])
+assert body["public_registration"] is False, body
+assert body["password_login"] is False, body
+PY
+printf 'registration and password login defaults confirmed disabled\n'
 wait_endpoint 'Customer web' http://127.0.0.1:3000 customer
 wait_endpoint 'Admin web' http://127.0.0.1:3001 admin
 wait_endpoint 'Reseller web' http://127.0.0.1:3002 reseller
