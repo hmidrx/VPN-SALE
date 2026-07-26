@@ -71,3 +71,30 @@ sessions will no longer validate under pre-change CSRF logic and users must sign
 For local development configure exact local origins and explicitly opt in to password login
 or registration only for an isolated test run. Repository and deployment defaults remain
 disabled. Start with the existing Docker Compose workflow after validating configuration.
+
+## Failure-side transaction persistence hotfix
+
+Request-scoped database sessions commit after a successful endpoint return and roll back when
+an exception leaves the endpoint. Customer-auth previously used ordinary `ValueError` for both
+read-only rejection and rejection after deliberate security mutations. Consequently refresh
+reuse returned 401 while rolling back family revocation, the reuse marker, and its events;
+password failures similarly lost counters, lockout timestamps, and events.
+
+Customer auth now has a narrow state-changed failure hierarchy. Only these declared failures
+are committed by the customer-auth route boundary before it returns the existing generic error.
+Unknown/invalid credentials and validation failures remain rollback-only. Low-level services do
+not commit, and the global database dependency is unchanged. A commit error escapes and produces
+a server failure, so persistence failure cannot produce authentication success. The declared
+cases are refresh reuse, password-attempt state, registration conflict after its nested rollback,
+and status-block security events.
+
+Route-level regressions use the production transaction lifecycle and fresh verification sessions.
+They cover refresh and browser-bootstrap replay, whole-family revocation without affecting an
+independent login, access/refresh rejection after replay, separate-request lockout counters and
+reset, registration conflict, invalid validation input, unknown refresh credentials, generic
+responses, absent failure cookies, and event metadata that contains no submitted credential.
+
+Rollback is code-only and requires no migration: revert the exception contract and route handling.
+That rollback reintroduces the known failure-state loss, so deploy it only while password login and
+public registration remain disabled and after invalidating affected refresh families. Both auth
+feature flags remain disabled by default; local startup still requires an explicit isolated opt-in.
