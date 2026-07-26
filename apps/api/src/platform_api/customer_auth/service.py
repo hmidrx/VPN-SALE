@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from hmac import compare_digest
 from uuid import uuid4
 
 import jwt
@@ -310,8 +311,8 @@ class CustomerAuthService:
             user_agent_metadata={"present": bool(user_agent)},
             device_label=device_label,
         )
-        csrf_token = self.csrf_for(sid)
-        sess.csrf_token_hash = csrf_token
+        csrf_token = self.tokens.generate()
+        sess.csrf_token_hash = self.tokens.hash(csrf_token)
         self.session.add(sess)
         _event(
             self.session,
@@ -503,12 +504,20 @@ class CustomerAuthService:
         return result
 
     def csrf_for(self, session_id: str) -> str:
+        """Return the pre-Phase-1A.2.2B representation for temporary compatibility.
+
+        Remove this compatibility helper after every pre-fix session has exceeded
+        ``customer_session_absolute_lifetime_seconds``.
+        """
         return self.tokens.hash(f"customer-csrf:{session_id}:{self.settings.customer_csrf_secret}")
 
     def validate_csrf(self, sess: CustomerSessionModel, token: str | None) -> bool:
-        return bool(
-            token and sess.csrf_token_hash and self.tokens.verify(token, sess.csrf_token_hash)
-        )
+        if not token or not sess.csrf_token_hash:
+            return False
+        legacy = self.csrf_for(sess.id)
+        if compare_digest(sess.csrf_token_hash, legacy):
+            return compare_digest(token, legacy)
+        return self.tokens.verify(token, sess.csrf_token_hash)
 
     def session_for_refresh(self, refresh_token: str) -> CustomerSessionModel | None:
         return self.session.scalar(
@@ -572,8 +581,8 @@ class CustomerAuthService:
         )
         self.session.add(nxt)
         self.session.flush()
-        csrf_token = self.csrf_for(nxt.id)
-        nxt.csrf_token_hash = csrf_token
+        csrf_token = self.tokens.generate()
+        nxt.csrf_token_hash = self.tokens.hash(csrf_token)
         _event(
             self.session,
             AuditLogModel,

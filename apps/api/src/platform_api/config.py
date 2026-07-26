@@ -136,6 +136,11 @@ def validate_security_configuration(settings: Settings) -> None:
     if settings.customer_password_min_length > settings.customer_password_max_length:
         raise ValueError("customer password length settings are invalid")
     production_like = settings.environment.lower() in {"production", "prod", "staging"}
+    origins = [origin.rstrip("/") for origin in settings.cors_allowed_origins]
+    if settings.public_app_origin.rstrip("/") not in origins:
+        raise ValueError("public app origin must be included in CORS allowed origins")
+    if settings.cors_allow_credentials and any(origin == "*" for origin in origins):
+        raise ValueError("wildcard CORS origins cannot be used with credentials")
     if production_like:
         if not settings.identity_encryption_key:
             raise ValueError("identity encryption key is required")
