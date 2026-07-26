@@ -9,6 +9,9 @@ from uuid import UUID
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 ACCOUNT_USERNAME_RE = re.compile(r"^[A-Za-z0-9._]{4,32}$")
+COMMON_CUSTOMER_PASSWORDS = frozenset(
+    {"123456789012", "password1234", "qwerty123456", "letmein123456", "admin12345678"}
+)
 PERMISSION_CODE_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
 SENSITIVE_KEY_RE = re.compile(
     r"(password|secret|token|credential|hash|init[_-]?data|recovery|totp)", re.I
@@ -86,6 +89,21 @@ def normalize_account_email(email: str) -> str:
     if not EMAIL_RE.fullmatch(normalized):
         raise ValueError("invalid account email")
     return normalized
+
+
+def validate_customer_password(
+    password: str, normalized_username: str, *, min_length: int, max_length: int
+) -> None:
+    """Enforce length and targeted weakness checks without changing the password."""
+    if len(password) < min_length:
+        raise ValueError("customer password is too short")
+    if len(password) > max_length:
+        raise ValueError("customer password is too long")
+    normalized_password = password.casefold()
+    if normalized_password in COMMON_CUSTOMER_PASSWORDS:
+        raise ValueError("customer password is too common")
+    if len(normalized_username) >= 4 and normalized_username.casefold() in normalized_password:
+        raise ValueError("customer password must not contain the account username")
 
 
 def normalize_optional_text(value: str | None, *, max_length: int) -> str | None:

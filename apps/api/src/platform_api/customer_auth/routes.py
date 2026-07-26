@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
+from vpnsale_domain.identity import normalize_account_username
 
 from platform_api.admin_auth.rate_limit import (
     InMemoryRateLimiter,
@@ -20,7 +21,7 @@ from platform_api.config import Settings, get_settings
 from platform_api.database import get_db_session
 from platform_api.identity.models import CustomerSessionModel, TelegramAccountModel, UserModel
 
-from .service import CustomerAuthService
+from .service import GENERIC_REGISTRATION_CONFLICT, CustomerAuthService
 from .telegram import TelegramInitDataError
 
 router = APIRouter(prefix="/api/v1/customer/auth", tags=["customer-auth"])
@@ -34,6 +35,17 @@ class ApiError(BaseModel):
 
 class TelegramLoginRequest(BaseModel):
     init_data: str = Field(min_length=1)
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    email: str | None = None
+
+
+class PasswordLoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 class AuthResponse(BaseModel):
@@ -95,6 +107,17 @@ def _err(code: int, request: Request, headers: dict[str, str] | None = None) -> 
             correlation_id=_cid(request),
         ).model_dump(),
         headers=headers,
+    )
+
+
+def _registration_err(code: int, request: Request, message_key: str) -> HTTPException:
+    return HTTPException(
+        code,
+        detail=ApiError(
+            code="customer_registration_failed",
+            message_key=message_key,
+            correlation_id=_cid(request),
+        ).model_dump(),
     )
 
 
@@ -203,6 +226,120 @@ async def telegram_login(
             user_agent=request.headers.get("user-agent", ""),
         )
     except (ValueError, TelegramInitDataError) as exc:
+        raise _err(401, request) from exc
+    _set_cookie(response, settings, result.refresh_token)
+    return AuthResponse(
+        access_token=result.access_token, csrf_token=result.csrf_token, session_id=result.session_id
+    )
+
+
+@router.post("/register", response_model=AuthResponse)
+async def register(
+    body: RegisterRequest,
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    limiter: Annotated[RateLimiter, Depends(get_customer_rate_limiter)],
+) -> AuthResponse:
+    if not settings.public_account_registration_enabled:
+        raise HTTPException(404)
+    ip_key = hardened_rate_key(
+        "ip", request.client.host if request.client else "", salt=settings.opaque_token_hash_salt
+    )
+    await _rate(
+        limiter,
+        request,
+        "customer-registration-global",
+        "global",
+        limit=settings.customer_registration_global_rate_limit,
+        window_seconds=settings.customer_login_rate_limit_window_seconds,
+    )
+    await _rate(
+        limiter,
+        request,
+        "customer-registration-ip",
+        ip_key,
+        limit=settings.customer_registration_rate_limit,
+        window_seconds=settings.customer_login_rate_limit_window_seconds,
+    )
+    try:
+        normalized = normalize_account_username(body.username)
+    except ValueError:
+        normalized = ""
+    if normalized:
+        await _rate(
+            limiter,
+            request,
+            "customer-registration-username",
+            hardened_rate_key("username", normalized, salt=settings.opaque_token_hash_salt),
+            limit=settings.customer_registration_rate_limit,
+            window_seconds=settings.customer_login_rate_limit_window_seconds,
+        )
+    try:
+        result = _svc(db, settings).register_password_account(
+            body.username,
+            body.password,
+            email=body.email,
+            ip=request.client.host if request.client else "",
+            user_agent=request.headers.get("user-agent", ""),
+            correlation_id=_cid(request),
+        )
+    except ValueError as exc:
+        if str(exc) == GENERIC_REGISTRATION_CONFLICT:
+            raise _registration_err(409, request, "customer.registration.conflict") from exc
+        raise _registration_err(422, request, "customer.registration.validation_failed") from exc
+    _set_cookie(response, settings, result.refresh_token)
+    return AuthResponse(
+        access_token=result.access_token, csrf_token=result.csrf_token, session_id=result.session_id
+    )
+
+
+@router.post("/password-login", response_model=AuthResponse)
+async def password_login(
+    body: PasswordLoginRequest,
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    limiter: Annotated[RateLimiter, Depends(get_customer_rate_limiter)],
+) -> AuthResponse:
+    if not settings.password_account_login_enabled:
+        raise HTTPException(404)
+    try:
+        normalized = normalize_account_username(body.username)
+    except ValueError as exc:
+        raise _err(401, request) from exc
+    for purpose, key in (
+        (
+            "customer-password-login-ip",
+            hardened_rate_key(
+                "ip",
+                request.client.host if request.client else "",
+                salt=settings.opaque_token_hash_salt,
+            ),
+        ),
+        (
+            "customer-password-login-username",
+            hardened_rate_key("username", normalized, salt=settings.opaque_token_hash_salt),
+        ),
+    ):
+        await _rate(
+            limiter,
+            request,
+            purpose,
+            key,
+            limit=settings.customer_password_login_rate_limit,
+            window_seconds=settings.customer_login_rate_limit_window_seconds,
+        )
+    try:
+        result = _svc(db, settings).authenticate_password(
+            body.username,
+            body.password,
+            ip=request.client.host if request.client else "",
+            user_agent=request.headers.get("user-agent", ""),
+        )
+    except ValueError as exc:
         raise _err(401, request) from exc
     _set_cookie(response, settings, result.refresh_token)
     return AuthResponse(

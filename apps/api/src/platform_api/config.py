@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     customer_csrf_secret: str = "dev-disposable-customer-csrf-secret-change-me"  # noqa: S105
     customer_login_rate_limit: int = 20
     customer_login_rate_limit_window_seconds: int = 300
+    customer_registration_rate_limit: int = 5
+    customer_registration_global_rate_limit: int = 100
+    customer_password_login_rate_limit: int = 10
+    customer_password_min_length: int = Field(default=12, ge=12, le=512)
+    customer_password_max_length: int = Field(default=512, ge=12, le=4096)
+    customer_password_lockout_threshold: int = Field(default=5, ge=1, le=100)
+    customer_password_lockout_duration_seconds: int = Field(default=900, ge=60, le=86400)
     customer_refresh_rate_limit: int = 60
     customer_refresh_rate_limit_window_seconds: int = 300
     customer_session_revocation_rate_limit: int = 30
@@ -119,15 +126,15 @@ def get_settings() -> Settings:
 
 def validate_security_configuration(settings: Settings) -> None:
     incomplete_features = (
-        settings.public_account_registration_enabled,
-        settings.password_account_login_enabled,
         settings.account_email_verification_enabled,
         settings.account_recovery_enabled,
         settings.telegram_account_linking_enabled,
         settings.unified_admin_identity_enabled,
     )
     if any(incomplete_features):
-        raise ValueError("unified account features are schema-only and must remain disabled")
+        raise ValueError("requested unified account feature is not implemented")
+    if settings.customer_password_min_length > settings.customer_password_max_length:
+        raise ValueError("customer password length settings are invalid")
     production_like = settings.environment.lower() in {"production", "prod", "staging"}
     if production_like:
         if not settings.identity_encryption_key:
