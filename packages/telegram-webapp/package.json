@@ -1,0 +1,1 @@
+{"name":"@vpnsale/telegram-webapp","version":"0.0.0","type":"module","exports":{".":"./src/index.ts"},"scripts":{"lint":"node ../../scripts/lint-workspace.mjs .","typecheck":"tsc -p tsconfig.json","test":"npm run typecheck && node tests/adapter.test.mjs"},"devDependencies":{"typescript":"5.7.2"}}
