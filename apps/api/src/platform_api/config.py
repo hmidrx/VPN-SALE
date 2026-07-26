@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     account_email_verification_enabled: bool = False
     account_recovery_enabled: bool = False
     telegram_account_linking_enabled: bool = False
+    telegram_link_challenge_lifetime_seconds: int = Field(default=600, ge=300, le=900)
+    telegram_link_challenge_max_attempts: int = Field(default=5, ge=1, le=20)
+    telegram_link_rate_limit: int = Field(default=5, ge=1, le=50)
     unified_admin_identity_enabled: bool = False
     customer_access_token_signing_key: str = (
         "dev-disposable-customer-access-token-signing-key-change-me"  # noqa: S105
@@ -128,7 +131,6 @@ def validate_security_configuration(settings: Settings) -> None:
     incomplete_features = (
         settings.account_email_verification_enabled,
         settings.account_recovery_enabled,
-        settings.telegram_account_linking_enabled,
         settings.unified_admin_identity_enabled,
     )
     if any(incomplete_features):

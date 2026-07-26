@@ -29,6 +29,7 @@ from platform_api.identity.models import (
 
 from .service import (
     GENERIC_REGISTRATION_CONFLICT,
+    AccountLinkConflict,
     CustomerAuthService,
     CustomerAuthStateChangedError,
 )
@@ -37,6 +38,7 @@ from .telegram import TelegramInitDataError
 router = APIRouter(prefix="/api/v1/customer/auth", tags=["customer-auth"])
 registration_router = APIRouter(prefix="/api/v1/customer/auth", tags=["customer-auth"])
 password_login_router = APIRouter(prefix="/api/v1/customer/auth", tags=["customer-auth"])
+account_linking_router = APIRouter(prefix="/api/v1/customer/auth", tags=["customer-auth"])
 
 
 class ApiError(BaseModel):
@@ -73,10 +75,32 @@ class AuthCapabilitiesResponse(BaseModel):
     email_recovery: bool = False
     telegram_recovery: bool = False
     recovery_codes: bool = False
+    telegram_linking: bool = False
+    web_credential_enrollment: bool = False
 
 
 class RefreshRequest(BaseModel):
     refresh_token: str | None = None
+
+
+class PasswordReauthenticationRequest(BaseModel):
+    password: str = Field(min_length=1)
+
+
+class TelegramLinkCompleteRequest(BaseModel):
+    challenge: str = Field(min_length=20, max_length=512)
+    init_data: str = Field(min_length=1)
+
+
+class CredentialEnrollmentRequest(BaseModel):
+    username: str
+    password: str
+    init_data: str = Field(min_length=1)
+
+
+class LinkChallengeResponse(BaseModel):
+    challenge: str
+    expires_at: str
 
 
 class OkResponse(BaseModel):
@@ -234,6 +258,10 @@ def capabilities(
         password_login=settings.password_account_login_enabled,
         public_registration=settings.public_account_registration_enabled,
         telegram_login=settings.telegram_customer_auth_enabled,
+        telegram_linking=settings.telegram_account_linking_enabled,
+        web_credential_enrollment=(
+            settings.telegram_account_linking_enabled and settings.password_account_login_enabled
+        ),
     )
 
 
@@ -481,6 +509,137 @@ async def password_login(
     return AuthResponse(
         access_token=result.access_token, csrf_token=result.csrf_token, session_id=result.session_id
     )
+
+
+@account_linking_router.post("/telegram-link/challenge", response_model=LinkChallengeResponse)
+async def create_telegram_link_challenge(
+    body: PasswordReauthenticationRequest,
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    limiter: Annotated[RateLimiter, Depends(get_customer_rate_limiter)],
+    authorization: Annotated[str | None, Header()] = None,
+    x_csrf_token: Annotated[str | None, Header()] = None,
+) -> LinkChallengeResponse:
+    _no_store(response)
+    cur = _current(authorization, db, settings, request)
+    svc = _svc(db, settings)
+    _require_csrf(svc, cur, x_csrf_token, request)
+    for purpose, key in (
+        ("telegram-link-user", cur.user_id),
+        ("telegram-link-session", cur.id),
+        (
+            "telegram-link-ip",
+            hardened_rate_key(
+                "ip",
+                request.client.host if request.client else "",
+                salt=settings.opaque_token_hash_salt,
+            ),
+        ),
+    ):
+        await _rate(
+            limiter,
+            request,
+            purpose,
+            key,
+            limit=settings.telegram_link_rate_limit,
+            window_seconds=settings.customer_login_rate_limit_window_seconds,
+        )
+    try:
+        raw, expires = svc.create_telegram_link_challenge(cur.user_id, cur.id, body.password)
+    except AccountLinkConflict as exc:
+        _persist_auth_failure(db, exc)
+        raise _err(409, request) from exc
+    return LinkChallengeResponse(challenge=raw, expires_at=expires.isoformat())
+
+
+@account_linking_router.post("/telegram-link/complete", response_model=AuthResponse)
+async def complete_telegram_link(
+    body: TelegramLinkCompleteRequest,
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    limiter: Annotated[RateLimiter, Depends(get_customer_rate_limiter)],
+) -> AuthResponse:
+    _no_store(response)
+    await _rate(
+        limiter,
+        request,
+        "telegram-link-complete-ip",
+        hardened_rate_key(
+            "ip",
+            request.client.host if request.client else "",
+            salt=settings.opaque_token_hash_salt,
+        ),
+        limit=settings.telegram_link_rate_limit,
+        window_seconds=settings.customer_login_rate_limit_window_seconds,
+    )
+    try:
+        result = _svc(db, settings).complete_telegram_link(
+            body.challenge,
+            body.init_data,
+            ip=request.client.host if request.client else "",
+            user_agent=request.headers.get("user-agent", ""),
+        )
+    except AccountLinkConflict as exc:
+        _persist_auth_failure(db, exc)
+        raise _err(409, request) from exc
+    _set_cookie(response, settings, result.refresh_token)
+    return AuthResponse(
+        access_token=result.access_token,
+        csrf_token=result.csrf_token,
+        session_id=result.session_id,
+    )
+
+
+@account_linking_router.post("/account-credentials/enroll", response_model=OkResponse)
+def enroll_account_credentials(
+    body: CredentialEnrollmentRequest,
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    authorization: Annotated[str | None, Header()] = None,
+    x_csrf_token: Annotated[str | None, Header()] = None,
+) -> OkResponse:
+    _no_store(response)
+    cur = _current(authorization, db, settings, request)
+    svc = _svc(db, settings)
+    _require_csrf(svc, cur, x_csrf_token, request)
+    try:
+        svc.enroll_web_credentials(cur.user_id, body.username, body.password, body.init_data)
+    except (AccountLinkConflict, TelegramInitDataError, ValueError) as exc:
+        if isinstance(exc, AccountLinkConflict):
+            _persist_auth_failure(db, exc)
+        raise _err(409, request) from exc
+    return OkResponse()
+
+
+@account_linking_router.post("/telegram-link/unlink", response_model=OkResponse)
+def unlink_telegram(
+    body: PasswordReauthenticationRequest,
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    authorization: Annotated[str | None, Header()] = None,
+    x_csrf_token: Annotated[str | None, Header()] = None,
+) -> OkResponse:
+    _no_store(response)
+    if not settings.password_account_login_enabled:
+        raise _err(404, request)
+    cur = _current(authorization, db, settings, request)
+    svc = _svc(db, settings)
+    _require_csrf(svc, cur, x_csrf_token, request)
+    try:
+        svc.unlink_telegram(cur.user_id, body.password)
+    except AccountLinkConflict as exc:
+        _persist_auth_failure(db, exc)
+        raise _err(409, request) from exc
+    _clear_cookie(response, settings)
+    return OkResponse()
 
 
 @router.post("/refresh", response_model=AuthResponse)

@@ -27,15 +27,17 @@ from platform_api.identity.models import (
     RoleModel,
     SecurityEventModel,
     TelegramAccountModel,
+    TelegramLinkChallengeModel,
     UserModel,
     UserRoleAssignmentModel,
 )
 from platform_api.identity.security import Argon2idPasswordHasher, OpaqueTokenService
 
-from .telegram import TelegramInitData, TelegramInitDataVerifier
+from .telegram import TelegramInitData, TelegramInitDataError, TelegramInitDataVerifier
 
 GENERIC_CUSTOMER_AUTH_ERROR = "Invalid credentials or authentication state"
 GENERIC_REGISTRATION_CONFLICT = "Account registration could not be completed"
+GENERIC_LINK_CONFLICT = "Account linking could not be completed"
 
 
 class CustomerAuthStateChangedError(ValueError):
@@ -56,6 +58,10 @@ class RegistrationConflict(CustomerAuthStateChangedError):
 
 class AuthenticationBlocked(CustomerAuthStateChangedError):
     """Authentication was blocked and a security event was recorded."""
+
+
+class AccountLinkConflict(CustomerAuthStateChangedError):
+    """A unification mutation failed without disclosing the conflicting identity."""
 
 
 def _cmp(dt: datetime) -> datetime:
@@ -222,13 +228,18 @@ class CustomerAuthService:
                     locale=verified.user.language_code,
                 )
             )
-            tg = TelegramAccountModel(
-                telegram_user_id=verified.user.telegram_user_id,
-                user_id=user.id,
-                first_seen_at=now,
-                last_seen_at=now,
-            )
-            self.session.add(tg)
+            if tg is None:
+                tg = TelegramAccountModel(
+                    telegram_user_id=verified.user.telegram_user_id,
+                    user_id=user.id,
+                    first_seen_at=now,
+                    last_seen_at=now,
+                )
+                self.session.add(tg)
+            else:
+                # Unlink deliberately preserves the Telegram row. Lock and reclaim that
+                # unowned identity rather than violating the global numeric-ID constraint.
+                tg.user_id = user.id
             self._assign_customer_role(user.id, now=now)
             try:
                 self.session.flush()
@@ -270,21 +281,18 @@ class CustomerAuthService:
             tg.last_name,
             tg.language_code,
             tg.photo_url,
-            tg.start_attribution,
         ) != (
             verified.user.username,
             verified.user.first_name,
             verified.user.last_name,
             verified.user.language_code,
             verified.user.photo_url,
-            verified.start_param,
         )
         tg.username = verified.user.username
         tg.first_name = verified.user.first_name
         tg.last_name = verified.user.last_name
         tg.language_code = verified.user.language_code
         tg.photo_url = verified.user.photo_url
-        tg.start_attribution = verified.start_param
         tg.last_seen_at = now
         if changed:
             _event(
@@ -296,6 +304,270 @@ class CustomerAuthService:
                 now=now,
             )
         return user
+
+    def create_telegram_link_challenge(
+        self, user_id: str, session_id: str, password: str, *, now: datetime | None = None
+    ) -> tuple[str, datetime]:
+        now = now or datetime.now(UTC)
+        credential = self.session.get(AccountCredentialModel, user_id)
+        linked = self.session.scalar(
+            select(TelegramAccountModel).where(TelegramAccountModel.user_id == user_id)
+        )
+        if (
+            not credential
+            or linked
+            or not self.passwords.verify(password, credential.password_hash)
+        ):
+            _event(
+                self.session,
+                SecurityEventModel,
+                "customer.telegram_link.failed",
+                actor_id=user_id,
+                metadata={"reason": "precondition"},
+                now=now,
+            )
+            raise AccountLinkConflict(GENERIC_LINK_CONFLICT)
+        self.session.execute(
+            update(TelegramLinkChallengeModel)
+            .where(
+                TelegramLinkChallengeModel.user_id == user_id,
+                TelegramLinkChallengeModel.consumed_at.is_(None),
+            )
+            .values(consumed_at=now)
+        )
+        raw = self.tokens.generate()
+        expires = now + timedelta(seconds=self.settings.telegram_link_challenge_lifetime_seconds)
+        self.session.add(
+            TelegramLinkChallengeModel(
+                user_id=user_id,
+                initiating_session_id=session_id,
+                token_hash=self.tokens.hash(raw),
+                created_at=now,
+                expires_at=expires,
+            )
+        )
+        _event(
+            self.session,
+            AuditLogModel,
+            "customer.telegram_link.challenge_created",
+            actor_id=user_id,
+            target_id=user_id,
+            now=now,
+        )
+        return raw, expires
+
+    def complete_telegram_link(
+        self,
+        raw_challenge: str,
+        raw_init_data: str,
+        *,
+        now: datetime | None = None,
+        ip: str = "",
+        user_agent: str = "",
+    ) -> CustomerAuthResult:
+        now = now or datetime.now(UTC)
+        if self.verifier is None:
+            raise AccountLinkConflict(GENERIC_LINK_CONFLICT)
+        try:
+            verified = self.verifier.verify(raw_init_data, now=now)
+        except TelegramInitDataError as exc:
+            raise AccountLinkConflict(GENERIC_LINK_CONFLICT) from exc
+        # start_param is covered by Telegram's signature and binds the two channels.
+        if verified.start_param != raw_challenge:
+            raise AccountLinkConflict(GENERIC_LINK_CONFLICT)
+        challenge = self.session.scalar(
+            select(TelegramLinkChallengeModel)
+            .where(TelegramLinkChallengeModel.token_hash == self.tokens.hash(raw_challenge))
+            .with_for_update()
+        )
+        if (
+            not challenge
+            or challenge.consumed_at is not None
+            or _cmp(challenge.expires_at) <= now
+            or challenge.failed_attempt_count >= self.settings.telegram_link_challenge_max_attempts
+        ):
+            raise AccountLinkConflict(GENERIC_LINK_CONFLICT)
+        challenge.failed_attempt_count += 1
+        target_has_tg = self.session.scalar(
+            select(TelegramAccountModel)
+            .where(TelegramAccountModel.user_id == challenge.user_id)
+            .with_for_update()
+        )
+        tg = self.session.scalar(
+            select(TelegramAccountModel)
+            .where(TelegramAccountModel.telegram_user_id == verified.user.telegram_user_id)
+            .with_for_update()
+        )
+        # An owned row is a populated account: it is never reassigned or merged.
+        if target_has_tg or (tg is not None and tg.user_id is not None):
+            _event(
+                self.session,
+                SecurityEventModel,
+                "customer.telegram_link.failed",
+                actor_id=challenge.user_id,
+                metadata={"reason": "conflict"},
+                now=now,
+            )
+            raise AccountLinkConflict(GENERIC_LINK_CONFLICT)
+        user = self.session.get(UserModel, challenge.user_id)
+        if user is None or user.status != UserStatus.ACTIVE.value:
+            raise AccountLinkConflict(GENERIC_LINK_CONFLICT)
+        if tg is None:
+            tg = TelegramAccountModel(
+                telegram_user_id=verified.user.telegram_user_id,
+                user_id=user.id,
+                first_seen_at=now,
+                last_seen_at=now,
+            )
+            self.session.add(tg)
+        else:
+            tg.user_id = user.id
+        tg.username = verified.user.username
+        tg.first_name = verified.user.first_name
+        tg.last_name = verified.user.last_name
+        tg.language_code = verified.user.language_code
+        tg.photo_url = verified.user.photo_url
+        # The signed start parameter is the raw one-time secret and must never be persisted.
+        tg.start_attribution = None
+        tg.last_seen_at = now
+        challenge.consumed_at = now
+        result = self.issue_session(
+            user, now=now, ip=ip, user_agent=user_agent, device_label="Telegram Mini App"
+        )
+        for model in (AuditLogModel, SecurityEventModel):
+            _event(
+                self.session,
+                model,
+                "customer.telegram_link.succeeded",
+                actor_id=user.id,
+                target_id=user.id,
+                now=now,
+            )
+        try:
+            self.session.flush()
+        except IntegrityError as exc:
+            self.session.rollback()
+            _event(
+                self.session,
+                SecurityEventModel,
+                "customer.telegram_link.failed",
+                metadata={"reason": "conflict"},
+                now=now,
+            )
+            raise AccountLinkConflict(GENERIC_LINK_CONFLICT) from exc
+        return result
+
+    def enroll_web_credentials(
+        self,
+        user_id: str,
+        username: str,
+        password: str,
+        raw_init_data: str,
+        *,
+        now: datetime | None = None,
+    ) -> None:
+        now = now or datetime.now(UTC)
+        normalized = normalize_account_username(username)
+        validate_customer_password(
+            password,
+            normalized,
+            min_length=self.settings.customer_password_min_length,
+            max_length=self.settings.customer_password_max_length,
+        )
+        if self.verifier is None:
+            raise AccountLinkConflict(GENERIC_LINK_CONFLICT)
+        verified = self.verifier.verify(raw_init_data, now=now)
+        tg = self.session.scalar(
+            select(TelegramAccountModel).where(TelegramAccountModel.user_id == user_id)
+        )
+        if (
+            tg is None
+            or tg.telegram_user_id != verified.user.telegram_user_id
+            or self.session.get(AccountCredentialModel, user_id) is not None
+        ):
+            _event(
+                self.session,
+                SecurityEventModel,
+                "customer.web_credential_enrollment.conflict",
+                actor_id=user_id,
+                metadata={"reason": "conflict"},
+                now=now,
+            )
+            raise AccountLinkConflict(GENERIC_LINK_CONFLICT)
+        try:
+            with self.session.begin_nested():
+                self.session.add(
+                    AccountCredentialModel(
+                        user_id=user_id,
+                        username=username,
+                        normalized_username=normalized,
+                        password_hash=self.passwords.hash(password),
+                        password_changed_at=now,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                self.session.flush()
+        except IntegrityError as exc:
+            _event(
+                self.session,
+                SecurityEventModel,
+                "customer.web_credential_enrollment.conflict",
+                actor_id=user_id,
+                metadata={"reason": "conflict"},
+                now=now,
+            )
+            raise AccountLinkConflict(GENERIC_LINK_CONFLICT) from exc
+        for model in (AuditLogModel, SecurityEventModel):
+            _event(
+                self.session,
+                model,
+                "customer.web_credential_enrollment.succeeded",
+                actor_id=user_id,
+                target_id=user_id,
+                now=now,
+            )
+
+    def unlink_telegram(self, user_id: str, password: str, *, now: datetime | None = None) -> None:
+        now = now or datetime.now(UTC)
+        credential = self.session.get(AccountCredentialModel, user_id)
+        tg = self.session.scalar(
+            select(TelegramAccountModel)
+            .where(TelegramAccountModel.user_id == user_id)
+            .with_for_update()
+        )
+        if (
+            not credential
+            or not tg
+            or not self.passwords.verify(password, credential.password_hash)
+        ):
+            _event(
+                self.session,
+                SecurityEventModel,
+                "customer.telegram_unlink.blocked",
+                actor_id=user_id,
+                metadata={"reason": "precondition"},
+                now=now,
+            )
+            raise AccountLinkConflict(GENERIC_LINK_CONFLICT)
+        tg.user_id = None
+        self.session.execute(
+            update(CustomerSessionModel)
+            .where(
+                CustomerSessionModel.user_id == user_id,
+                CustomerSessionModel.revoked_at.is_(None),
+            )
+            .values(revoked_at=now, revocation_reason="telegram_unlink")
+        )
+        for model in (AuditLogModel, SecurityEventModel):
+            _event(
+                self.session,
+                model,
+                "customer.telegram_unlink.succeeded",
+                actor_id=user_id,
+                target_id=user_id,
+                now=now,
+            )
 
     def _assign_customer_role(self, user_id: str, *, now: datetime) -> None:
         role = self.session.scalar(select(RoleModel).where(RoleModel.machine_name == "customer"))

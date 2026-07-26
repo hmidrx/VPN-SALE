@@ -9,7 +9,7 @@ from .config import Settings, get_settings
 from .configuration import admin_router as admin_configuration_router
 from .configuration import public_router as runtime_configuration_router
 from .customer_admin import router as admin_customer_router
-from .customer_auth.routes import password_login_router, registration_router
+from .customer_auth.routes import account_linking_router, password_login_router, registration_router
 from .customer_auth.routes import router as customer_auth_router
 from .delivery import admin_router as admin_delivery_router
 from .delivery import customer_router as customer_delivery_router
@@ -204,6 +204,8 @@ def create_app(settings: Settings) -> FastAPI:
         application.include_router(registration_router)
     if settings.password_account_login_enabled:
         application.include_router(password_login_router)
+    if settings.telegram_account_linking_enabled:
+        application.include_router(account_linking_router)
     application.dependency_overrides[get_settings] = lambda: settings
     return application
 
