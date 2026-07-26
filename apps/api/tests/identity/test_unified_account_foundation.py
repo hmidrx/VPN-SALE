@@ -52,7 +52,7 @@ def test_database_one_to_one_and_canonical_uniqueness() -> None:
     with Session(engine) as session:
         users = [UserModel(status="ACTIVE") for _ in range(3)]
         session.add_all(users)
-        session.flush()
+        session.commit()
         session.add_all(
             [
                 AccountCredentialModel(
@@ -109,7 +109,7 @@ def test_email_and_admin_link_are_unique() -> None:
     with Session(engine) as session:
         users = [UserModel(status="ACTIVE") for _ in range(2)]
         session.add_all(users)
-        session.flush()
+        session.commit()
         session.add_all(
             [
                 AccountEmailModel(user_id=users[0].id, normalized_email="a@example.test"),

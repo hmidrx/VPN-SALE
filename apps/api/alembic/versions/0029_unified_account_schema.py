@@ -57,6 +57,8 @@ def _ensure_roles_and_backfill(bind: sa.Connection) -> None:
 
 def upgrade() -> None:
     bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_tables = set(inspector.get_table_names())
     duplicate = bind.execute(
         sa.text("""
         SELECT 1 FROM telegram_accounts WHERE user_id IS NOT NULL
@@ -66,6 +68,42 @@ def upgrade() -> None:
     if duplicate is not None:
         raise RuntimeError("unified account migration refused: duplicate Telegram ownership exists")
 
+    if "account_credentials" not in existing_tables:
+        _create_account_credentials()
+    if "account_emails" not in existing_tables:
+        _create_account_emails()
+    admin_columns = {column["name"] for column in inspector.get_columns("admins")}
+    if "user_id" not in admin_columns:
+        op.add_column("admins", sa.Column("user_id", UUID_T))
+        op.create_foreign_key(
+            "fk_admins_user_id_identity_users",
+            "admins",
+            "identity_users",
+            ["user_id"],
+            ["id"],
+            ondelete="RESTRICT",
+        )
+        op.create_unique_constraint("uq_admins_user_id", "admins", ["user_id"])
+    if "user_role_assignments" not in existing_tables:
+        _create_user_role_assignments()
+    telegram_index = next(
+        (
+            index
+            for index in inspector.get_indexes("telegram_accounts")
+            if index["name"] == "ix_telegram_accounts_user_id"
+        ),
+        None,
+    )
+    if telegram_index is None or not telegram_index.get("unique", False):
+        if telegram_index is not None:
+            op.drop_index("ix_telegram_accounts_user_id", table_name="telegram_accounts")
+        op.create_index(
+            "ix_telegram_accounts_user_id", "telegram_accounts", ["user_id"], unique=True
+        )
+    _ensure_roles_and_backfill(bind)
+
+
+def _create_account_credentials() -> None:
     op.create_table(
         "account_credentials",
         sa.Column("user_id", UUID_T, nullable=False),
@@ -97,6 +135,9 @@ def upgrade() -> None:
             "normalized_username", name="uq_account_credentials_normalized_username"
         ),
     )
+
+
+def _create_account_emails() -> None:
     op.create_table(
         "account_emails",
         sa.Column("id", UUID_T, nullable=False),
@@ -114,16 +155,9 @@ def upgrade() -> None:
         sa.UniqueConstraint("user_id", name="uq_account_emails_user_id"),
         sa.UniqueConstraint("normalized_email", name="uq_account_emails_normalized_email"),
     )
-    op.add_column("admins", sa.Column("user_id", UUID_T))
-    op.create_foreign_key(
-        "fk_admins_user_id_identity_users",
-        "admins",
-        "identity_users",
-        ["user_id"],
-        ["id"],
-        ondelete="RESTRICT",
-    )
-    op.create_unique_constraint("uq_admins_user_id", "admins", ["user_id"])
+
+
+def _create_user_role_assignments() -> None:
     op.create_table(
         "user_role_assignments",
         sa.Column("user_id", UUID_T, nullable=False),
@@ -142,9 +176,6 @@ def upgrade() -> None:
     op.create_index(
         "ix_user_role_assignments_assigned_by", "user_role_assignments", ["assigned_by_admin_id"]
     )
-    op.drop_index("ix_telegram_accounts_user_id", table_name="telegram_accounts")
-    op.create_index("ix_telegram_accounts_user_id", "telegram_accounts", ["user_id"], unique=True)
-    _ensure_roles_and_backfill(bind)
 
 
 def downgrade() -> None:
