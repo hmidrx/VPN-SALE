@@ -96,7 +96,7 @@ assert_restart_failure(){
   if output="$(assert_compose_service_not_restarted api "$tmpdir/restart-compose" 2>&1)"; then echo "restart case unexpectedly passed: $expected" >&2; exit 1; fi
   grep -Fq "$expected" <<<"$output"
   if grep -Fq "$FAKE_SECRET_VALUE" <<<"$output"; then echo 'diagnostics leaked a secret value' >&2; exit 1; fi
-  grep -Fq '<redacted>' <<<"$output"
+  grep -Fq 'runtime environment omitted' <<<"$output"
 }
 COMPOSE_IDS=$'api-id\n'; DOCKER_RESTART=0; export COMPOSE_IDS DOCKER_RESTART; unset INSPECT_FAIL MISSING_RESTART
 assert_compose_service_not_restarted api "$tmpdir/restart-compose"
