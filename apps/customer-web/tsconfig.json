@@ -14,6 +14,9 @@
       ],
       "@vpnsale/shared-typescript": [
         "../../packages/shared-typescript/src/api-client.ts"
+      ],
+      "@vpnsale/telegram-webapp": [
+        "../../packages/telegram-webapp/src/index.ts"
       ]
     },
     "esModuleInterop": true,
