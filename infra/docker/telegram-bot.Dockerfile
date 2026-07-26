@@ -2,11 +2,13 @@ FROM python:3.12.8-slim-bookworm AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 RUN addgroup --system vpnsale && adduser --system --ingroup vpnsale --home /home/vpnsale vpnsale
-COPY --chmod=0644 requirements-dev.txt ./requirements.txt
+COPY requirements-dev.txt ./requirements.txt
+RUN chmod 0644 ./requirements.txt
 RUN pip install --no-cache-dir --upgrade pip==24.3.1 \
     && pip install --no-cache-dir -r requirements.txt
-COPY --chown=vpnsale:vpnsale --chmod=u=rwX,go=rX apps/telegram-bot ./apps/telegram-bot
-COPY --chown=vpnsale:vpnsale --chmod=u=rwX,go=rX packages ./packages
+COPY --chown=vpnsale:vpnsale apps/telegram-bot ./apps/telegram-bot
+COPY --chown=vpnsale:vpnsale packages ./packages
+RUN chmod -R u+rwX,go+rX /app/apps/telegram-bot /app/packages
 ENV PYTHONPATH=/app/apps/telegram-bot/src:/app/packages/domain/src
 USER vpnsale
 STOPSIGNAL SIGTERM

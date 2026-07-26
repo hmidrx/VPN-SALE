@@ -6,9 +6,10 @@ secret_fixture="security-scan-secret-fixture.conf"
 safe_secret_fixture="security-scan-safe-secret-fixture.tmp"
 subscription_fixture="security-scan-subscription-fixture.tmp"
 safe_subscription_fixture="security-scan-safe-subscription-fixture.tmp"
+package_lock_fixture="security-scan-package-lock-fixture.json"
 cleanup() {
-  git rm -f --quiet "$typed_fixture" "$secret_fixture" "$safe_secret_fixture" "$subscription_fixture" "$safe_subscription_fixture" >/dev/null 2>&1 || true
-  rm -f "$typed_fixture" "$secret_fixture" "$safe_secret_fixture" "$subscription_fixture" "$safe_subscription_fixture" \
+  git rm -f --quiet "$typed_fixture" "$secret_fixture" "$safe_secret_fixture" "$subscription_fixture" "$safe_subscription_fixture" "$package_lock_fixture" >/dev/null 2>&1 || true
+  rm -f "$typed_fixture" "$secret_fixture" "$safe_secret_fixture" "$subscription_fixture" "$safe_subscription_fixture" "$package_lock_fixture" \
     scan-safe.out scan-safe.err \
     scan-typed.out scan-typed.err \
     scan-secret.out scan-secret.err \
@@ -87,6 +88,25 @@ if ! run_scan scan-safe-secret.out scan-safe-secret.err; then
   exit 1
 fi
 git rm -f --quiet "$safe_secret_fixture"
+
+cat >"$package_lock_fixture" <<'EOF_PACKAGE_SAFE'
+{"packages":{"node_modules/@types/jsonwebtoken":{"resolved":"https://registry.npmjs.org/@types/jsonwebtoken/-/jsonwebtoken-9.0.10.tgz"}}}
+EOF_PACKAGE_SAFE
+git add --intent-to-add "$package_lock_fixture"
+if ! run_scan scan-safe-secret.out scan-safe-secret.err; then
+  echo "Expected public npm registry package metadata to pass." >&2; cat scan-safe-secret.err >&2; exit 1
+fi
+git rm -f --quiet "$package_lock_fixture"
+
+cat >"$package_lock_fixture" <<'EOF_PACKAGE_UNSAFE'
+{"packages":{"node_modules/example":{"resolved":"https://fixture-user:fixture-password@registry.example.invalid/example.tgz"}}}
+EOF_PACKAGE_UNSAFE
+git add --intent-to-add "$package_lock_fixture"
+if run_scan scan-credential-url.out scan-credential-url.err; then
+  echo "Expected package-lock-style credential URL to fail." >&2; exit 1
+fi
+grep -q "$package_lock_fixture" scan-credential-url.err || { echo "Credential fixture path was not reported." >&2; exit 1; }
+git rm -f --quiet "$package_lock_fixture"
 
 secret_cases=()
 secret_cases+=("assigned token|TOKEN=\"actual-looking-literal-value\"")
