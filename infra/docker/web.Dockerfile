@@ -30,10 +30,10 @@ WORKDIR /app
 RUN addgroup -S vpnsale && adduser -S -G vpnsale vpnsale
 ARG APP_NAME
 ENV APP_NAME=$APP_NAME
-COPY --from=builder /app/package.json /app/package-lock.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/${APP_NAME} ./apps/${APP_NAME}
-COPY --from=builder /app/packages ./packages
+COPY --chown=vpnsale:vpnsale --from=builder /app/package.json /app/package-lock.json ./
+COPY --chown=vpnsale:vpnsale --from=builder /app/node_modules ./node_modules
+COPY --chown=vpnsale:vpnsale --from=builder /app/apps/${APP_NAME} ./apps/${APP_NAME}
+COPY --chown=vpnsale:vpnsale --from=builder /app/packages ./packages
 USER vpnsale
 EXPOSE 3000
 WORKDIR /app/apps/${APP_NAME}
