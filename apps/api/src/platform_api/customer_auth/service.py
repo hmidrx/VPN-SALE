@@ -8,22 +8,33 @@ import jwt
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from vpnsale_domain.identity import UserStatus, sanitize_metadata
+from vpnsale_domain.identity import (
+    UserStatus,
+    normalize_account_email,
+    normalize_account_username,
+    sanitize_metadata,
+    validate_customer_password,
+)
 
 from platform_api.config import Settings
 from platform_api.identity.models import (
+    AccountCredentialModel,
+    AccountEmailModel,
     AuditLogModel,
     CustomerProfileModel,
     CustomerSessionModel,
+    RoleModel,
     SecurityEventModel,
     TelegramAccountModel,
     UserModel,
+    UserRoleAssignmentModel,
 )
-from platform_api.identity.security import OpaqueTokenService
+from platform_api.identity.security import Argon2idPasswordHasher, OpaqueTokenService
 
 from .telegram import TelegramInitData, TelegramInitDataVerifier
 
 GENERIC_CUSTOMER_AUTH_ERROR = "Invalid credentials or authentication state"
+GENERIC_REGISTRATION_CONFLICT = "Account registration could not be completed"
 
 
 def _cmp(dt: datetime) -> datetime:
@@ -124,17 +135,28 @@ class CustomerAuthService:
             settings.opaque_token_bytes, settings.opaque_token_hash_salt
         )
         self.access = CustomerAccessTokenService(settings)
-        self.verifier = TelegramInitDataVerifier(
-            bot_token=settings.telegram_bot_token,
-            max_age_seconds=settings.telegram_init_data_max_age_seconds,
-            future_skew_seconds=settings.telegram_init_data_future_skew_seconds,
-            max_length=settings.telegram_init_data_max_length,
+        self.passwords = Argon2idPasswordHasher(
+            time_cost=settings.password_argon2_time_cost,
+            memory_cost=settings.password_argon2_memory_cost,
+            parallelism=settings.password_argon2_parallelism,
+        )
+        self.verifier = (
+            TelegramInitDataVerifier(
+                bot_token=settings.telegram_bot_token,
+                max_age_seconds=settings.telegram_init_data_max_age_seconds,
+                future_skew_seconds=settings.telegram_init_data_future_skew_seconds,
+                max_length=settings.telegram_init_data_max_length,
+            )
+            if settings.telegram_bot_token
+            else None
         )
 
     def authenticate_telegram(
         self, raw_init_data: str, *, now: datetime | None = None, ip: str = "", user_agent: str = ""
     ) -> CustomerAuthResult:
         now = now or datetime.now(UTC)
+        if self.verifier is None:
+            raise ValueError(GENERIC_CUSTOMER_AUTH_ERROR)
         verified = self.verifier.verify(raw_init_data, now=now)
         user = self._link_identity(verified, now=now)
         if user.status == UserStatus.PENDING.value:
@@ -150,7 +172,9 @@ class CustomerAuthService:
                 now=now,
             )
             raise ValueError(GENERIC_CUSTOMER_AUTH_ERROR)
-        result = self._create_session(user, now=now, ip=ip, user_agent=user_agent)
+        result = self.issue_session(
+            user, now=now, ip=ip, user_agent=user_agent, device_label="Telegram Mini App"
+        )
         _event(
             self.session, SecurityEventModel, "customer.login.succeeded", actor_id=user.id, now=now
         )
@@ -184,6 +208,7 @@ class CustomerAuthService:
                 last_seen_at=now,
             )
             self.session.add(tg)
+            self._assign_customer_role(user.id, now=now)
             try:
                 self.session.flush()
             except IntegrityError:
@@ -247,8 +272,24 @@ class CustomerAuthService:
             )
         return user
 
-    def _create_session(
-        self, user: UserModel, *, now: datetime, ip: str = "", user_agent: str = ""
+    def _assign_customer_role(self, user_id: str, *, now: datetime) -> None:
+        role = self.session.scalar(select(RoleModel).where(RoleModel.machine_name == "customer"))
+        if role is None:
+            raise ValueError(GENERIC_CUSTOMER_AUTH_ERROR)
+        existing = self.session.get(UserRoleAssignmentModel, (user_id, role.id))
+        if existing is None:
+            self.session.add(
+                UserRoleAssignmentModel(user_id=user_id, role_id=role.id, assigned_at=now)
+            )
+
+    def issue_session(
+        self,
+        user: UserModel,
+        *,
+        now: datetime,
+        ip: str = "",
+        user_agent: str = "",
+        device_label: str,
     ) -> CustomerAuthResult:
         raw = self.tokens.generate()
         sid = str(uuid4())
@@ -267,7 +308,7 @@ class CustomerAuthService:
             + timedelta(seconds=self.settings.customer_session_absolute_lifetime_seconds),
             ip_metadata={"present": bool(ip)},
             user_agent_metadata={"present": bool(user_agent)},
-            device_label="Telegram Mini App",
+            device_label=device_label,
         )
         csrf_token = self.csrf_for(sid)
         sess.csrf_token_hash = csrf_token
@@ -287,6 +328,179 @@ class CustomerAuthService:
             sid,
             user.id,
         )
+
+    def register_password_account(
+        self,
+        username: str,
+        password: str,
+        *,
+        email: str | None,
+        now: datetime | None = None,
+        ip: str = "",
+        user_agent: str = "",
+        correlation_id: str = "",
+    ) -> CustomerAuthResult:
+        now = now or datetime.now(UTC)
+        normalized_username = normalize_account_username(username)
+        normalized_email = normalize_account_email(email) if email is not None else None
+        validate_customer_password(
+            password,
+            normalized_username,
+            min_length=self.settings.customer_password_min_length,
+            max_length=self.settings.customer_password_max_length,
+        )
+        try:
+            with self.session.begin_nested():
+                user = UserModel(status=UserStatus.ACTIVE.value, created_at=now, updated_at=now)
+                self.session.add(user)
+                self.session.flush()
+                self.session.add(CustomerProfileModel(user_id=user.id))
+                self.session.add(
+                    AccountCredentialModel(
+                        user_id=user.id,
+                        username=username,
+                        normalized_username=normalized_username,
+                        password_hash=self.passwords.hash(password),
+                        password_changed_at=now,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                if normalized_email is not None:
+                    self.session.add(
+                        AccountEmailModel(
+                            user_id=user.id,
+                            normalized_email=normalized_email,
+                            verified_at=None,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
+                self._assign_customer_role(user.id, now=now)
+                result = self.issue_session(
+                    user,
+                    now=now,
+                    ip=ip,
+                    user_agent=user_agent,
+                    device_label="Web browser",
+                )
+                for model in (AuditLogModel, SecurityEventModel):
+                    _event(
+                        self.session,
+                        model,
+                        "customer.registration.succeeded",
+                        actor_id=user.id,
+                        target_id=user.id,
+                        metadata={
+                            "method": "password",
+                            "email_supplied": email is not None,
+                            "ip_present": bool(ip),
+                            "user_agent_present": bool(user_agent),
+                            "correlation_present": bool(correlation_id),
+                        },
+                        now=now,
+                    )
+                self.session.flush()
+                return result
+        except IntegrityError as exc:
+            _event(
+                self.session,
+                SecurityEventModel,
+                "customer.registration.conflict",
+                metadata={"method": "password", "reason": "conflict"},
+                now=now,
+            )
+            raise ValueError(GENERIC_REGISTRATION_CONFLICT) from exc
+
+    def authenticate_password(
+        self,
+        username: str,
+        password: str,
+        *,
+        now: datetime | None = None,
+        ip: str = "",
+        user_agent: str = "",
+    ) -> CustomerAuthResult:
+        now = now or datetime.now(UTC)
+        normalized = normalize_account_username(username)
+        credential = self.session.scalar(
+            select(AccountCredentialModel)
+            .where(AccountCredentialModel.normalized_username == normalized)
+            .with_for_update()
+        )
+        # Compute on every password-login attempt so neither known nor unknown users get a
+        # shortcut, while unrelated Telegram/refresh paths do no password work.
+        dummy_hash = self.passwords.hash("dummy-" + "authentication-passphrase")
+        supplied_hash = credential.password_hash if credential else dummy_hash
+        verified = self.passwords.verify(password, supplied_hash)
+        user = self.session.get(UserModel, credential.user_id) if credential else None
+        locked = bool(credential and credential.lock_until and _cmp(credential.lock_until) > now)
+        if (
+            not credential
+            or not user
+            or user.status != UserStatus.ACTIVE.value
+            or locked
+            or not verified
+        ):
+            if credential and not locked:
+                credential.failed_login_count += 1
+                credential.last_failed_login_at = now
+                credential.updated_at = now
+                if (
+                    credential.failed_login_count
+                    >= self.settings.customer_password_lockout_threshold
+                ):
+                    credential.lock_until = now + timedelta(
+                        seconds=self.settings.customer_password_lockout_duration_seconds
+                    )
+                    code = "customer.password_login.locked"
+                else:
+                    code = "customer.password_login.failed"
+                _event(
+                    self.session,
+                    SecurityEventModel,
+                    code,
+                    actor_id=credential.user_id,
+                    metadata={"method": "password", "reason": "authentication_failed"},
+                    now=now,
+                )
+            else:
+                _event(
+                    self.session,
+                    SecurityEventModel,
+                    "customer.password_login.failed",
+                    metadata={"method": "password", "reason": "authentication_failed"},
+                    now=now,
+                )
+            raise ValueError(GENERIC_CUSTOMER_AUTH_ERROR)
+        credential.failed_login_count = 0
+        credential.lock_until = None
+        credential.last_successful_login_at = now
+        credential.updated_at = now
+        if self.passwords.needs_rehash(credential.password_hash):
+            credential.password_hash = self.passwords.hash(password)
+            _event(
+                self.session,
+                SecurityEventModel,
+                "customer.password_hash.rehashed",
+                actor_id=user.id,
+                metadata={"method": "password"},
+                now=now,
+            )
+        result = self.issue_session(
+            user, now=now, ip=ip, user_agent=user_agent, device_label="Web browser"
+        )
+        for model in (AuditLogModel, SecurityEventModel):
+            _event(
+                self.session,
+                model,
+                "customer.password_login.succeeded",
+                actor_id=user.id,
+                target_id=user.id,
+                metadata={"method": "password"},
+                now=now,
+            )
+        return result
 
     def csrf_for(self, session_id: str) -> str:
         return self.tokens.hash(f"customer-csrf:{session_id}:{self.settings.customer_csrf_secret}")
