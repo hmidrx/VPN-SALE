@@ -3,6 +3,18 @@
 
 redact(){ sed -E 's/(TOKEN|PASSWORD|SECRET|KEY|DATABASE_URL)=([^[:space:]]+)/\1=<redacted>/g'; }
 
+# Operational convenience only: Dockerfiles independently normalize image
+# permissions. An ordinary final file must never make this helper return 1.
+normalize_checkout_permissions(){
+  local root="$1" path mode
+  find "$root" -type d -not -path "$root/.git*" -exec chmod 0755 {} +
+  while IFS= read -r -d '' path; do
+    mode="$(git -C "$root" ls-files --stage -- "$path" | awk 'NR==1{print $1}')"
+    if [[ "$mode" == 100755 ]]; then chmod 0755 "$root/$path"; else chmod 0644 "$root/$path"; fi
+  done < <(git -C "$root" ls-files -z)
+  return 0
+}
+
 atomic_write_file(){
   local dest="$1" mode="$2" dir tmp
   dir="$(dirname "$dest")"

@@ -54,7 +54,8 @@ is_safe_assigned_secret_line() {
   # npm lockfile integrity hashes and registry metadata are not credentials;
   # credential-bearing package URLs are checked separately below.
   [[ "$line" =~ package-lock\.json:.*\"integrity\"[[:space:]]*:[[:space:]]*\"sha(1|256|384|512)- ]] && return 0
-  [[ "$line" =~ package-lock\.json:.*\"(resolved|version|license|name)\"[[:space:]]*: ]] && return 0
+  [[ "$line" =~ \"resolved\"[[:space:]]*:[[:space:]]*\"https://registry\.npmjs\.org/[^?[:space:]\"]+\.tgz\" ]] && return 0
+  [[ "$line" =~ package-lock\.json:.*\"(version|license|name)\"[[:space:]]*: ]] && return 0
   # Runtime expansion or command substitution reads/generates a value at install
   # time rather than committing a literal secret.
   [[ "$line" == *'${'* ]] && return 0

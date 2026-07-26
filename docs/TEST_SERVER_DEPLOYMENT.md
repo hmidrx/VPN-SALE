@@ -174,3 +174,48 @@ sudo /opt/vpn-sale/scripts/verify-test-server.sh --domain dr-ping.com --env-file
 ```
 
 The verifier checks the repository commit, Compose rendering, expected services and profiles, PostgreSQL and Redis health, migration state, API readiness, local web HTTP bindings, managed Caddy ownership of ports 80/443, loopback-only application ports, no public PostgreSQL/Redis/worker/Telegram ports, HTTPS for all four domains, optional Telegram polling container identity, fail2ban, swap, and absence of `fast.dr-ping.com` from generated deployment configuration without exposing secrets.
+
+## Rebuilt fresh-host workflow (issue #65)
+
+### Root causes and permanent controls
+
+The failed deployment preserved a `umask 077` checkout's `0600/0700` modes in Docker layers, so the non-root `vpnsale` runtime could not read source or Alembic files. Every Dockerfile now assigns ownership and modes during `COPY`; checkout normalization is only a convenience and restrictive-checkout image tests prove it is not a dependency. Alembic now uses `/app/apps/api/alembic.ini` as the non-root API user.
+
+The former normalization helper leaked the status of its last non-executable file into `set -e`. It now explicitly returns success and has a regression with a non-executable last tracked file. The former copied-script fallback looked beside `BASH_SOURCE` for helpers that had not been copied. The standalone bootstrap now resolves an exact commit, obtains the complete checkout, and executes the canonical in-checkout installer. CI exercises that behavior using a local Git remote.
+
+Finally, static CI did not reproduce the host lifecycle. The deployment acceptance job now builds all six runtime images from a `0700/0600` checkout, proves non-root access, migrates real PostgreSQL twice, starts Redis, API, and three web applications, checks endpoints, and asserts exact loopback-only publication.
+
+### Canonical clean-host command
+
+Download only the standalone bootstrap, inspect it, and run it under a disconnect-safe systemd unit. The selected ref and resolved commit are printed and atomically recorded; tracked dirty worktrees are refused.
+
+```bash
+curl -fsSLo /root/bootstrap-test-server.sh https://raw.githubusercontent.com/hmidrx/VPN-SALE/main/scripts/bootstrap-test-server.sh
+chmod 0700 /root/bootstrap-test-server.sh
+sudo /root/bootstrap-test-server.sh --ref main -- --domain dr-ping.com --skip-dns-wait --non-interactive
+sudo /opt/vpn-sale/scripts/run-test-server-install.sh start --domain dr-ping.com --skip-dns-wait --non-interactive
+sudo systemctl status vpn-sale-test-install.service
+sudo journalctl -fu vpn-sale-test-install.service
+```
+
+The bootstrap command itself performs the first installation in the foreground; alternatively, after bootstrapping the checkout, use the supervised `start` command for interruption-safe execution. Rerunning the installer preserves generated `0600` secrets, validates volume/password state, and advances the atomic state checkpoint only after each completed phase. Telegram, provider writes, fake public payment success, and fake customer authentication remain disabled.
+
+### Disposable TEST reset
+
+Always inspect the dry run first. Destructive execution requires the exact typed flag:
+
+```bash
+sudo /opt/vpn-sale/scripts/reset-disposable-test-server.sh --dry-run
+sudo /opt/vpn-sale/scripts/reset-disposable-test-server.sh --confirm-disposable-test-reset
+```
+
+The reset is scoped to the `vpn-sale` Compose project, its two named TEST data volumes, `/opt/vpn-sale`, `/opt/vpn-sale-runtime`, the installer-managed Caddyfile, and the installer transient unit. It never prunes Docker globally and never changes SSH, swap, unrelated Caddy files, APT sources, or unrelated hostnames. Rollback is this reset followed by bootstrap of the previously recorded commit.
+
+### Final Ubuntu 24.04 operator checklist
+
+1. Confirm x86-64 Ubuntu 24.04, at least 2 CPUs/2 GiB RAM/12 GiB free, correct DNS for exactly the four documented hosts, and no unmanaged listeners on 80/443.
+2. Run the canonical bootstrap at an reviewed ref; record its displayed 40-character commit.
+3. Follow the supervised journal after reconnecting; rerun safely if interrupted.
+4. Run `scripts/verify-test-server.sh --domain dr-ping.com --env-file /opt/vpn-sale-runtime/test.env`.
+5. Require PASS for permissions, Compose isolation, database/cache health, Alembic head, API/web endpoints, restart loops, swap, and disabled safety flags.
+6. Treat external DNS/ACME/certificate checks as `NOT_RUN` until deliberately enabled and actually observed; do not enable Telegram or commerce/provider writes in this milestone.
