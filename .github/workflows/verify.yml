@@ -193,3 +193,27 @@ jobs:
             echo '- Checks: tracked .env, private keys, obvious assigned secrets, panel credential markers, subscription URLs, generated output, dependency manifest state'
             echo '- Secret values are not printed; only affected file paths are reported.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  visual-qa:
+    name: Deterministic visual QA
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_IDENTITY_UI_PREVIEW: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Upload visual QA artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-1a1-visual-qa
+          path: |
+            test-results/screenshots/
+            playwright-report/
+          if-no-files-found: error

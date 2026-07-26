@@ -1,0 +1,2 @@
+const segments=(value:string|undefined):number[]|null=>{if(!value||!/^\d+(?:\.\d+)*$/.test(value))return null;return value.split(".").map(Number)};
+export function versionAtLeast(actual:string|undefined,required:string):boolean{const a=segments(actual),b=segments(required);if(!a||!b)return false;const length=Math.max(a.length,b.length);for(let i=0;i<length;i++){const av=a[i]??0,bv=b[i]??0;if(av!==bv)return av>bv}return true}

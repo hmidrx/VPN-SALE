@@ -1,0 +1,9 @@
+import {getNative} from "./environment";import type {NativeStorage,StorageKind,StorageResult} from "./types";
+const forbiddenKey=/(access.?token|refresh.?token|authorization|password|passwd|session|cookie|init.?data|account.?id|user.?id|role|credential)/i;
+const jwt=/\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b/;
+const forbiddenValue=/(bearer\s+\S+|authorization\s*:|refresh.?token|access.?token|password\s*[:=]|session\s*[:=]|initDataUnsafe|auth.?state|account.?id\s*[:=]|role\s*[:=])/i;
+function nativeStorage(kind:StorageKind):NativeStorage|undefined{const app=getNative();return kind==="device"?app?.DeviceStorage:kind==="secure"?app?.SecureStorage:app?.CloudStorage}
+function safe(key:string,value?:string){return !forbiddenKey.test(key)&&!(value&&(jwt.test(value)||forbiddenValue.test(value)))}
+export async function setStorageItem(kind:StorageKind,key:string,value:string):Promise<StorageResult>{if(!safe(key,value))return{ok:false,reason:"forbidden"};const storage=nativeStorage(kind);if(!storage?.setItem)return{ok:false,reason:"unsupported"};return new Promise(resolve=>storage.setItem?.(key,value,error=>resolve(error?{ok:false,reason:"error",error}:{ok:true,value:undefined})))}
+export async function getStorageItem(kind:StorageKind,key:string):Promise<StorageResult<string|null>>{if(!safe(key))return{ok:false,reason:"forbidden"};const storage=nativeStorage(kind);if(!storage?.getItem)return{ok:false,reason:"unsupported"};return new Promise(resolve=>storage.getItem?.(key,(error,value)=>resolve(error?{ok:false,reason:"error",error}:{ok:true,value:value??null})))}
+export async function removeStorageItem(kind:StorageKind,key:string):Promise<StorageResult>{if(!safe(key))return{ok:false,reason:"forbidden"};const storage=nativeStorage(kind);if(!storage?.removeItem)return{ok:false,reason:"unsupported"};return new Promise(resolve=>storage.removeItem?.(key,error=>resolve(error?{ok:false,reason:"error",error}:{ok:true,value:undefined})))}
