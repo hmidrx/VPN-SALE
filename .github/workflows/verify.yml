@@ -1,4 +1,4 @@
-name: Verify Milestone 0
+name: Verify Platform
 
 on:
   pull_request:
@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VPN_SALE_ENVIRONMENT: test
-      VPN_SALE_VERSION: ci-milestone0
+      VPN_SALE_VERSION: ci
       POSTGRES_DB: &ci_postgres_db vpnsale_test
       POSTGRES_USER: &ci_postgres_user vpnsale
       POSTGRES_PASSWORD: &ci_postgres_password vpnsale_ci_password
@@ -103,21 +103,9 @@ jobs:
           if [ -f package-lock.json ]; then
             npm ci
           else
-            echo '::warning::package-lock.json is absent; using temporary npm install fallback until the lockfile is generated and committed.'
-            npm install
-            if [ -f package-lock.json ]; then
-              touch .ci-generated-package-lock
-            fi
+            echo '::error::package-lock.json is required for reproducible frontend verification.'
+            exit 1
           fi
-      - name: Upload generated package lock
-        if: ${{ hashFiles('.ci-generated-package-lock') != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-package-lock
-          path: package-lock.json
-          if-no-files-found: error
-      - name: Audit frontend dependencies
-        run: npm audit --audit-level=high
       - name: Run frontend verification
         run: scripts/verify-frontend.sh
       - name: Frontend job summary
@@ -127,9 +115,8 @@ jobs:
             echo '## Frontend verification'
             echo '- Runner: ubuntu-latest'
             echo '- Node target: 22 LTS'
-            echo '- Package manager: npm'
-            echo '- Lockfile cache: enabled only when package-lock.json exists'
-            echo '- Categories: lint, strict TypeScript, workspace tests, real Next.js production builds, shared package validation'
+            echo '- Package manager: npm with committed lockfile'
+            echo '- Categories: dependency audit, lint, strict TypeScript, workspace tests, real Next.js production builds, shared package validation'
           } >> "$GITHUB_STEP_SUMMARY"
 
   docker:
@@ -173,4 +160,47 @@ jobs:
             echo '- Runner: ubuntu-latest'
             echo '- Checks: tracked .env, private keys, obvious assigned secrets, panel credential markers, subscription URLs, generated output, dependency manifest state'
             echo '- Secret values are not printed; only affected file paths are reported.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  verification-gate:
+    name: Required verification gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [backend, frontend, docker, security]
+    steps:
+      - name: Evaluate required jobs
+        env:
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          DOCKER_RESULT: ${{ needs.docker.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+        run: |
+          printf 'backend=%s\nfrontend=%s\ndocker=%s\nsecurity=%s\n' \
+            "$BACKEND_RESULT" "$FRONTEND_RESULT" "$DOCKER_RESULT" "$SECURITY_RESULT"
+          failed=0
+          for result in "$BACKEND_RESULT" "$FRONTEND_RESULT" "$DOCKER_RESULT" "$SECURITY_RESULT"; do
+            if [[ "$result" != "success" ]]; then
+              failed=1
+            fi
+          done
+          if (( failed != 0 )); then
+            echo '::error::Required platform verification did not pass. See the failed or cancelled job logs.'
+            exit 1
+          fi
+          echo 'All required platform verification jobs passed.'
+      - name: Verification gate summary
+        if: always()
+        env:
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          DOCKER_RESULT: ${{ needs.docker.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+        run: |
+          {
+            echo '## Required verification gate'
+            echo "- Backend: $BACKEND_RESULT"
+            echo "- Frontend: $FRONTEND_RESULT"
+            echo "- Docker: $DOCKER_RESULT"
+            echo "- Security: $SECURITY_RESULT"
+            echo '- Merge rule: every required result must be success.'
           } >> "$GITHUB_STEP_SUMMARY"
