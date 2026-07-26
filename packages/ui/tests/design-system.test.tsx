@@ -1,0 +1,20 @@
+import "@testing-library/jest-dom/vitest";
+import React from "react";
+import {beforeAll,describe,expect,it,vi} from "vitest";
+import {fireEvent,render,screen} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import {BottomSheet,Button,Drawer,Field,IconButton,Input,LinkButton,Modal,MobileNavigation,Pagination,Switch,Toast,Tooltip} from "../src/components";
+beforeAll(()=>{HTMLDialogElement.prototype.showModal=function(){this.open=true};HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new Event("close"))}});
+describe("UI behavior",()=>{
+ it("disables a loading button",()=>{render(<Button loading>Save</Button>);expect(screen.getByRole("button")).toBeDisabled();expect(screen.getByRole("button")).toHaveAttribute("aria-busy","true")});
+ it("requires an IconButton name",()=>{expect(()=>render(React.createElement(IconButton as never,{}))).toThrow(/accessible name/);render(<IconButton aria-label="Close">×</IconButton>);expect(screen.getByRole("button",{name:"Close"})).toBeVisible()});
+ it("renders disabled links as non-navigable",()=>{render(<LinkButton disabled href="/private">No</LinkButton>);expect(screen.queryByRole("link")).not.toBeInTheDocument()});
+ it("connects field label, hint, caller description and error",()=>{render(<><span id="given">Given</span><Field label="Name" hint="Hint" error="Error"><Input aria-describedby="given"/></Field></>);const input=screen.getByLabelText("Name");expect(input).toHaveAccessibleDescription(/Given Hint Error/);expect(input).toHaveAttribute("aria-invalid","true");expect(screen.getByRole("alert")).toHaveTextContent("Error")});
+ it("closes modal on Escape and restores trigger focus",async()=>{const user=userEvent.setup();function Demo(){const[o,setO]=React.useState(false);return <><button onClick={()=>setO(true)}>Open</button><Modal open={o} title="Dialog" onClose={()=>setO(false)}><button>Inside</button></Modal></>}render(<Demo/>);await user.click(screen.getByText("Open"));expect(screen.getByText("Inside")).toHaveFocus();fireEvent(screen.getByRole("dialog"),new Event("cancel",{cancelable:true}));await Promise.resolve();expect(screen.getByText("Open")).toHaveFocus()});
+ it("renders distinct drawer and safe-area sheet variants",()=>{render(<><Drawer open title="D" onClose={()=>{}} placement="start">drawer</Drawer><BottomSheet open title="S" onClose={()=>{}}>sheet</BottomSheet></>);expect(screen.getByText("drawer").closest("dialog")).toHaveClass("ui-drawer--start");expect(screen.getByText("sheet").closest("dialog")).toHaveClass("ui-bottom-sheet")});
+ it("clamps pagination and makes limits non-links",()=>{render(<Pagination page={-2} pages={3} href={p=>`/${p}`}/>);expect(screen.getByLabelText("Previous page")).not.toHaveAttribute("href");expect(screen.getByLabelText("Next page")).toHaveAttribute("href","/2")});
+ it("shows keyboard tooltip with a description and dismisses it",()=>{render(<Tooltip label="Help"><button>Trigger</button></Tooltip>);const trigger=screen.getByText("Trigger");fireEvent.focus(trigger);expect(trigger).toHaveAccessibleDescription("Help");fireEvent.keyDown(trigger,{key:"Escape"});expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()});
+ it("keeps switch native checked and disabled semantics",()=>{render(<Switch aria-label="Setting" defaultChecked disabled/>);expect(screen.getByRole("switch")).toBeChecked();expect(screen.getByRole("switch")).toBeDisabled()});
+ it("uses an atomic polite live region",()=>{render(<Toast>Saved</Toast>);expect(screen.getByRole("status")).toHaveAttribute("aria-live","polite");expect(screen.getByRole("status")).toHaveAttribute("aria-atomic","true")});
+ it("exposes mobile navigation as a labelled landmark",()=>{render(<MobileNavigation label="Mobile" items={[{label:"Home",href:"/"}]}/>);expect(screen.getByRole("navigation",{name:"Mobile"})).toBeVisible()});
+});

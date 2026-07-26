@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "npm run typecheck && node tests/design-system.test.mjs",
+    "test": "npm run typecheck && vitest run --environment jsdom",
     "lint": "node ../../scripts/lint-workspace.mjs ."
   },
   "sideEffects": [
@@ -18,7 +18,15 @@
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "19.0.2",
-    "react": "19.2.7"
+    "@types/react-dom": "^19.0.3",
+    "jsdom": "^26.1.0",
+    "react": "19.2.7",
+    "react-dom": "^19.2.7",
+    "vitest": "^3.2.4"
   }
 }
