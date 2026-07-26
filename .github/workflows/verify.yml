@@ -212,7 +212,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phase-1a1-visual-qa
+          name: phase-1a1-real-product-ui
           path: |
             test-results/screenshots/
             playwright-report/

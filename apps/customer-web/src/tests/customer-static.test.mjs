@@ -13,7 +13,7 @@ assert.match(source("auth/bootstrap.ts"), /bootstrapPromise/);
 assert.match(source("auth/state-machine.ts"), /INITIALIZING/);
 assert.match(source("auth/state-machine.ts"), /RATE_LIMITED/);
 assert.match(source("components/CustomerApp.tsx"), /dir=\{ltr \? "ltr"/);
-assert.match(source("components/CustomerApp.tsx"), /--safe-bottom/);
+assert.match(source("components/CustomerApp.tsx"), /synchronizeTelegramCssVariables/);
 assert.match(source("components/CustomerApp.tsx"), /fa\.states\.browser/);
 assert.match(source("components/CustomerApp.tsx"), /کیف پول/);
 assert.match(source("catalog/api.ts"), /\/api\/v1\/catalog/);
@@ -69,7 +69,7 @@ assert.match(source("components/Payments.tsx"), /پارامترهای مرورگ
 assert.match(source("components/Payments.tsx"), /مبلغ فاکتور غیرقابل ویرایش/);
 assert.match(source("components/Payments.tsx"), /هیچ سرویس، QR یا لینک پیکربندی/);
 assert.doesNotMatch(source("components/Payments.tsx"), /force.*success|fake.*success|card-number|CVV|crypto|subscription URL/i);
-assert.match(source("components/CustomerApp.tsx"), /href="\/payments"/);
+assert.match(source("components/CustomerApp.tsx"), /href:"\/payments"/);
 
 assert.match(source("../app/services/[serviceReference]/migration/page.tsx"), /params: Promise<\{ serviceReference: string \}>/);
 assert.match(source("../app/services/[serviceReference]/migration/page.tsx"), /await params/);

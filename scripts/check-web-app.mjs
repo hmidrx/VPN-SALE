@@ -23,7 +23,7 @@ if (!layout.includes('lang="fa"') || !layout.includes('dir="rtl"')) {
   throw new Error(`${appPath} must declare Persian RTL defaults in the root layout`);
 }
 const page = readFileSync(join(appPath, "app/page.tsx"), "utf8");
-if (!page.includes("@vpnsale/ui") || !page.includes("tokens.color")) {
+if ((!page.includes("@vpnsale/ui") || !page.includes("tokens.color")) && !layout.includes('import "@vpnsale/ui/theme.css"')) {
   throw new Error(`${appPath} must consume shared UI design tokens`);
 }
 const tsconfig = JSON.parse(readFileSync(join(appPath, "tsconfig.json"), "utf8"));
