@@ -19,7 +19,12 @@ from platform_api.admin_auth.rate_limit import (
 from platform_api.admin_auth.service import hardened_rate_key
 from platform_api.config import Settings, get_settings
 from platform_api.database import get_db_session
-from platform_api.identity.models import CustomerSessionModel, TelegramAccountModel, UserModel
+from platform_api.identity.models import (
+    AccountCredentialModel,
+    CustomerSessionModel,
+    TelegramAccountModel,
+    UserModel,
+)
 
 from .service import GENERIC_REGISTRATION_CONFLICT, CustomerAuthService
 from .telegram import TelegramInitDataError
@@ -56,6 +61,15 @@ class AuthResponse(BaseModel):
     session_id: str | None = None
 
 
+class AuthCapabilitiesResponse(BaseModel):
+    password_login: bool
+    public_registration: bool
+    telegram_login: bool
+    email_recovery: bool = False
+    telegram_recovery: bool = False
+    recovery_codes: bool = False
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str | None = None
 
@@ -69,6 +83,7 @@ class ProfileResponse(BaseModel):
     account_status: str
     telegram_user_id: int | None
     username: str | None
+    account_username: str | None
     first_name: str | None
     last_name: str | None
     language_code: str | None
@@ -147,6 +162,80 @@ def _clear_cookie(response: Response, settings: Settings) -> None:
         domain=settings.customer_refresh_cookie_domain or None,
         secure=settings.customer_refresh_cookie_secure,
         samesite=cast(Literal["lax", "strict", "none"], settings.customer_refresh_cookie_samesite),
+    )
+
+
+def _no_store(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+
+
+def browser_request_guard(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    x_vpn_sale_client: Annotated[str | None, Header()] = None,
+) -> None:
+    """Reject ambient-cookie bootstrap requests before DB/Redis dependencies run."""
+    allowed = {origin.rstrip("/") for origin in settings.cors_allowed_origins}
+    allowed.add(settings.public_app_origin.rstrip("/"))
+    origin = request.headers.get("origin", "").rstrip("/")
+    fetch_site = request.headers.get("sec-fetch-site")
+    if (
+        not origin
+        or origin == "null"
+        or origin not in allowed
+        or x_vpn_sale_client != "customer-web"
+        or fetch_site == "cross-site"
+        or (fetch_site is not None and fetch_site not in {"same-origin", "same-site", "none"})
+    ):
+        raise _err(403, request)
+
+
+@router.get("/capabilities", response_model=AuthCapabilitiesResponse)
+def capabilities(
+    response: Response, settings: Annotated[Settings, Depends(get_settings)]
+) -> AuthCapabilitiesResponse:
+    _no_store(response)
+    return AuthCapabilitiesResponse(
+        password_login=settings.password_account_login_enabled,
+        public_registration=settings.public_account_registration_enabled,
+        telegram_login=settings.telegram_customer_auth_enabled,
+    )
+
+
+@router.post("/browser-bootstrap", response_model=AuthResponse)
+async def browser_bootstrap(
+    request: Request,
+    response: Response,
+    _: Annotated[None, Depends(browser_request_guard)],
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    limiter: Annotated[RateLimiter, Depends(get_customer_rate_limiter)],
+) -> AuthResponse:
+    _no_store(response)
+    presented = request.cookies.get(settings.customer_refresh_cookie_name)
+    if not presented:
+        raise _err(401, request)
+    await _rate(
+        limiter,
+        request,
+        "customer-browser-bootstrap",
+        hardened_rate_key(
+            "ip",
+            request.client.host if request.client else "",
+            salt=settings.opaque_token_hash_salt,
+        ),
+        limit=settings.customer_refresh_rate_limit,
+        window_seconds=settings.customer_refresh_rate_limit_window_seconds,
+    )
+    try:
+        result = _svc(db, settings).refresh(presented)
+    except ValueError as exc:
+        raise _err(401, request) from exc
+    _set_cookie(response, settings, result.refresh_token)
+    return AuthResponse(
+        access_token=result.access_token,
+        csrf_token=result.csrf_token,
+        session_id=result.session_id,
     )
 
 
@@ -390,12 +479,14 @@ def me(
     sess = _current(authorization, db, settings, request)
     user = db.get(UserModel, sess.user_id)
     tg = db.scalar(select(TelegramAccountModel).where(TelegramAccountModel.user_id == sess.user_id))
+    credential = db.get(AccountCredentialModel, sess.user_id)
     assert user
     return ProfileResponse(
         customer_id=user.id,
         account_status=user.status,
         telegram_user_id=tg.telegram_user_id if tg else None,
         username=tg.username if tg else None,
+        account_username=credential.username if credential else None,
         first_name=tg.first_name if tg else None,
         last_name=tg.last_name if tg else None,
         language_code=tg.language_code if tg else None,
@@ -542,6 +633,7 @@ def csrf(
     authorization: Annotated[str | None, Header()] = None,
 ) -> AuthResponse:
     cur = _current(authorization, db, settings, request)
-    token = cur.csrf_token_hash or _svc(db, settings).csrf_for(cur.id)
-    cur.csrf_token_hash = token
+    svc = _svc(db, settings)
+    token = svc.tokens.generate()
+    cur.csrf_token_hash = svc.tokens.hash(token)
     return AuthResponse(csrf_token=token, session_id=cur.id)

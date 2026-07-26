@@ -1,4 +1,5 @@
 from fastapi import APIRouter, FastAPI, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 
 from .admin_auth.routes import router as admin_auth_router
 from .catalog import admin_router as admin_catalog_router
@@ -109,6 +110,21 @@ def create_app(settings: Settings) -> FastAPI:
     configure_logging()
     assert_startup_configuration(settings)
     application = FastAPI(title=settings.app_name, version=settings.version)
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=[origin.rstrip("/") for origin in settings.cors_allowed_origins],
+        allow_credentials=settings.cors_allow_credentials,
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "X-Request-ID",
+            "X-Correlation-ID",
+            "X-CSRF-Token",
+            "X-VPN-Sale-Client",
+        ],
+        expose_headers=["Retry-After", "X-Request-ID"],
+    )
     routers = [
         admin_auth_router,
         customer_auth_router,
