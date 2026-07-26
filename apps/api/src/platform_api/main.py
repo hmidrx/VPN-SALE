@@ -126,6 +126,10 @@ app.include_router(customer_fleet_router)
 app.include_router(reseller_fleet_router)
 
 
+def _prometheus_label_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
 @app.get("/live")
 async def live() -> dict[str, str]:
     return {"status": "alive"}
@@ -156,9 +160,10 @@ async def ready(response: Response) -> dict[str, object]:
 
 @app.get("/metrics")
 async def metrics() -> Response:
+    version_label = _prometheus_label_value(get_settings().version)
     body = (
-        "# HELP vpnsale_api_info Milestone 0 API info\n"
+        "# HELP vpnsale_api_info VPN-SALE API build information\n"
         "# TYPE vpnsale_api_info gauge\n"
-        'vpnsale_api_info{version="0.0.0-milestone0"} 1\n'
+        f'vpnsale_api_info{{version="{version_label}"}} 1\n'
     )
     return Response(content=body, media_type="text/plain; version=0.0.4")
