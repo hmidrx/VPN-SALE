@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Annotated, Literal, cast
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -175,19 +176,44 @@ def browser_request_guard(
     x_vpn_sale_client: Annotated[str | None, Header()] = None,
 ) -> None:
     """Reject ambient-cookie bootstrap requests before DB/Redis dependencies run."""
-    allowed = {origin.rstrip("/") for origin in settings.cors_allowed_origins}
-    allowed.add(settings.public_app_origin.rstrip("/"))
-    origin = request.headers.get("origin", "").rstrip("/")
+    origin = request.headers.get("origin")
+    allowed_origin = _normalized_web_origin(settings.public_app_origin)
     fetch_site = request.headers.get("sec-fetch-site")
     if (
-        not origin
-        or origin == "null"
-        or origin not in allowed
+        allowed_origin is None
+        or _normalized_web_origin(origin) != allowed_origin
         or x_vpn_sale_client != "customer-web"
         or fetch_site == "cross-site"
         or (fetch_site is not None and fetch_site not in {"same-origin", "same-site", "none"})
     ):
         raise _err(403, request)
+
+
+def _normalized_web_origin(value: str | None) -> tuple[str, str, int | None] | None:
+    """Return a strict browser Origin tuple, never a general URL."""
+    if not value or value == "null":
+        return None
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        return None
+    if parsed.path == "/" and not value.endswith("/"):
+        return None
+    normalized_port = port
+    if (parsed.scheme == "https" and port == 443) or (parsed.scheme == "http" and port == 80):
+        normalized_port = None
+    return parsed.scheme, parsed.hostname.lower(), normalized_port
 
 
 @router.get("/capabilities", response_model=AuthCapabilitiesResponse)

@@ -24,7 +24,8 @@ new-format session. Remove this branch only after the maximum absolute lifetime 
 pre-fix sessions has elapsed. No migration is needed: `csrf_token_hash` retains its purpose.
 
 `POST /api/v1/customer/auth/browser-bootstrap` accepts no payload and uses the scoped
-HttpOnly refresh cookie. It requires an exact configured Origin, `X-VPN-Sale-Client:
+HttpOnly refresh cookie. It accepts only the normalized `public_app_origin` (independent of
+the broader global CORS list) and requires `X-VPN-Sale-Client:
 customer-web`, and same-origin/same-site Fetch Metadata when supplied. Cross-site and null
 origins fail before database dependencies. Success consumes and rotates the refresh session,
 sets the existing cookie contract, and returns an access token plus fresh raw CSRF token;
@@ -32,9 +33,14 @@ failure is generic and does not set a cookie. Responses are `no-store`.
 
 CORS credentials are allowed only for exact `cors_allowed_origins` (which must contain
 `public_app_origin`). Wildcards with credentials fail startup. Methods are GET, POST, DELETE,
-and OPTIONS. Request headers are Authorization, Content-Type, X-Request-ID,
+PATCH, PUT, and OPTIONS; PUT remains required by the admin wallet-policy browser client.
+Request headers are Authorization, Content-Type, X-Request-ID,
 X-Correlation-ID, X-CSRF-Token, and X-VPN-Sale-Client. Only Retry-After and X-Request-ID
 are exposed. Starlette handles preflight before route dependencies, so OPTIONS opens no DB.
+Global CORS determines which first-party customer, admin, and reseller frontends may call
+their respective API routes. The browser request guard is a separate, narrower trust boundary:
+only the customer app Origin may exchange an ambient customer refresh cookie for customer
+tokens. Adding an Origin to global CORS must never grant customer bootstrap permission.
 For production use `https://app.dr-ping.com` as the public/allowed app origin and
 `https://api.dr-ping.com` as API origin; the refresh-cookie domain and auth-only path remain
 unchanged.
