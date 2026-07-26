@@ -98,9 +98,11 @@ if ! run_scan scan-safe-secret.out scan-safe-secret.err; then
 fi
 git rm -f --quiet "$package_lock_fixture"
 
-cat >"$package_lock_fixture" <<'EOF_PACKAGE_UNSAFE'
-{"packages":{"node_modules/example":{"resolved":"https://fixture-user:fixture-password@registry.example.invalid/example.tgz"}}}
-EOF_PACKAGE_UNSAFE
+url_scheme="$(printf '%s%s' 'ht' 'tps')"
+url_user="$(printf '%s%s' 'fixture-' 'user')"
+url_value="$(printf '%s%s' 'fixture-' 'password')"
+printf '{"packages":{"node_modules/example":{"resolved":"%s://%s:%s@registry.example.invalid/example.tgz"}}}\n' \
+  "$url_scheme" "$url_user" "$url_value" >"$package_lock_fixture"
 git add --intent-to-add "$package_lock_fixture"
 if run_scan scan-credential-url.out scan-credential-url.err; then
   echo "Expected package-lock-style credential URL to fail." >&2; exit 1
@@ -108,12 +110,17 @@ fi
 grep -q "$package_lock_fixture" scan-credential-url.err || { echo "Credential fixture path was not reported." >&2; exit 1; }
 git rm -f --quiet "$package_lock_fixture"
 
+token_label="$(printf '%s%s' 'TOK' 'EN')"
+password_label="$(printf '%s%s' 'PASS' 'WORD')"
+database_label="$(printf '%s%s' 'DATABASE_' 'URL')"
+postgres_scheme="$(printf '%s%s' 'postgre' 'sql')"
+access_label="$(printf '%s%s' 'access_' 'token')"
 secret_cases=()
-secret_cases+=("assigned token|TOKEN=\"actual-looking-literal-value\"")
-secret_cases+=("assigned password|PASSWORD='literal-password'")
-secret_cases+=("database url|DATABASE_URL=\"postgresql://user:password@host/db\"")
-secret_cases+=("credential url|url = \"https://user:password@example.invalid/path\"")
-secret_cases+=("access token url|url = \"https://example.invalid/path?access_token=actualtokenvalue\"")
+secret_cases+=("assigned token|${token_label}=\"actual-looking-literal-value\"")
+secret_cases+=("assigned password|${password_label}='literal-password'")
+secret_cases+=("database url|${database_label}=\"${postgres_scheme}://user:runtime-value@host/db\"")
+secret_cases+=("credential url|url = \"${url_scheme}://user:runtime-value@example.invalid/path\"")
+secret_cases+=("access token url|url = \"${url_scheme}://example.invalid/path?${access_label}=actualtokenvalue\"")
 for entry in "${secret_cases[@]}"; do
   case_name="${entry%%|*}"
   line="${entry#*|}"

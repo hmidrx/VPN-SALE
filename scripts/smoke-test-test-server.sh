@@ -7,7 +7,12 @@ compose=("$repo_root/scripts/vpn-sale-compose-test-server" --env-file "$env_file
 # shellcheck source=scripts/test-server-compose-json.sh disable=SC1091
 source "$repo_root/scripts/test-server-compose-json.sh"
 telegram_api(){ local token="$1" method="$2"; shift 2; printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$token" "$method" | curl -fsS --config - "$@"; }
-redact(){ sed -E 's/(bot[0-9]+:)?[A-Za-z0-9_-]{24,}/<redacted>/g; s/(TOKEN|PASSWORD|SECRET|KEY)=([^[:space:]]+)/\1=<redacted>/g'; }
+redact(){
+  sed -E \
+    -e 's/((DATABASE_URL|PASSWORD|TOKEN|COOKIE|SECRET|KEY)=)[^[:space:]]+/\1<redacted>/Ig' \
+    -e 's#((https?|postgresql(\+asyncpg)?|redis)://)[^/@[:space:]]+:[^/@[:space:]]+@#\1<redacted>@#Ig' \
+    -e 's/(bot)?[0-9]{6,}:[A-Za-z0-9_-]{20,}/<redacted>/g'
+}
 check_public_https(){
   local label="$1" url="$2" curl_error
   if ! curl_error="$(curl --fail --silent --show-error --output /dev/null --connect-timeout 5 --max-time 20 "$url" 2>&1)"; then
@@ -29,6 +34,10 @@ if [[ "${1:-}" == "--check-caddyfile" ]]; then
 fi
 if [[ "${1:-}" == "--check-public-url" ]]; then
   check_public_https "${2:?endpoint label is required}" "${3:?endpoint URL is required}"
+  exit 0
+fi
+if [[ "${1:-}" == "--check-redaction" ]]; then
+  redact
   exit 0
 fi
 get_env(){ awk -F= -v k="$1" '$1==k {sub(/^[^=]*=/,""); print; exit}' "$env_file"; }
