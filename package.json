@@ -11,7 +11,8 @@
     "apps/admin-web",
     "apps/reseller-web",
     "packages/shared-typescript",
-    "packages/ui"
+    "packages/ui",
+    "packages/telegram-webapp"
   ],
   "devDependencies": {
     "typescript": "5.7.2"
