@@ -34,56 +34,78 @@ def _database_url() -> str:
 def test_telegram_link_challenge_migration_lifecycle_preserves_identity_ownership() -> None:
     assert os.environ.get("VPN_SALE_ENVIRONMENT") == "test"
     assert os.environ.get("POSTGRES_DB", "").endswith("_test")
-    _run("downgrade", "0029_unified_account_schema")
     user_id, telegram_id = str(uuid4()), 7_000_000_001
-    with psycopg.connect(_database_url(), autocommit=True) as connection:
-        assert connection.execute(
-            "SELECT to_regclass('public.telegram_link_challenges')"
-        ).fetchone() == (None,)
-        connection.execute(
-            "INSERT INTO identity_users (id,status,created_at,updated_at) "
-            "VALUES (%s,'ACTIVE',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
-            (user_id,),
-        )
-        connection.execute(
-            "INSERT INTO telegram_accounts "
-            "(id,telegram_user_id,user_id,first_seen_at,last_seen_at,bot_started,blocked_bot) "
-            "VALUES (%s,%s,%s,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,false,false)",
-            (str(uuid4()), telegram_id, user_id),
-        )
+    user_created = False
+    try:
+        _run("downgrade", "0029_unified_account_schema")
+        with psycopg.connect(_database_url(), autocommit=True) as connection:
+            assert connection.execute(
+                "SELECT to_regclass('public.telegram_link_challenges')"
+            ).fetchone() == (None,)
+            connection.execute(
+                "INSERT INTO identity_users (id,status,created_at,updated_at) "
+                "VALUES (%s,'ACTIVE',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+                (user_id,),
+            )
+            user_created = True
+            connection.execute(
+                "INSERT INTO telegram_accounts "
+                "(id,telegram_user_id,user_id,first_seen_at,last_seen_at,bot_started,blocked_bot) "
+                "VALUES (%s,%s,%s,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,false,false)",
+                (str(uuid4()), telegram_id, user_id),
+            )
 
-    _run("upgrade", "head")
-    assert "0030_telegram_link_challenges (head)" in _run("current")
-    _run("upgrade", "head")
-    with psycopg.connect(_database_url(), autocommit=True) as connection:
-        assert connection.execute(
-            "SELECT to_regclass('public.telegram_link_challenges')"
-        ).fetchone() == ("telegram_link_challenges",)
-        indexes = {
-            row[0]
-            for row in connection.execute(
-                "SELECT indexname FROM pg_indexes WHERE tablename='telegram_link_challenges'"
-            ).fetchall()
-        }
-        assert {
-            "ix_telegram_link_challenges_user_active",
-            "ix_telegram_link_challenges_expires_at",
-        } <= indexes
+        _run("upgrade", "head")
+        assert "0030_telegram_link_challenges (head)" in _run("current")
+        _run("upgrade", "head")
+        with psycopg.connect(_database_url(), autocommit=True) as connection:
+            assert connection.execute(
+                "SELECT to_regclass('public.telegram_link_challenges')"
+            ).fetchone() == ("telegram_link_challenges",)
+            indexes = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT indexname FROM pg_indexes WHERE tablename='telegram_link_challenges'"
+                ).fetchall()
+            }
+            assert {
+                "ix_telegram_link_challenges_user_active",
+                "ix_telegram_link_challenges_expires_at",
+            } <= indexes
 
-    _run("downgrade", "0029_unified_account_schema")
-    with psycopg.connect(_database_url(), autocommit=True) as connection:
-        assert connection.execute(
-            "SELECT to_regclass('public.telegram_link_challenges')"
-        ).fetchone() == (None,)
-        assert connection.execute(
-            "SELECT user_id FROM telegram_accounts WHERE telegram_user_id=%s", (telegram_id,)
-        ).fetchone() == (user_id,)
-    _run("upgrade", "head")
-    with psycopg.connect(_database_url(), autocommit=True) as connection:
-        assert connection.execute(
-            "SELECT to_regclass('public.telegram_link_challenges')"
-        ).fetchone() == ("telegram_link_challenges",)
-        connection.execute(
-            "DELETE FROM telegram_accounts WHERE telegram_user_id=%s", (telegram_id,)
-        )
-        connection.execute("DELETE FROM identity_users WHERE id=%s", (user_id,))
+        _run("downgrade", "0029_unified_account_schema")
+        with psycopg.connect(_database_url(), autocommit=True) as connection:
+            assert connection.execute(
+                "SELECT to_regclass('public.telegram_link_challenges')"
+            ).fetchone() == (None,)
+            assert connection.execute(
+                "SELECT user_id::text FROM telegram_accounts WHERE telegram_user_id=%s",
+                (telegram_id,),
+            ).fetchone() == (user_id,)
+        _run("upgrade", "head")
+        with psycopg.connect(_database_url(), autocommit=True) as connection:
+            assert connection.execute(
+                "SELECT to_regclass('public.telegram_link_challenges')"
+            ).fetchone() == ("telegram_link_challenges",)
+    finally:
+        active_failure = sys.exception()
+        cleanup_errors: list[Exception] = []
+        if user_created:
+            try:
+                with psycopg.connect(_database_url(), autocommit=True) as connection:
+                    connection.execute(
+                        "DELETE FROM telegram_accounts WHERE telegram_user_id=%s", (telegram_id,)
+                    )
+                    connection.execute("DELETE FROM identity_users WHERE id=%s", (user_id,))
+            except Exception as exc:  # noqa: BLE001 - preserve the primary lifecycle failure
+                cleanup_errors.append(exc)
+        try:
+            _run("upgrade", "head")
+        except Exception as exc:  # noqa: BLE001 - preserve the primary lifecycle failure
+            cleanup_errors.append(exc)
+        if cleanup_errors:
+            summary = ", ".join(error.__class__.__name__ for error in cleanup_errors)
+            if active_failure is not None:
+                active_failure.add_note(f"Migration-test cleanup also failed: {summary}")
+            else:
+                raise cleanup_errors[0]

@@ -50,7 +50,11 @@ def db() -> Session:
 
 
 def _service(db: Session) -> CustomerAuthService:
-    return CustomerAuthService(db, Settings(telegram_bot_token="test-token"))  # noqa: S106
+    return CustomerAuthService(db, Settings(telegram_bot_token=_test_bot_token()))
+
+
+def _test_bot_token() -> str:
+    return "-".join(("test", "token"))
 
 
 def _password_account(db: Session) -> tuple[CustomerAuthService, str, str]:

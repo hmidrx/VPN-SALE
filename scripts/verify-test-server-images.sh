@@ -101,6 +101,13 @@ services:
 YAML
 export API_IMAGE="$project-api" CUSTOMER_IMAGE="$project-customer-web" ADMIN_IMAGE="$project-admin-web" RESELLER_IMAGE="$project-reseller-web"
 compose=(docker compose --env-file "$env_file" -p "$project" -f docker-compose.yml)
+postgres_scalar() {
+  local sql="$1"
+  # Variables in this literal intentionally expand inside the PostgreSQL container.
+  # shellcheck disable=SC2016
+  "${compose[@]}" exec -T postgres sh -ec \
+    'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "$1"' sh "$sql"
+}
 # shellcheck source=scripts/test-server-compose-json.sh disable=SC1091
 source scripts/test-server-compose-json.sh
 "${compose[@]}" up -d postgres redis
@@ -116,16 +123,16 @@ wait_compose_service_healthy redis 120 "${compose[@]}" || {
 }
 printf 'database services healthy\n'
 "${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini upgrade 0029_unified_account_schema
-"${compose[@]}" exec -T postgres sh -ec \
-  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT to_regclass('\''public.telegram_link_challenges'\'') IS NULL"' | grep -qx t
+[[ "$(postgres_scalar \
+  "SELECT to_regclass('public.telegram_link_challenges') IS NULL")" == "t" ]]
 printf 'historical migration isolation confirmed\n'
 "${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini upgrade head
 printf 'first migration complete\n'
 "${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini upgrade head
 printf 'second migration complete\n'
 "${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini current | grep -Eq '0030_telegram_link_challenges.*\(head\)'
-"${compose[@]}" exec -T postgres sh -ec \
-  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT to_regclass('\''public.telegram_link_challenges'\'') IS NOT NULL"' | grep -qx t
+[[ "$(postgres_scalar \
+  "SELECT to_regclass('public.telegram_link_challenges') IS NOT NULL")" == "t" ]]
 printf 'migration head confirmed\n'
 "${compose[@]}" up -d api customer admin reseller
 printf 'application containers started\n'
@@ -190,8 +197,14 @@ for route in telegram-link/challenge telegram-link/complete telegram-link/unlink
     "http://127.0.0.1:8000/api/v1/customer/auth/$route" \
     -H 'Content-Type: application/json' --data '{}')"
   [[ "$status" == 404 ]]
-  ! grep -Eiq '^set-cookie:' "$headers"
-  ! grep -Eiq 'password|credential|access_token|refresh_token|csrf_token' "$body"
+  if grep -Eiq '^set-cookie:' "$headers"; then
+    echo "Disabled linking route emitted Set-Cookie" >&2
+    exit 1
+  fi
+  if grep -Eiq 'password|credential|access_token|refresh_token|csrf_token' "$body"; then
+    echo "Disabled linking route exposed sensitive credential fields" >&2
+    exit 1
+  fi
 done
 printf 'unified-account routes confirmed disabled without cookies or credentials\n'
 wait_endpoint 'Customer web' http://127.0.0.1:3000 customer
