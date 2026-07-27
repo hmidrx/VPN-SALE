@@ -33,6 +33,18 @@ Use `--enable-telegram` and enter the token at the secure no-echo prompt:
 /root/install-test-server.sh --domain example.com --enable-telegram
 ```
 
+The installer owns the bot's default menu configuration: after authenticating with `getMe`, it
+removes the webhook and idempotently sets a Persian `web_app` menu button to the configured
+customer origin. Telegram's optional trailing slash on an HTTPS root URL is accepted; scheme,
+host, explicit port, non-root path, and query string must otherwise match exactly.
+
+### Telegram rollback
+
+For an operational rollback, call Telegram `setChatMenuButton` for the default button with
+`type=commands`, then stop the `telegram-bot` Compose service. Retain the protected mode-0600
+token file unless credential removal is explicitly requested; rollback does not delete or rotate
+the token. Re-running the installer restores the managed webhook and menu postconditions.
+
 The installer verifies the token with Telegram `getMe`, derives the bot username, removes any webhook before polling, configures commands, sets the default Web App menu button to `https://app.example.com`, and starts the repository polling bot.
 
 ## Non-interactive token-file setup

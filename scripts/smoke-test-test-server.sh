@@ -6,7 +6,8 @@ domain="${VPN_SALE_TEST_SERVER_DOMAIN:-}"
 compose=("$repo_root/scripts/vpn-sale-compose-test-server" --env-file "$env_file")
 # shellcheck source=scripts/test-server-compose-json.sh disable=SC1091
 source "$repo_root/scripts/test-server-compose-json.sh"
-telegram_api(){ local token="$1" method="$2"; shift 2; printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$token" "$method" | curl -fsS --config - "$@"; }
+# shellcheck source=scripts/test-server-installer-lib.sh disable=SC1091
+source "$repo_root/scripts/test-server-installer-lib.sh"
 redact(){
   sed -E \
     -e 's/((DATABASE_URL|PASSWORD|TOKEN|COOKIE|SECRET|KEY)=)[^[:space:]]+/\1<redacted>/Ig' \
@@ -39,6 +40,10 @@ fi
 if [[ "${1:-}" == "--check-redaction" ]]; then
   redact
   exit 0
+fi
+if [[ "${1:-}" == "--compare-https-urls" ]]; then
+  https_url_equal "${2:?first URL is required}" "${3:?second URL is required}"
+  exit
 fi
 get_env(){ awk -F= -v k="$1" '$1==k {sub(/^[^=]*=/,""); print; exit}' "$env_file"; }
 for svc in api customer-web admin-web reseller-web postgres redis; do
@@ -75,9 +80,23 @@ if grep -q '^VPN_SALE_BOT_ENABLED=true' "$env_file"; then
   [[ "$bot_state" == running ]] || { echo "telegram bot enabled but not steadily running; redacted state=$bot_state" >&2; exit 1; }
   assert_compose_service_not_restarted telegram-bot "${compose[@]}"
   telegram_api "$token" getMe | jq -e '.ok == true' >/dev/null
-  telegram_api "$token" getChatMenuButton | jq -e --arg u "$app_url" '.ok == true and .result.web_app.url == $u' >/dev/null
+  menu_json="$(telegram_api "$token" getChatMenuButton)"
+  [[ "$(jq -r '.ok' <<<"$menu_json")" == true && "$(jq -r '.result.type // empty' <<<"$menu_json")" == web_app ]] || { echo 'Telegram default menu is not web_app' >&2; exit 1; }
+  https_url_equal "$app_url" "$(jq -r '.result.web_app.url // empty' <<<"$menu_json")" || { echo 'Telegram default menu URL mismatch' >&2; exit 1; }
   telegram_api "$token" getWebhookInfo | jq -e '.ok == true and (.result.url == "")' >/dev/null
+  bot_logs=""
+  for _ in 1 2 3 4 5; do
+    bot_logs="$("${compose[@]}" logs --no-color --tail=120 telegram-bot 2>/dev/null | redact)"
+    printf '%s\n' "$bot_logs" | rg -F 'telegram bot polling initialization successful' >/dev/null && break
+    sleep 2
+  done
+  printf '%s\n' "$bot_logs" | rg -F 'telegram bot polling initialization successful' >/dev/null || { echo 'Telegram polling initialization marker missing' >&2; exit 1; }
+  "${compose[@]}" exec -T telegram-bot python - <<'PYBOTV2' | rg -Fx 'vpn-sale-telegram-bot-v2-foundation' >/dev/null
+from telegram_bot.version import BOT_V2_VERSION_MARKER
+print(BOT_V2_VERSION_MARKER)
+PYBOTV2
 fi
 "${compose[@]}" logs --no-color --tail=200 2>&1 | redact >/tmp/vpn-sale-smoke-redacted.log
 if [[ -n "$(get_env POSTGRES_PASSWORD)" ]] && grep -F "$(get_env POSTGRES_PASSWORD)" /tmp/vpn-sale-smoke-redacted.log >/dev/null; then echo 'secret appeared in smoke report' >&2; exit 1; fi
+if [[ -n "$(get_env VPN_SALE_TELEGRAM_BOT_TOKEN)" ]] && grep -F "$(get_env VPN_SALE_TELEGRAM_BOT_TOKEN)" /tmp/vpn-sale-smoke-redacted.log >/dev/null; then echo 'Telegram token appeared in smoke report' >&2; exit 1; fi
 printf 'test-server smoke checks passed\n'

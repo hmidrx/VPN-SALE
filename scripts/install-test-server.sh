@@ -112,7 +112,7 @@ CUSTOMER_ORIGIN="https://app.$DOMAIN"; API_ORIGIN="https://api.$DOMAIN"; ADMIN_O
 BOT_TOKEN=""; if [[ -n "$TELEGRAM_BOT_TOKEN_FILE" ]]; then validate_secret_file "$TELEGRAM_BOT_TOKEN_FILE" || fail "telegram token file must exist, be non-empty, and have mode 0600"; BOT_TOKEN="$(tr -d '\r\n' <"$TELEGRAM_BOT_TOKEN_FILE")"; fi
 if [[ "$ENABLE_TELEGRAM" == true && -z "$BOT_TOKEN" && "$NON_INTERACTIVE" == false ]]; then read -r -s -p 'Telegram bot token: ' BOT_TOKEN </dev/tty; printf '\n' >/dev/tty; fi
 [[ "$ENABLE_TELEGRAM" == false || -n "$BOT_TOKEN" ]] || fail "telegram token required via --telegram-bot-token-file or hidden prompt"
-if [[ "$ENABLE_TELEGRAM" == true ]]; then me_json="$(printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$BOT_TOKEN" | curl -fsS --retry 2 --connect-timeout 5 --config -)"; [[ "$(jq -r '.ok' <<<"$me_json")" == true ]] || fail "Telegram getMe failed"; derived_username="$(jq -r '.result.username // empty' <<<"$me_json")"; [[ -n "$derived_username" ]] || fail "Telegram getMe returned no username"; [[ -z "$TELEGRAM_BOT_USERNAME" || "$TELEGRAM_BOT_USERNAME" == "$derived_username" ]] || fail "provided Telegram username does not match getMe"; TELEGRAM_BOT_USERNAME="$derived_username"; else TELEGRAM_BOT_USERNAME="disabled_bot"; fi
+if [[ "$ENABLE_TELEGRAM" == true ]]; then me_json="$(telegram_api "$BOT_TOKEN" getMe)" || fail "Telegram getMe failed"; [[ "$(jq -r '.ok' <<<"$me_json")" == true ]] || fail "Telegram getMe failed"; derived_username="$(jq -r '.result.username // empty' <<<"$me_json")"; [[ -n "$derived_username" ]] || fail "Telegram getMe returned no username"; [[ -z "$TELEGRAM_BOT_USERNAME" || "$TELEGRAM_BOT_USERNAME" == "$derived_username" ]] || fail "provided Telegram username does not match getMe"; TELEGRAM_BOT_USERNAME="$derived_username"; else TELEGRAM_BOT_USERNAME="disabled_bot"; fi
 set_kv_atomic "$ENV_FILE" VPN_SALE_IDENTITY_ENCRYPTION_KEY_VERSION test-v1; set_kv_atomic "$ENV_FILE" VPN_SALE_API_PUBLIC_ORIGIN "$API_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_PUBLIC_APP_ORIGIN "$CUSTOMER_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_API_FRONTEND_URL "$API_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_CORS_ALLOWED_ORIGINS "[\"$CUSTOMER_ORIGIN\",\"$ADMIN_ORIGIN\",\"$RESELLER_ORIGIN\"]"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_APP_NAME "VPN-SALE Test"; set_kv_atomic "$ENV_FILE" VPN_SALE_TELEGRAM_BOT_USERNAME "$TELEGRAM_BOT_USERNAME"; set_kv_atomic "$ENV_FILE" VPN_SALE_TELEGRAM_BOT_TOKEN "$BOT_TOKEN"; set_kv_atomic "$ENV_FILE" VPN_SALE_BOT_ENABLED "$ENABLE_TELEGRAM"; set_kv_atomic "$ENV_FILE" VPN_SALE_BOT_MODE "$([[ "$ENABLE_TELEGRAM" == true ]] && echo polling || echo disabled)"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_MINI_APP_URL "$CUSTOMER_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_MINI_APP_ALLOWED_HOSTS "app.$DOMAIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_PROVIDER_WRITES_ENABLED false; set_kv_atomic "$ENV_FILE" VPN_SALE_PAYMENT_FAKE_SUCCESS_PUBLIC_ENABLED false; set_kv_atomic "$ENV_FILE" VPN_SALE_FAKE_CUSTOMER_AUTH_ENABLED false
 for k in POSTGRES_PASSWORD VPN_SALE_DATABASE_URL POSTGRES_USER POSTGRES_DB VPN_SALE_REDIS_URL VPN_SALE_API_PUBLIC_ORIGIN VPN_SALE_PUBLIC_APP_ORIGIN VPN_SALE_TELEGRAM_BOT_USERNAME; do [[ -n "$(get_env "$k" "$ENV_FILE")" ]] || fail "missing required config $k"; done
 phase_done secrets
@@ -146,7 +146,13 @@ render_managed_caddyfile "$DOMAIN" >"$tmp_caddy"
 activate_managed_caddyfile "$tmp_caddy" "$CADDY_MARKER" || fail "Caddy activation failed"
 phase_done caddy
 phase="Telegram setup"
-if [[ "$ENABLE_TELEGRAM" == true ]]; then printf 'url = "https://api.telegram.org/bot%s/deleteWebhook"\n' "$BOT_TOKEN" | curl -fsS --config - -d drop_pending_updates=true >/dev/null; fi
+if [[ "$ENABLE_TELEGRAM" == true ]]; then
+  telegram_configure_default_menu "$BOT_TOKEN" "$CUSTOMER_ORIGIN" || fail "Telegram default menu setup was rejected"
+  menu_json="$(telegram_api "$BOT_TOKEN" getChatMenuButton)" || fail "Telegram default menu verification failed"
+  [[ "$(jq -r '.ok' <<<"$menu_json")" == true ]] || fail "Telegram default menu verification failed"
+  menu_url="$(jq -r 'select(.result.type == "web_app") | .result.web_app.url // empty' <<<"$menu_json")"
+  https_url_equal "$CUSTOMER_ORIGIN" "$menu_url" || fail "Telegram default menu URL does not match the customer origin"
+fi
 phase="smoke tests"
 if [[ "$SKIP_DNS" != true ]]; then for u in "$CUSTOMER_ORIGIN" "$API_ORIGIN/health" "$ADMIN_ORIGIN" "$RESELLER_ORIGIN"; do ./scripts/wait-for-http.sh "$u" 120; done; fi
 VPN_SALE_TEST_SERVER_ENV_FILE="$ENV_FILE" VPN_SALE_TEST_SERVER_DOMAIN="$DOMAIN" ./scripts/smoke-test-test-server.sh
