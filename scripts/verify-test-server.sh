@@ -51,17 +51,19 @@ if [[ -n "$bot_username" && "$bot_username" != "disabled_bot" ]]; then
   ok "customer-web production bundle contains configured Telegram bot username"
 fi
 if [[ "$bot_enabled" == true ]]; then
-  bot_state="$(compose_service_field telegram-bot State "${compose[@]}" 2>/dev/null || true)"
-  [[ -n "$bot_state" ]] || fail "telegram bot container missing while VPN_SALE_BOT_ENABLED=true"
+  bot_container_id="$(compose_service_container_id telegram-bot "${compose[@]}" 2>/dev/null || true)"
+  [[ -n "$bot_container_id" ]] || fail "telegram bot container missing or not unique while VPN_SALE_BOT_ENABLED=true"
+  bot_state="$(docker_container_state "$bot_container_id" 2>/dev/null || true)"
+  [[ -n "$bot_state" ]] || fail "telegram bot container state unavailable while VPN_SALE_BOT_ENABLED=true"
   [[ "$bot_state" == running ]] || fail "telegram bot must be running when enabled; redacted state=$bot_state mode=${bot_mode:-unset}"
   [[ "$bot_mode" == polling ]] || fail "telegram bot must use polling mode on the TEST server when enabled; redacted mode=${bot_mode:-unset}"
-  started_at="$(compose_service_field telegram-bot StartedAt "${compose[@]}" 2>/dev/null || true)"
-  [[ -n "$started_at" && "$started_at" != "0001-01-01T00:00:00Z" ]] || fail "telegram bot has no valid start time"
+  started_at="$(docker_container_started_at "$bot_container_id" 2>/dev/null || true)"
+  [[ -n "$started_at" ]] || fail "telegram bot has no valid start time"
   # shellcheck disable=SC2016
   bot_env="$("${compose[@]}" exec -T telegram-bot sh -c 'printf "VPN_SALE_BOT_ENABLED=%s\nVPN_SALE_BOT_MODE=%s\n" "$VPN_SALE_BOT_ENABLED" "$VPN_SALE_BOT_MODE"')"
   expected_bot_env=$'VPN_SALE_BOT_ENABLED=true\nVPN_SALE_BOT_MODE=polling'
   [[ "$bot_env" == "$expected_bot_env" ]] || fail "telegram bot container has unexpected redacted runtime environment"
-  restart_count="$(compose_service_field telegram-bot RestartCount "${compose[@]}" 2>/dev/null || printf '0')"
+  restart_count="$(docker_container_restart_count "$bot_container_id" 2>/dev/null || true)"
   [[ "$restart_count" == 0 ]] || fail "telegram bot container is restarting"
   token="$(get_env VPN_SALE_TELEGRAM_BOT_TOKEN "$ENV_FILE")"
   app_url="$(get_env VPN_SALE_PUBLIC_APP_ORIGIN "$ENV_FILE")"

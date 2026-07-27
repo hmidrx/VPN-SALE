@@ -83,6 +83,7 @@ set -euo pipefail
 [[ "${INSPECT_FAIL:-false}" != true ]] || exit 19
 case "$3" in
   '{{.RestartCount}}') if [[ "${MISSING_RESTART:-false}" != true ]]; then printf '%s\n' "${DOCKER_RESTART:-0}"; fi ;;
+  '{{.State.StartedAt}}') printf '%s' "${DOCKER_STARTED_AT-2026-07-27T20:27:44.551525171Z}" ;;
   '{{.State.Status}}') printf 'running\n' ;;
   '{{if .State.Health}}{{.State.Health.Status}}{{else}}unavailable{{end}}') printf 'healthy\n' ;;
   *) exit 2 ;;
@@ -106,6 +107,46 @@ COMPOSE_IDS=$'api-one\napi-two\n'; assert_restart_failure 'exactly one container
 COMPOSE_IDS=$'api-id\n'; export INSPECT_FAIL=true; assert_restart_failure 'Docker inspect failed'
 unset INSPECT_FAIL; export MISSING_RESTART=true; assert_restart_failure 'missing or invalid restart count'
 unset MISSING_RESTART; DOCKER_RESTART=invalid; assert_restart_failure 'missing or invalid restart count'
+DOCKER_RESTART=0
+assert_started_at_failure(){
+  local expected="$1" output
+  if output="$(docker_container_started_at api-id 2>&1)"; then echo "start-time case unexpectedly passed: $expected" >&2; exit 1; fi
+  grep -Fq "$expected" <<<"$output"
+  if grep -Fq "$FAKE_SECRET_VALUE" <<<"$output"; then echo 'start-time diagnostic leaked a secret value' >&2; exit 1; fi
+}
+DOCKER_STARTED_AT=2026-07-27T20:27:44.551525171Z; export DOCKER_STARTED_AT
+[[ "$(docker_container_started_at api-id)" == "$DOCKER_STARTED_AT" ]]
+DOCKER_STARTED_AT=''; assert_started_at_failure 'missing or invalid start time'
+DOCKER_STARTED_AT=0001-01-01T00:00:00Z; assert_started_at_failure 'missing or invalid start time'
+DOCKER_STARTED_AT=2026-07-27T20:27:44+03:00; assert_started_at_failure 'missing or invalid start time'
+DOCKER_STARTED_AT=2026-07-27T20:27:44Z; [[ "$(docker_container_started_at api-id)" == "$DOCKER_STARTED_AT" ]]
+export INSPECT_FAIL=true; assert_started_at_failure 'Docker inspect failed'
+unset INSPECT_FAIL
+COMPOSE_IDS=''; export COMPOSE_IDS
+if compose_service_container_id telegram-bot "$tmpdir/restart-compose" >"$tmpdir/no-bot.out" 2>"$tmpdir/no-bot.err"; then echo 'missing Telegram container passed' >&2; exit 1; fi
+grep -Fq 'exactly one container; found 0' "$tmpdir/no-bot.err"
+COMPOSE_IDS=$'telegram-one\ntelegram-two\n'; export COMPOSE_IDS
+if compose_service_container_id telegram-bot "$tmpdir/restart-compose" >"$tmpdir/multi-bot.out" 2>"$tmpdir/multi-bot.err"; then echo 'multiple Telegram containers passed' >&2; exit 1; fi
+grep -Fq 'exactly one container; found 2' "$tmpdir/multi-bot.err"
+
+# Compose StartedAt is deliberately irrelevant: lifecycle time comes from Docker inspect.
+for payload in \
+  '{"Service":"telegram-bot","State":"running","StartedAt":null,"CreatedAt":"2026-07-27 20:27:37 +0000 UTC"}' \
+  '{"Service":"telegram-bot","State":"running"}' \
+  '{"Service":"telegram-bot","State":"running","StartedAt":""}' \
+  $'{"Service":"api","State":"running"}\n{"Service":"telegram-bot","State":"running","StartedAt":null}' \
+  '[{"Service":"telegram-bot","State":"running","StartedAt":null}]'; do
+  make_compose "$payload"
+  COMPOSE_IDS=$'telegram-id\n'; export COMPOSE_IDS
+  [[ "$(compose_service_container_id telegram-bot "$tmpdir/restart-compose")" == telegram-id ]]
+  DOCKER_STARTED_AT=2026-07-27T20:27:44.551525171Z
+  [[ "$(docker_container_started_at telegram-id)" == "$DOCKER_STARTED_AT" ]]
+done
+
+if rg -n 'compose_service_field[[:space:]]+telegram-bot[[:space:]]+StartedAt' "$repo_root/scripts/verify-test-server.sh"; then
+  echo 'verification still reads Telegram StartedAt from Compose JSON' >&2
+  exit 1
+fi
 set +e
 bash -c 'd="$(mktemp -d)"; cleanup(){ s=$?; trap - EXIT; rm -rf "$d"; exit "$s"; }; trap cleanup EXIT; exit 37'
 cleanup_status=$?
