@@ -53,6 +53,32 @@ docker_container_restart_count(){
   printf '%s\n' "$restart_count"
 }
 
+docker_container_started_at(){
+  local container_id="$1" docker_bin="${VPN_SALE_DOCKER_BIN:-docker}" started_at
+  if ! started_at="$("$docker_bin" inspect --format '{{.State.StartedAt}}' "$container_id" 2>/dev/null)"; then
+    printf 'Docker inspect failed for container %s.\n' "$container_id" >&2
+    return 1
+  fi
+  if [[ "$started_at" == "0001-01-01T00:00:00Z" || ! "$started_at" =~ ^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:([0-5][0-9]|60)(\.[0-9]+)?Z$ ]]; then
+    printf 'Container %s has missing or invalid start time.\n' "$container_id" >&2
+    return 1
+  fi
+  printf '%s\n' "$started_at"
+}
+
+docker_container_state(){
+  local container_id="$1" docker_bin="${VPN_SALE_DOCKER_BIN:-docker}" state
+  if ! state="$("$docker_bin" inspect --format '{{.State.Status}}' "$container_id" 2>/dev/null)"; then
+    printf 'Docker inspect failed for container %s.\n' "$container_id" >&2
+    return 1
+  fi
+  [[ -n "$state" ]] || {
+    printf 'Container %s has missing runtime state.\n' "$container_id" >&2
+    return 1
+  }
+  printf '%s\n' "$state"
+}
+
 compose_service_safe_diagnostics(){
   local service="$1" container_id="${2:-unavailable}"
   local docker_bin="${VPN_SALE_DOCKER_BIN:-docker}" state="unavailable" health="unavailable" restarts="unavailable"
