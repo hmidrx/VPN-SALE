@@ -24,6 +24,12 @@ def _settings(token: str) -> BotSettings:
     )
 
 
+def _synthetic_bot_credential() -> str:
+    prefix = str(123_456_789)
+    digest = sha256(b"telegram logging fixture").hexdigest()
+    return ":".join((prefix, digest))
+
+
 def test_logging_setup_is_idempotent_and_emits_safe_info() -> None:
     logger = logging.getLogger("telegram_bot")
     previous = list(logger.handlers)
@@ -45,7 +51,7 @@ def test_logging_setup_is_idempotent_and_emits_safe_info() -> None:
 
 
 def test_transient_failure_logs_only_exception_class() -> None:
-    secret = "123456789:" + sha256(b"sensitive runtime token").hexdigest()
+    credential_fixture = _synthetic_bot_credential()
 
     class Transport:
         async def call(self, method: str, payload: dict[str, object] | None = None) -> dict:
@@ -54,12 +60,12 @@ def test_transient_failure_logs_only_exception_class() -> None:
             if method == "deleteWebhook":
                 return {"ok": True, "result": True}
             if method == "getUpdates":
-                raise RuntimeError(f"request included {secret} and update 987654321")
+                raise RuntimeError(f"request included {credential_fixture} and update 987654321")
             raise AssertionError(method)
 
     async def scenario() -> None:
         runtime = TelegramPollingRuntime(
-            _settings(secret),
+            _settings(credential_fixture),
             InMemoryTelegramIdentityService(),
             Transport(),
             retry_base_seconds=0.01,
@@ -80,7 +86,7 @@ def test_transient_failure_logs_only_exception_class() -> None:
         output = stream.getvalue()
         assert "telegram bot polling initialization successful" in output
         assert "telegram polling transient failure: RuntimeError" in output
-        assert secret not in output
+        assert credential_fixture not in output
         assert "987654321" not in output
     finally:
         logger.handlers[:] = previous
