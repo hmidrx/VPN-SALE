@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const root = new URL("../", import.meta.url);
 function source(path) { return readFileSync(new URL(path, root), "utf8"); }
+const bridgeUrl = "https://telegram.org/js/telegram-web-app.js?63";
+const customerLayout = source("../app/layout.tsx");
+assert.equal(customerLayout.split(bridgeUrl).length - 1, 1);
+assert.match(customerLayout, /strategy="beforeInteractive"/);
+assert.doesNotMatch(source("../../admin-web/app/layout.tsx"), /telegram-web-app\.js/);
+assert.doesNotMatch(source("../../reseller-web/app/layout.tsx"), /telegram-web-app\.js/);
 assert.match(source("telegram/adapter.ts"), /initData\?/) ;
 assert.doesNotMatch(source("telegram/adapter.ts"), /initDataUnsafe/);
 assert.doesNotMatch(source("auth/token-store.ts"), /localStorage|sessionStorage|indexedDB|cookie/i);

@@ -21,6 +21,13 @@ check_public_https(){
     return 1
   fi
 }
+check_customer_bridge_html(){
+  local html_file="$1"
+  if ! grep -Fq 'https://telegram.org/js/telegram-web-app.js?63' "$html_file"; then
+    echo 'customer-web HTML does not initialize the official Telegram Mini App bridge' >&2
+    return 1
+  fi
+}
 check_caddyfile(){
   local caddyfile="$1"
   if grep -Fq 'email off' "$caddyfile"; then
@@ -35,6 +42,10 @@ if [[ "${1:-}" == "--check-caddyfile" ]]; then
 fi
 if [[ "${1:-}" == "--check-public-url" ]]; then
   check_public_https "${2:?endpoint label is required}" "${3:?endpoint URL is required}"
+  exit 0
+fi
+if [[ "${1:-}" == "--check-customer-html-file" ]]; then
+  check_customer_bridge_html "${2:?customer HTML file is required}"
   exit 0
 fi
 if [[ "${1:-}" == "--check-redaction" ]]; then
@@ -65,6 +76,13 @@ if [[ -n "$bot_username" && "$bot_username" != "disabled_bot" ]]; then
   fi
 fi
 if [[ -n "$domain" ]]; then
+  customer_html="$(mktemp)"
+  trap 'rm -f "$customer_html"' EXIT
+  if ! curl --fail --silent --show-error --output "$customer_html" --connect-timeout 5 --max-time 20 "https://app.$domain"; then
+    echo 'ERROR: Customer web public HTTPS GET failed' >&2
+    exit 1
+  fi
+  check_customer_bridge_html "$customer_html"
   while IFS='|' read -r label url; do
     check_public_https "$label" "$url"
     host="$(awk -F/ '{print $3}' <<<"$url")"

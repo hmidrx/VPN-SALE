@@ -5,10 +5,10 @@
   "scripts": {
     "lint": "node ../../scripts/lint-workspace.mjs .",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "npm run typecheck && node --experimental-strip-types src/tests/public-config.test.mjs && node src/tests/customer-static.test.mjs && node src/tests/runtime-configuration.test.mjs",
+    "test": "npm run typecheck && vitest run src/tests/telegram-bridge.test.ts && node --experimental-strip-types src/tests/public-config.test.mjs && node src/tests/customer-static.test.mjs && node src/tests/runtime-configuration.test.mjs",
     "test:public-config": "node --experimental-strip-types src/tests/public-config.test.mjs",
     "test:public-config-build": "node src/tests/public-config-build.test.mjs",
-    "build": "next build",
+    "build": "next build && node src/tests/telegram-bridge-build.test.mjs",
     "start": "next start -H 0.0.0.0 -p 3000"
   },
   "dependencies": {

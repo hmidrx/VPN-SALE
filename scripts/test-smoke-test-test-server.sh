@@ -40,6 +40,15 @@ rg -Fq 'alembic -c /app/apps/api/alembic.ini current' "$smoke"
 if rg -n 'compose_ps_json_array.*RestartCount|\.RestartCount' "$smoke" >/dev/null; then echo 'Compose JSON restart count detected' >&2; exit 1; fi
 rg -Fq 'assert_compose_service_not_restarted' "$smoke"
 
+printf '<html><head><script src="https://telegram.org/js/telegram-web-app.js?63"></script></head></html>' >"$tmpdir/customer.html"
+bash "$smoke" --check-customer-html-file "$tmpdir/customer.html"
+printf '<html><head></head></html>' >"$tmpdir/customer.html"
+if bash "$smoke" --check-customer-html-file "$tmpdir/customer.html" 2>"$tmpdir/bridge.err"; then
+  echo 'missing customer bridge passed smoke verification' >&2
+  exit 1
+fi
+grep -Fxq 'customer-web HTML does not initialize the official Telegram Mini App bridge' "$tmpdir/bridge.err"
+
 part_a="$(printf '%s%s' 'PASS' 'WORD')"
 part_b="$(printf '%s%s' 'TOK' 'EN')"
 part_c="$(printf '%s%s' 'SEC' 'RET')"
