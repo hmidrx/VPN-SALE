@@ -87,6 +87,27 @@ VPN_SALE_TEST_SERVER_DOMAIN=example.com \
 
 Smoke tests validate database/Redis health using the same Compose JSON normalization helper, API `/health` and `/ready`, local web HTTP, public HTTPS endpoints, certificates, absence of public database/cache bindings, zero restart loops, current Alembic revision, frontend build-time bot configuration, Telegram state when enabled, and secret-free reports.
 
+### Customer public configuration rollout
+
+The customer web image freezes its API origins, application name, and Telegram bot username during
+`next build`; changing the runtime container environment alone does not update these values. Roll
+out a username change by rebuilding `customer-web` through `docker-compose.test-server.yml`, then
+recreate that service and rerun the smoke test. The build receives only `NEXT_PUBLIC_*` arguments;
+the Telegram token, database credentials, session secrets, encryption keys, and rate-limit secrets
+remain runtime-only.
+
+For local regression verification, run
+`npm run test:public-config-build -w @vpnsale/customer-web`. The check performs a production build,
+inspects `.next/static` and `.next/server` for public sentinels and private-value leakage, and removes
+the generated `.next` directory when it finishes. `scripts/verify-test-server-images.sh` exercises
+the installer Compose/Dockerfile path and additionally proves that changing the username invalidates
+the image build.
+
+Rollback requires no migration or data change: deploy the previously verified customer-web image
+and recreate only that service. Confirm that its frozen username matches the intended operational
+bot before re-enabling the Telegram menu or polling container; the intentionally contained state
+(`type=commands`, stopped bot, protected token file retained) can remain in place during rollout.
+
 ## Disposable reset warning
 
 Never reset data during a normal install or upgrade. The only destructive database action is explicit and disposable:

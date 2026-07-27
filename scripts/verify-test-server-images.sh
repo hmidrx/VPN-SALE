@@ -37,6 +37,11 @@ values={
  "VPN_SALE_DATABASE_URL":async_url, "DATABASE_URL":async_url,
  "VPN_SALE_SYNC_DATABASE_URL":sync_url,
  "VPN_SALE_REDIS_URL":"redis://redis:6379/0",
+ "VPN_SALE_API_PUBLIC_ORIGIN":"https://api.example.test",
+ "VPN_SALE_CUSTOMER_API_FRONTEND_URL":"https://api.example.test",
+ "VPN_SALE_TELEGRAM_BOT_USERNAME":"disabled_bot",
+ "VPN_SALE_TELEGRAM_BOT_TOKEN":"not-a-real-telegram-token-"+secrets.token_urlsafe(24),
+ "VPN_SALE_CUSTOMER_APP_NAME":"BuildSentinel",
  "VPN_SALE_PUBLIC_APP_ORIGIN":"https://app.dr-ping.com",
  "VPN_SALE_CORS_ALLOWED_ORIGINS":"[\"https://app.dr-ping.com\",\"https://admin.dr-ping.com\",\"https://reseller.dr-ping.com\"]",
  "VPN_SALE_IDENTITY_ENCRYPTION_KEY":secrets.token_urlsafe(48),
@@ -45,6 +50,7 @@ values={
  "VPN_SALE_CUSTOMER_ACCESS_TOKEN_SIGNING_KEY":secrets.token_urlsafe(48),
  "VPN_SALE_ADMIN_CSRF_SECRET":secrets.token_urlsafe(48),
  "VPN_SALE_CUSTOMER_CSRF_SECRET":secrets.token_urlsafe(48),
+ "VPN_SALE_RATE_LIMIT_SECRET":secrets.token_urlsafe(48),
  "VPN_SALE_PROVIDER_WRITES_ENABLED":"false",
  "VPN_SALE_PAYMENT_FAKE_SUCCESS_PUBLIC_ENABLED":"false",
  "VPN_SALE_FAKE_CUSTOMER_AUTH_ENABLED":"false",
@@ -58,7 +64,25 @@ export ACCEPTANCE_ENV_FILE="$env_file"
 docker build -f infra/docker/api.Dockerfile -t "$project-api" .
 docker build -f infra/docker/worker.Dockerfile -t "$project-worker" .
 docker build -f infra/docker/telegram-bot.Dockerfile -t "$project-telegram" .
-for app in customer-web admin-web reseller-web; do
+test_server_compose=(docker compose --env-file "$env_file" -p "$project" -f docker-compose.yml -f docker-compose.test-server.yml)
+"${test_server_compose[@]}" build customer-web
+disabled_image_id="$(docker image inspect --format '{{.Id}}' "$project-customer-web")"
+sed -i 's/^VPN_SALE_TELEGRAM_BOT_USERNAME=disabled_bot$/VPN_SALE_TELEGRAM_BOT_USERNAME=buildsentinel_bot/' "$env_file"
+"${test_server_compose[@]}" build customer-web
+sentinel_image_id="$(docker image inspect --format '{{.Id}}' "$project-customer-web")"
+[[ "$disabled_image_id" != "$sentinel_image_id" ]] || { echo 'customer-web public build argument did not invalidate the image build' >&2; exit 1; }
+docker run --rm --entrypoint sh "$project-customer-web" -ec \
+  'grep -R -F "buildsentinel_bot" /app/apps/customer-web/.next/static /app/apps/customer-web/.next/server >/dev/null && ! grep -R -F "disabled_bot" /app/apps/customer-web/.next/static /app/apps/customer-web/.next/server >/dev/null'
+while IFS= read -r secret; do
+  [[ -z "$secret" ]] && continue
+  if docker run --rm --entrypoint sh "$project-customer-web" -ec \
+    'grep -R -F -- "$1" /app/apps/customer-web/.next/static /app/apps/customer-web/.next/server >/dev/null' sh "$secret"; then
+    echo 'customer-web production bundle contains a server secret' >&2
+    exit 1
+  fi
+done < <(awk -F= '/^(VPN_SALE_TELEGRAM_BOT_TOKEN|POSTGRES_PASSWORD|VPN_SALE_DATABASE_URL|VPN_SALE_.*(SECRET|ENCRYPTION_KEY))=/{sub(/^[^=]*=/,""); print}' "$env_file")
+printf 'customer-web Compose image freezes public configuration without server secrets\n'
+for app in admin-web reseller-web; do
   docker build -f infra/docker/web.Dockerfile --build-arg APP_NAME="$app" --build-arg NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 --build-arg NEXT_PUBLIC_CUSTOMER_API_BASE_URL=http://127.0.0.1:8000 --build-arg NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=disabled_bot --build-arg NEXT_PUBLIC_CUSTOMER_APP_NAME=Test -t "$project-$app" .
 done
 

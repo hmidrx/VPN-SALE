@@ -59,7 +59,10 @@ if ss -ltn | awk '$4 ~ /:(5432|6379)$/ && $4 !~ /^127\.0\.0\.1:/ {bad=1} END{exi
 "${compose[@]}" run --rm --no-deps api alembic -c /app/apps/api/alembic.ini current | tee /tmp/vpn-sale-alembic-current.txt | grep -q '(head)'
 bot_username="$(get_env VPN_SALE_TELEGRAM_BOT_USERNAME)"
 if [[ -n "$bot_username" && "$bot_username" != "disabled_bot" ]]; then
-  "${compose[@]}" exec -T customer-web sh -lc "grep -R \"$bot_username\" .next/static .next/server >/dev/null"
+  if ! "${compose[@]}" exec -T customer-web grep -R -F -- "$bot_username" .next/static .next/server >/dev/null; then
+    echo "customer-web production bundle does not contain configured Telegram bot username: $bot_username" >&2
+    exit 1
+  fi
 fi
 if [[ -n "$domain" ]]; then
   while IFS='|' read -r label url; do
