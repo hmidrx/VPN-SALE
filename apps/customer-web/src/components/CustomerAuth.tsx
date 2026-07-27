@@ -6,7 +6,7 @@ import type { AuthCapabilities } from "../auth/types";
 
 type Mode = "sign-in" | "register";
 type Status = { message: string; retryAfter?: number } | null;
-const unavailable: AuthCapabilities = { password_login: false, public_registration: false, telegram_login: false, email_recovery: false, telegram_recovery: false, recovery_codes: false };
+const unavailable: AuthCapabilities = { password_login: false, public_registration: false, telegram_login: false, telegram_linking: false, web_credential_enrollment: false, email_recovery: false, telegram_recovery: false, recovery_codes: false };
 
 export function AuthErrorSummary({ status }: { status: Status }): React.ReactElement | null {
   if (!status) return null;

@@ -79,3 +79,48 @@ async def test_existing_database_backed_auth_route_reaches_authorization_logic()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/customer/auth/me")
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/telegram-link/challenge",
+        "/telegram-link/complete",
+        "/telegram-link/unlink",
+        "/account-credentials/enroll",
+    ],
+)
+async def test_disabled_unified_account_routes_are_absent_before_all_dependencies(
+    monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    calls: list[str] = []
+
+    def forbidden_db() -> Generator[Session, None, None]:
+        calls.append("database")
+        raise AssertionError("disabled route opened the database")
+        yield
+
+    def forbidden_limiter() -> routes.RateLimiter:
+        calls.append("limiter-or-redis")
+        raise AssertionError("disabled route constructed its limiter")
+
+    def forbidden_service(*args: object) -> routes.CustomerAuthService:
+        calls.append("hasher-or-telegram-verifier")
+        raise AssertionError("disabled route constructed security services")
+
+    monkeypatch.setattr(routes, "_svc", forbidden_service)
+    app = create_app(Settings(environment="test", telegram_account_linking_enabled=False))
+    app.dependency_overrides[get_db_session] = forbidden_db
+    app.dependency_overrides[routes.get_customer_rate_limiter] = forbidden_limiter
+    assert path not in app.openapi()["paths"]
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test/api/v1/customer/auth"
+    ) as client:
+        response = await client.post(path, json={"password": "not-used"})
+        capabilities = await client.get("/capabilities")
+    assert response.status_code == 404
+    assert "set-cookie" not in response.headers
+    assert calls == []
+    assert capabilities.json()["telegram_linking"] is False
+    assert capabilities.json()["web_credential_enrollment"] is False

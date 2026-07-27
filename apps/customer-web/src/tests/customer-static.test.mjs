@@ -83,3 +83,10 @@ assert.match(source("service-migrations/status.tsx"), /data-migration-status/);
 assert.match(source("service-migrations/status.tsx"), /ارتباط با پشتیبانی/);
 assert.doesNotMatch(source("service-migrations/status.tsx"), /panel|node|inbound|provider|credential|subscription token|localStorage|sessionStorage|indexedDB/i);
 assert.doesNotMatch(source("../app/services/[serviceReference]/migration/page.tsx"), /panel|node|inbound|provider|credential|localStorage|sessionStorage|indexedDB|as |any|unknown|@ts-/i);
+
+const securitySource = source("components/CustomerApp.tsx");
+for (const capability of ["capabilities.telegram_linking", "capabilities.web_credential_enrollment", "capabilities.password_login"]) assert.match(securitySource, new RegExp(capability.replace(".", "\\.")));
+assert.match(securitySource, /!capabilities\.telegram_linking.*اتصال تلگرام در دسترس نیست/);
+assert.match(securitySource, /!capabilities\.web_credential_enrollment.*ساخت ورود وب در دسترس نیست/);
+assert.match(securitySource, /linked && profile\.account_username && capabilities\.telegram_linking && capabilities\.password_login/);
+assert.doesNotMatch(source("components/TelegramLinkCompletion.tsx"), /bootstrapCustomer|localStorage|sessionStorage|start_attribution/);

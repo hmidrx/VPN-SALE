@@ -101,6 +101,13 @@ services:
 YAML
 export API_IMAGE="$project-api" CUSTOMER_IMAGE="$project-customer-web" ADMIN_IMAGE="$project-admin-web" RESELLER_IMAGE="$project-reseller-web"
 compose=(docker compose --env-file "$env_file" -p "$project" -f docker-compose.yml)
+postgres_scalar() {
+  local sql="$1"
+  # Variables in this literal intentionally expand inside the PostgreSQL container.
+  # shellcheck disable=SC2016
+  "${compose[@]}" exec -T postgres sh -ec \
+    'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "$1"' sh "$sql"
+}
 # shellcheck source=scripts/test-server-compose-json.sh disable=SC1091
 source scripts/test-server-compose-json.sh
 "${compose[@]}" up -d postgres redis
@@ -115,11 +122,17 @@ wait_compose_service_healthy redis 120 "${compose[@]}" || {
   exit 1
 }
 printf 'database services healthy\n'
+"${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini upgrade 0029_unified_account_schema
+[[ "$(postgres_scalar \
+  "SELECT to_regclass('public.telegram_link_challenges') IS NULL")" == "t" ]]
+printf 'historical migration isolation confirmed\n'
 "${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini upgrade head
 printf 'first migration complete\n'
 "${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini upgrade head
 printf 'second migration complete\n'
-"${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini current | grep -Eq '0029.*\(head\)'
+"${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini current | grep -Eq '0030_telegram_link_challenges.*\(head\)'
+[[ "$(postgres_scalar \
+  "SELECT to_regclass('public.telegram_link_challenges') IS NOT NULL")" == "t" ]]
 printf 'migration head confirmed\n'
 "${compose[@]}" up -d api customer admin reseller
 printf 'application containers started\n'
@@ -174,8 +187,26 @@ import json,sys
 body=json.loads(sys.argv[1])
 assert body["public_registration"] is False, body
 assert body["password_login"] is False, body
+assert body["telegram_linking"] is False, body
+assert body["web_credential_enrollment"] is False, body
 PY
 printf 'registration and password login defaults confirmed disabled\n'
+for route in telegram-link/challenge telegram-link/complete telegram-link/unlink account-credentials/enroll; do
+  headers="$tmp/linking-headers.txt"; body="$tmp/linking-body.json"
+  status="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' -X POST \
+    "http://127.0.0.1:8000/api/v1/customer/auth/$route" \
+    -H 'Content-Type: application/json' --data '{}')"
+  [[ "$status" == 404 ]]
+  if grep -Eiq '^set-cookie:' "$headers"; then
+    echo "Disabled linking route emitted Set-Cookie" >&2
+    exit 1
+  fi
+  if grep -Eiq 'password|credential|access_token|refresh_token|csrf_token' "$body"; then
+    echo "Disabled linking route exposed sensitive credential fields" >&2
+    exit 1
+  fi
+done
+printf 'unified-account routes confirmed disabled without cookies or credentials\n'
 wait_endpoint 'Customer web' http://127.0.0.1:3000 customer
 wait_endpoint 'Admin web' http://127.0.0.1:3001 admin
 wait_endpoint 'Reseller web' http://127.0.0.1:3002 reseller

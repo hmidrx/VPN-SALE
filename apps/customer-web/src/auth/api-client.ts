@@ -1,7 +1,7 @@
 import { loadCustomerConfig } from "../config/public-config";
 import { clearOnAuthFailure, CustomerApiError } from "./error-map";
 import { applyAuthMemory, clearAuthMemory, getAccessToken, getCsrfToken } from "./token-store";
-import type { AuthCapabilities, AuthResponse, CustomerProfile, CustomerSession } from "./types";
+import type { AuthCapabilities, AuthResponse, CustomerProfile, CustomerSession, TelegramLinkChallenge } from "./types";
 type Json = Record<string, unknown>;
 type Fetcher = typeof fetch;
 const config = loadCustomerConfig();
@@ -23,3 +23,7 @@ export const getSessions = (fetcher?: Fetcher): Promise<CustomerSession[]> => re
 export const revokeSession = (sessionId: string, fetcher?: Fetcher): Promise<Json> => request<Json>(`/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE", body: JSON.stringify({}), csrf: true }, true, fetcher);
 export const revokeOtherSessions = (fetcher?: Fetcher): Promise<Json> => request<Json>("/sessions/revoke-others", { method: "POST", body: JSON.stringify({}), csrf: true }, true, fetcher);
 export async function revokeAllSessions(fetcher?: Fetcher): Promise<Json> { const out = await request<Json>("/sessions/revoke-all", { method: "POST", body: JSON.stringify({}), csrf: true }, true, fetcher); clearAuthMemory(); return out; }
+export const createTelegramLinkChallenge = (password: string, fetcher?: Fetcher): Promise<TelegramLinkChallenge> => request<TelegramLinkChallenge>("/telegram-link/challenge", { method: "POST", body: JSON.stringify({ password }), csrf: true }, true, fetcher);
+export async function completeTelegramLink(challenge: string, initData: string, fetcher?: Fetcher): Promise<AuthResponse> { const result = await request<AuthResponse>("/telegram-link/complete", { method: "POST", body: JSON.stringify({ challenge, init_data: initData }) }, false, fetcher); applyAuthMemory(result); return result; }
+export const enrollAccountCredentials = (username: string, password: string, initData: string, fetcher?: Fetcher): Promise<Json> => request<Json>("/account-credentials/enroll", { method: "POST", body: JSON.stringify({ username, password, init_data: initData }), csrf: true }, true, fetcher);
+export async function unlinkTelegram(password: string, fetcher?: Fetcher): Promise<Json> { const result = await request<Json>("/telegram-link/unlink", { method: "POST", body: JSON.stringify({ password }), csrf: true }, false, fetcher); clearAuthMemory(); return result; }
