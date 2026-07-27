@@ -43,6 +43,13 @@ for bind in '127.0.0.1:8000' '127.0.0.1:3000' '127.0.0.1:3001' '127.0.0.1:3002';
 if [[ "$NETWORK_CHECKS" == true ]]; then for u in "https://app.$DOMAIN" "https://api.$DOMAIN/health" "https://admin.$DOMAIN" "https://reseller.$DOMAIN"; do curl -fsS --max-time 20 "$u" >/dev/null || fail "HTTPS smoke failed: $u"; ok "HTTPS $u"; done; else not_run "public DNS, HTTPS, and certificate checks (enable with --network-checks)"; fi
 bot_enabled="$(get_env VPN_SALE_BOT_ENABLED "$ENV_FILE")"
 bot_mode="$(get_env VPN_SALE_BOT_MODE "$ENV_FILE")"
+bot_username="$(get_env VPN_SALE_TELEGRAM_BOT_USERNAME "$ENV_FILE")"
+if [[ -n "$bot_username" && "$bot_username" != "disabled_bot" ]]; then
+  if ! "${compose[@]}" exec -T customer-web grep -R -F -- "$bot_username" .next/static .next/server >/dev/null; then
+    fail "customer-web production bundle does not contain configured Telegram bot username: $bot_username"
+  fi
+  ok "customer-web production bundle contains configured Telegram bot username"
+fi
 if [[ "$bot_enabled" == true ]]; then
   bot_state="$(compose_service_field telegram-bot State "${compose[@]}" 2>/dev/null || true)"
   [[ -n "$bot_state" ]] || fail "telegram bot container missing while VPN_SALE_BOT_ENABLED=true"
