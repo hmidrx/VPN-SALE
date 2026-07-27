@@ -56,7 +56,19 @@ if [[ "$bot_enabled" == true ]]; then
   [[ "$bot_env" == "$expected_bot_env" ]] || fail "telegram bot container has unexpected redacted runtime environment"
   restart_count="$(compose_service_field telegram-bot RestartCount "${compose[@]}" 2>/dev/null || printf '0')"
   [[ "$restart_count" == 0 ]] || fail "telegram bot container is restarting"
-  bot_logs="$("${compose[@]}" logs --no-color --tail=120 telegram-bot 2>/dev/null | sed -E 's/(token|secret|password|database_url|postgresql:\/\/)[^[:space:]]+/REDACTED/Ig')"
+  token="$(get_env VPN_SALE_TELEGRAM_BOT_TOKEN "$ENV_FILE")"
+  app_url="$(get_env VPN_SALE_PUBLIC_APP_ORIGIN "$ENV_FILE")"
+  telegram_api "$token" getMe | jq -e '.ok == true' >/dev/null || fail "Telegram getMe failed"
+  telegram_api "$token" getWebhookInfo | jq -e '.ok == true and .result.url == ""' >/dev/null || fail "Telegram webhook is not empty"
+  menu_json="$(telegram_api "$token" getChatMenuButton)" || fail "Telegram menu query failed"
+  [[ "$(jq -r '.ok' <<<"$menu_json")" == true && "$(jq -r '.result.type // empty' <<<"$menu_json")" == web_app ]] || fail "Telegram default menu is not web_app"
+  https_url_equal "$app_url" "$(jq -r '.result.web_app.url // empty' <<<"$menu_json")" || fail "Telegram default menu URL does not match public app origin"
+  bot_logs=""
+  for _ in 1 2 3 4 5; do
+    bot_logs="$("${compose[@]}" logs --no-color --tail=120 telegram-bot 2>/dev/null | sed -E 's/(token|secret|password|database_url|postgresql:\/\/)[^[:space:]]+/REDACTED/Ig')"
+    printf '%s\n' "$bot_logs" | rg -F 'telegram bot polling initialization successful' >/dev/null && break
+    sleep 2
+  done
   ! printf '%s\n' "$bot_logs" | rg -i 'disabled runtime|bot_token|BEGIN ENV|POSTGRES_PASSWORD|DATABASE_URL|postgresql://' >/dev/null || fail "telegram bot recent safe logs contain disabled runtime or secret-shaped output"
   printf '%s\n' "$bot_logs" | rg -F 'telegram bot polling initialization successful' >/dev/null || fail "telegram bot startup did not report successful polling initialization"
   "${compose[@]}" exec -T telegram-bot python - <<'PYBOTV2' | rg -Fx 'vpn-sale-telegram-bot-v2-foundation' >/dev/null || fail "telegram bot image missing Bot V2 version marker"

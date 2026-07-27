@@ -3,6 +3,51 @@
 
 redact(){ sed -E 's/(TOKEN|PASSWORD|SECRET|KEY|DATABASE_URL)=([^[:space:]]+)/\1=<redacted>/g'; }
 
+# Keep the credential in curl's private stdin rather than argv, diagnostics, or files.
+telegram_api(){
+  local token="$1" method="$2"
+  shift 2
+  printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$token" "$method" |
+    curl -fsS --retry 2 --connect-timeout 5 --max-time 20 --config - "$@" 2>/dev/null
+}
+
+telegram_configure_default_menu(){
+  local token="$1" app_url="$2" response menu_button
+  response="$(telegram_api "$token" deleteWebhook -d drop_pending_updates=true)" || return 1
+  jq -e '.ok == true' <<<"$response" >/dev/null || return 1
+  menu_button="$(jq -cn --arg text 'پنل کاربری' --arg url "$app_url" \
+    '{type:"web_app",text:$text,web_app:{url:$url}}')"
+  response="$(telegram_api "$token" setChatMenuButton --data-urlencode "menu_button=$menu_button")" || return 1
+  jq -e '.ok == true' <<<"$response" >/dev/null
+}
+
+# Telegram may serialize an HTTPS origin with a slash. Compare parsed URL fields,
+# never prefixes: only an empty root path and "/" are normalized.
+https_url_equal(){
+  URL_LEFT="$1" URL_RIGHT="$2" python3 - <<'PY'
+import os
+from urllib.parse import urlsplit
+
+def canonical(value: str) -> tuple[str, str, int | None, str, str] | None:
+    try:
+        parsed = urlsplit(value)
+        parsed_port = parsed.port
+        port = None if parsed_port in (None, 443) else parsed_port
+    except ValueError:
+        return None
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        return None
+    if parsed.fragment:
+        return None
+    path = "/" if parsed.path in ("", "/") else parsed.path
+    return parsed.scheme, parsed.hostname.lower(), port, path, parsed.query
+
+left = canonical(os.environ["URL_LEFT"])
+right = canonical(os.environ["URL_RIGHT"])
+raise SystemExit(0 if left is not None and left == right else 1)
+PY
+}
+
 # Operational convenience only: Dockerfiles independently normalize image
 # permissions. An ordinary final file must never make this helper return 1.
 normalize_checkout_permissions(){

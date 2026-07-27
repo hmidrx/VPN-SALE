@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import signal
 
 from telegram_bot.application.identity import InMemoryTelegramIdentityService
@@ -8,6 +9,20 @@ from telegram_bot.cli import load_settings_from_environment
 from telegram_bot.config import BotMode, BotSettings
 from telegram_bot.runtime.lifecycle import BotRuntime
 from telegram_bot.transport.polling import TelegramPollingRuntime
+
+
+def configure_logging() -> None:
+    """Install one production-safe handler without enabling HTTP debug output."""
+    logger = logging.getLogger("telegram_bot")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    if not any(getattr(handler, "_vpn_sale_handler", False) for handler in logger.handlers):
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s %(message)s"))
+        handler._vpn_sale_handler = True  # type: ignore[attr-defined]
+        logger.addHandler(handler)
+    for noisy_logger in ("urllib3", "httpx", "httpcore", "asyncio"):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
 
 async def _serve_until_stopped(runtime: BotRuntime) -> None:
@@ -29,6 +44,7 @@ async def _run_polling(settings: BotSettings) -> None:
 
 
 def main() -> None:
+    configure_logging()
     settings = load_settings_from_environment()
     try:
         settings.validate()
