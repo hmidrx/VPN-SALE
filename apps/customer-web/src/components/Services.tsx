@@ -3,10 +3,12 @@
 import React from "react";
 import {
   getService,
+  getOperationEligibility,
   listServices,
   type ServiceDetail,
   type ServiceSummary,
 } from "../services";
+import { calculateTimeMetric, clampPercentage, formatBytes } from "../service-metrics";
 import { operationLabels, serviceStatus } from "../service-status";
 
 const filters = [
@@ -235,9 +237,30 @@ function Empty() {
   );
 }
 
+function MetricRing({ label, value, supporting, percentage, unavailable = false, unlimited = false }: { label: string; value: string; supporting: string; percentage: number | null; unavailable?: boolean; unlimited?: boolean }) {
+  const safe = percentage === null ? null : clampPercentage(percentage);
+  return <div className={`metric-ring ${unavailable ? "is-unavailable" : ""}`} role={safe === null ? undefined : "progressbar"} aria-label={`${label}: ${value}. ${supporting}`} aria-valuemin={safe === null ? undefined : 0} aria-valuemax={safe === null ? undefined : 100} aria-valuenow={safe === null ? undefined : Math.round(safe)} style={{ "--metric-progress": safe ?? 0 } as React.CSSProperties}>
+    <svg aria-hidden="true" viewBox="0 0 100 100"><circle className="metric-track" cx="50" cy="50" r="42"/><circle className="metric-value" cx="50" cy="50" r="42" pathLength="100"/></svg>
+    <span><small>{label}</small><strong>{unlimited ? "∞" : value}</strong><small>{supporting}</small></span>
+  </div>;
+}
+function CopyReferenceButton({ value, compact = false }: { value: string; compact?: boolean }) {
+  const [copied, setCopied] = React.useState(false);
+  React.useEffect(() => () => undefined, []);
+  const copy = async () => { await navigator.clipboard.writeText(value); setCopied(true); window.setTimeout(() => setCopied(false), 1800); };
+  return <button className="copy-reference" type="button" onClick={() => void copy()} aria-label="کپی شناسه عمومی سرویس"><code dir="ltr">{compact ? shortRef(value) : value}</code><span aria-live="polite">{copied ? "کپی شد" : "کپی"}</span></button>;
+}
+function ServiceMetrics({ service: s }: { service: ServiceSummary }) {
+  const time = calculateTimeMetric(s.starts_at, s.expires_at);
+  const usage = s.usage, quota = s.entitlement.traffic_quota_bytes;
+  const usedPercent = usage && usage.total_bytes ? usage.used_bytes / usage.total_bytes * 100 : null;
+  return <div className="service-metrics">
+    <MetricRing label="زمان باقی‌مانده" value={time.remainingDays === null ? "نامشخص" : `${time.remainingDays.toLocaleString("fa-IR")} روز`} supporting={s.entitlement.duration_days ? `از ${s.entitlement.duration_days.toLocaleString("fa-IR")} روز` : "مدت سرویس"} percentage={time.percentage} unavailable={time.percentage === null && !time.unlimited} unlimited={time.unlimited}/>
+    <MetricRing label="مصرف ترافیک" value={usage ? formatBytes(usage.used_bytes) : quota ? "همگام نشده" : "نامشخص"} supporting={quota ? `حجم کل ${formatBytes(quota)}` : "حجم نامشخص"} percentage={usedPercent} unavailable={!usage} unlimited={usage?.unlimited}/>
+  </div>;
+}
 function ServiceCard({ service: s }: { service: ServiceSummary }) {
-  const st = serviceStatus(s.lifecycle),
-    days = remaining(s.expires_at);
+  const st = serviceStatus(s.lifecycle);
   return (
     <article className={`service-card tone-${st.tone}`}>
       <header>
@@ -245,10 +268,10 @@ function ServiceCard({ service: s }: { service: ServiceSummary }) {
           <span>{st.label}</span>
           <h2>{s.display_name}</h2>
         </div>
-        <code title="شناسه عمومی سرویس">{shortRef(s.service_reference)}</code>
+        <CopyReferenceButton value={s.service_reference} compact />
       </header>
       <p>{st.description}</p>
-      <dl>
+      <ServiceMetrics service={s}/><dl className="service-info-grid">
         <div>
           <dt>{s.activated_at ? "فعال‌سازی" : "ثبت سفارش"}</dt>
           <dd>{faDate(s.activated_at ?? s.created_at)}</dd>
@@ -258,7 +281,6 @@ function ServiceCard({ service: s }: { service: ServiceSummary }) {
             <dt>انقضا</dt>
             <dd>
               {faDate(s.expires_at)}
-              {days !== null && ` · ${days} روز`}
             </dd>
           </div>
         )}
@@ -266,6 +288,8 @@ function ServiceCard({ service: s }: { service: ServiceSummary }) {
           <dt>اطلاعات اتصال</dt>
           <dd>{s.delivery_ready ? "آماده" : "هنوز آماده نیست"}</dd>
         </div>
+        {s.entitlement.location_label && <div><dt>موقعیت</dt><dd>{s.entitlement.location_label}</dd></div>}
+        {s.entitlement.device_limit !== null && <div><dt>دستگاه</dt><dd>{s.entitlement.device_limit.toLocaleString("fa-IR")}</dd></div>}
       </dl>
       {st.group === "provisioning" && (
         <div className="service-progress">
@@ -298,16 +322,23 @@ export function ServiceDetailPage({
   serviceReference: string;
 }): React.ReactElement {
   const [data, setData] = React.useState<ServiceDetail | null>(null),
-    [error, setError] = React.useState(false),
+    [error, setError] = React.useState(false), [refreshing, setRefreshing] = React.useState(false),
     [tab, setTab] = React.useState<(typeof tabs)[number][0]>("overview");
+  React.useEffect(() => {
+    const controller = new AbortController();
+    void getOperationEligibility(serviceReference, controller.signal).then((operations) => {
+      setData((current) => current ? { ...current, eligible_operations: operations } : current);
+    }).catch((caught) => { if ((caught as Error).name !== "AbortError") return; });
+    return () => controller.abort();
+  }, [serviceReference]);
   const load = React.useCallback(() => {
     const c = new AbortController();
     setError(false);
-    void getService(serviceReference, c.signal)
+    setRefreshing(true); void getService(serviceReference, c.signal)
       .then(setData)
       .catch((e) => {
         if ((e as Error).name !== "AbortError") setError(true);
-      });
+      }).finally(() => setRefreshing(false));
     return () => c.abort();
   }, [serviceReference]);
   React.useEffect(load, [load]);
@@ -336,14 +367,17 @@ export function ServiceDetailPage({
           <small>مدیریت سرویس</small>
           <h1>{s.display_name}</h1>
         </div>
-        <button onClick={load}>تازه‌سازی</button>
+        <span className={`status tone-${st.tone}`}>{st.label}</span><button onClick={load} disabled={refreshing}>{refreshing ? "در حال تازه‌سازی" : "تازه‌سازی"}</button>
       </header>
       <nav className="service-tabs" role="tablist" aria-label="بخش‌های سرویس">
         {tabs.map(([v, l]) => (
           <button
             role="tab"
+            id={`service-tab-${v}`} aria-controls={`service-panel-${v}`}
             aria-selected={tab === v}
-            onClick={() => setTab(v)}
+            tabIndex={tab === v ? 0 : -1}
+            onClick={(event) => { setTab(v); event.currentTarget.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }); }}
+            onKeyDown={(event) => { const index = tabs.findIndex(([key]) => key === v); if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); const direction = event.key === "ArrowLeft" ? 1 : -1; const next = tabs[(index + direction + tabs.length) % tabs.length][0]; setTab(next); document.getElementById(`service-tab-${next}`)?.focus(); } }}
             key={v}
           >
             {l}
@@ -351,11 +385,11 @@ export function ServiceDetailPage({
         ))}
       </nav>
       {tab === "overview" && (
-        <div className="detail-grid">
+        <div className="detail-grid" role="tabpanel" id="service-panel-overview" aria-labelledby="service-tab-overview">
           <article className="service-hero">
-            <span className={`status tone-${st.tone}`}>{st.label}</span>
-            <h2>{s.display_name}</h2>
             <p>{st.description}</p>
+            <CopyReferenceButton value={s.service_reference}/>
+            <ServiceMetrics service={s}/>
             <dl>
               <div>
                 <dt>شناسه عمومی</dt>
@@ -384,10 +418,10 @@ export function ServiceDetailPage({
                   {faDate(s.expires_at)} {days !== null && `(${days} روز)`}
                 </dd>
               </div>
-              {data.entitlement.device_limit !== null && (
+              {data.summary.entitlement.device_limit !== null && (
                 <div>
                   <dt>تعداد دستگاه</dt>
-                  <dd>{data.entitlement.device_limit}</dd>
+                  <dd>{data.summary.entitlement.device_limit}</dd>
                 </div>
               )}
             </dl>
@@ -419,12 +453,10 @@ export function ServiceDetailPage({
         </article>
       )}
       {tab === "usage" && (
-        <article className="detail-panel">
+        <article className="detail-panel" role="tabpanel" id="service-panel-usage" aria-labelledby="service-tab-usage">
           <h2>مصرف سرویس</h2>
-          {data.usage === null ? (
-            <p className="unavailable">
-              اطلاعات مصرف هنوز از سرور دریافت نشده است.
-            </p>
+          {data.summary.usage === null ? (
+            <div className="usage-unavailable"><MetricRing label="مصرف ترافیک" value={data.summary.entitlement.traffic_quota_bytes ? "همگام نشده" : "نامشخص"} supporting={data.summary.entitlement.traffic_quota_bytes ? `حجم کل ${formatBytes(data.summary.entitlement.traffic_quota_bytes)}` : "حجم نامشخص"} percentage={null} unavailable/><p>مقدار مصرف هنوز از سرور همگام نشده است.</p><small>این وضعیت به معنی مصرف صفر نیست.</small><div className="panel-actions"><button onClick={load}>تازه‌سازی</button><a href="/support">پشتیبانی</a></div></div>
           ) : null}
         </article>
       )}

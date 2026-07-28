@@ -1,11 +1,73 @@
 import { correlationId } from "./auth/api-client";
 import { getAccessToken } from "./auth/token-store";
 import { loadCustomerConfig } from "./config/public-config";
-import { serviceStatus } from "./service-status";
-export type ServiceSummary={service_reference:string;display_name:string;lifecycle:string;lifecycle_label:string;created_at:string;activated_at:string|null;starts_at:string;expires_at:string|null;renewable:boolean;delivery_ready:boolean;required_attachment_count:number;verified_attachment_count:number;provisioning_progress:number;safe_operational_message:string};
-export type ServiceDetail={summary:ServiceSummary;entitlement:{traffic_quota_bytes:number|null;duration_days:number|null;device_limit:number|null;location_label:string|null;quality_label:string|null};usage:null;delivery:{ready:boolean;formats:string[]};eligible_operations:{operation_type:string;eligible:boolean;billable:boolean}[];latest_activity:{event:string;label:string;occurred_at:string}[];service_health:string};
-type Legacy={public_reference:string;product_label:string;lifecycle:string;created_at:string;activated_at:string|null;expires_at:string|null;required_attachment_count:number;verified_attachment_count:number;operational_message:string};
-const config=loadCustomerConfig();function headers(){const h=new Headers({"x-request-id":correlationId()});const token=getAccessToken();if(token)h.set("authorization",`Bearer ${token}`);return h;}async function request<T>(path:string,signal?:AbortSignal):Promise<T>{const response=await fetch(`${config.apiBaseUrl}/api/v1/customer/services${path}`,{headers:headers(),credentials:"include",cache:"no-store",signal});if(!response.ok)throw new Error(`services_${response.status}`);return response.json() as Promise<T>}
-function summary(x:Legacy):ServiceSummary{const required=x.required_attachment_count,verified=x.verified_attachment_count;return{service_reference:x.public_reference,display_name:x.product_label,lifecycle:x.lifecycle,lifecycle_label:serviceStatus(x.lifecycle).label,created_at:x.created_at,activated_at:x.activated_at,starts_at:x.created_at,expires_at:x.expires_at,renewable:["ACTIVE","EXPIRED"].includes(x.lifecycle),delivery_ready:false,required_attachment_count:required,verified_attachment_count:verified,provisioning_progress:required?Math.min(90,20+Math.round(verified/required*70)):x.lifecycle==="ACTIVE"?90:20,safe_operational_message:x.operational_message}}
-export async function listServices(signal?:AbortSignal){return(await request<Legacy[]>("",signal)).map(summary)}
-export async function getService(reference:string,signal?:AbortSignal):Promise<ServiceDetail>{const s=summary(await request<Legacy>(`/${encodeURIComponent(reference)}`,signal));return{summary:s,entitlement:{traffic_quota_bytes:null,duration_days:null,device_limit:null,location_label:null,quality_label:null},usage:null,delivery:{ready:false,formats:[]},eligible_operations:["RENEW","ADD_TRAFFIC","EXTEND_EXPIRY","CHANGE_DEVICE_LIMIT"].map(operation_type=>({operation_type,eligible:false,billable:true})),latest_activity:[],service_health:serviceStatus(s.lifecycle).label}}
+
+export type ServiceEntitlement = {
+  traffic_quota_bytes: number | null;
+  duration_days: number | null;
+  device_limit: number | null;
+  location_label: string | null;
+  quality_label: string | null;
+};
+export type ServiceUsage = {
+  used_bytes: number;
+  total_bytes: number | null;
+  remaining_bytes: number | null;
+  last_synced_at: string;
+  unlimited: boolean;
+  stale: boolean;
+};
+export type ServiceSummary = {
+  service_reference: string;
+  display_name: string;
+  lifecycle: string;
+  lifecycle_label: string;
+  created_at: string;
+  starts_at: string;
+  activated_at: string | null;
+  expires_at: string | null;
+  delivery_ready: boolean;
+  required_attachment_count: number;
+  verified_attachment_count: number;
+  provisioning_progress: number;
+  safe_operational_message: string;
+  entitlement: ServiceEntitlement;
+  usage: ServiceUsage | null;
+};
+export type OperationEligibility = {
+  operation_type: string;
+  eligible: boolean;
+  billable: boolean;
+  requires_approval: boolean;
+  safe_reason_codes: string[];
+};
+export type ServiceDetail = {
+  summary: ServiceSummary;
+  service_health: string;
+  eligible_operations: OperationEligibility[];
+  delivery: { ready: boolean; formats: string[] };
+  latest_activity: { event: string; label: string; occurred_at: string }[];
+};
+const config = loadCustomerConfig();
+function headers(): Headers {
+  const value = new Headers({ "x-request-id": correlationId() });
+  const token = getAccessToken();
+  if (token) value.set("authorization", `Bearer ${token}`);
+  return value;
+}
+async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`${config.apiBaseUrl}${path}`, {
+    headers: headers(), credentials: "include", cache: "no-store", signal,
+  });
+  if (!response.ok) throw new Error(`services_${response.status}`);
+  return response.json() as Promise<T>;
+}
+export function listServices(signal?: AbortSignal): Promise<ServiceSummary[]> {
+  return request("/api/v1/customer/services", signal);
+}
+export function getService(reference: string, signal?: AbortSignal): Promise<ServiceDetail> {
+  return request(`/api/v1/customer/services/${encodeURIComponent(reference)}`, signal);
+}
+export function getOperationEligibility(reference: string, signal?: AbortSignal): Promise<OperationEligibility[]> {
+  return request(`/api/v1/customer/service-operations/${encodeURIComponent(reference)}/eligibility`, signal);
+}

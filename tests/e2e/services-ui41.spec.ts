@@ -31,15 +31,21 @@ const service = (
   name: string,
   day: number,
 ) => ({
-  public_reference: reference,
-  product_label: name,
+  service_reference: reference,
+  display_name: name,
   lifecycle,
+  lifecycle_label: lifecycle,
   created_at: `2026-07-${String(day).padStart(2, "0")}T10:00:00Z`,
+  starts_at: "2026-07-02T10:00:00Z",
   activated_at: lifecycle === "ACTIVE" ? "2026-07-02T10:00:00Z" : null,
   expires_at: "2026-09-02T10:00:00Z",
+  delivery_ready: false,
   required_attachment_count: 0,
   verified_attachment_count: 0,
-  operational_message: "اطلاعات سرویس آماده نمایش است",
+  provisioning_progress: 0,
+  safe_operational_message: "اطلاعات سرویس آماده نمایش است",
+  entitlement: { traffic_quota_bytes: 53687091200, duration_days: 30, device_limit: 2, location_label: "تهران", quality_label: "ویژه" },
+  usage: null,
 });
 
 async function mock(page: Page, services: ReturnType<typeof service>[]) {

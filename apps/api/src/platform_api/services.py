@@ -35,6 +35,49 @@ class SafeServiceStatus(BaseModel):
     operational_message: str
 
 
+class CustomerServiceEntitlement(BaseModel):
+    traffic_quota_bytes: int | None = None
+    duration_days: int | None = None
+    device_limit: int | None = None
+    location_label: str | None = None
+    quality_label: str | None = None
+
+
+class CustomerServiceUsage(BaseModel):
+    used_bytes: int
+    total_bytes: int | None
+    remaining_bytes: int | None
+    last_synced_at: datetime
+    unlimited: bool
+    stale: bool
+
+
+class CustomerServiceSummary(BaseModel):
+    service_reference: str
+    display_name: str
+    lifecycle: str
+    lifecycle_label: str
+    created_at: datetime
+    starts_at: datetime
+    activated_at: datetime | None
+    expires_at: datetime | None
+    delivery_ready: bool
+    required_attachment_count: int
+    verified_attachment_count: int
+    provisioning_progress: int
+    safe_operational_message: str
+    entitlement: CustomerServiceEntitlement
+    usage: CustomerServiceUsage | None = None
+
+
+class CustomerServiceDetail(BaseModel):
+    summary: CustomerServiceSummary
+    service_health: str
+    eligible_operations: list[dict[str, object]]
+    delivery: dict[str, object]
+    latest_activity: list[dict[str, object]]
+
+
 class FulfillmentRequestStatus(BaseModel):
     id: str
     deduplication_key: str
@@ -102,6 +145,69 @@ def _safe_service(row: ServiceModel, verified_attachment_count: int = 0) -> Safe
     )
 
 
+_INTEGER_LIMITS = {
+    "traffic_quota_bytes": 1024**5,
+    "duration_days": 3650,
+    "device_limit": 1000,
+    "required_attachment_count": 8,
+}
+
+
+def _allowlisted_int(snapshot: dict[str, object], name: str) -> int | None:
+    value = snapshot.get(name)
+    if type(value) is not int or value < 0 or value > _INTEGER_LIMITS[name]:
+        return None
+    return value
+
+
+def _allowlisted_text(snapshot: dict[str, object], name: str, maximum: int) -> str | None:
+    value = snapshot.get(name)
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value if value and len(value) <= maximum else None
+
+
+_LIFECYCLE_LABELS = {
+    "ACTIVE": "فعال",
+    "PROVISIONING": "در حال آماده‌سازی",
+    "PENDING_ACTIVATION": "سفارش ثبت شد",
+    "SUSPENDED": "متوقف",
+    "EXPIRED": "منقضی",
+    "DEGRADED": "نیازمند بررسی",
+}
+
+
+def _customer_summary(row: ServiceModel, verified: int) -> CustomerServiceSummary:
+    snapshot = row.entitlement_snapshot
+    required = _allowlisted_int(snapshot, "required_attachment_count") or 0
+    entitlement = CustomerServiceEntitlement(
+        traffic_quota_bytes=_allowlisted_int(snapshot, "traffic_quota_bytes"),
+        duration_days=_allowlisted_int(snapshot, "duration_days"),
+        device_limit=_allowlisted_int(snapshot, "device_limit"),
+        location_label=_allowlisted_text(snapshot, "location_label", 80),
+        quality_label=_allowlisted_text(snapshot, "quality_label", 80),
+    )
+    progress = min(100, round(verified / required * 100)) if required else 0
+    return CustomerServiceSummary(
+        service_reference=row.public_reference,
+        display_name=_allowlisted_text(snapshot, "product_label", 120) or "خدمت شبکه",
+        lifecycle=row.lifecycle,
+        lifecycle_label=_LIFECYCLE_LABELS.get(row.lifecycle, "در حال بررسی"),
+        created_at=row.created_at,
+        starts_at=row.starts_at,
+        activated_at=row.activated_at,
+        expires_at=row.expires_at,
+        delivery_ready=False,
+        required_attachment_count=required,
+        verified_attachment_count=verified,
+        provisioning_progress=progress,
+        safe_operational_message="وضعیت سرویس بدون نمایش اطلاعات فنی ارائه‌دهنده.",
+        entitlement=entitlement,
+        usage=None,
+    )
+
+
 @admin_router.get("", response_model=list[SafeServiceStatus])
 def list_services(
     _: Annotated[object, Depends(require_perm("services.read"))],
@@ -151,12 +257,12 @@ def fulfillment_requests(
     ]
 
 
-@customer_router.get("", response_model=list[SafeServiceStatus])
+@customer_router.get("", response_model=list[CustomerServiceSummary])
 def customer_services(
     customer_session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
     db: Annotated[Session, Depends(get_db_session)],
     limit: int = 50,
-) -> list[SafeServiceStatus]:
+) -> list[CustomerServiceSummary]:
     rows = db.scalars(
         select(ServiceModel)
         .where(ServiceModel.beneficiary_customer_id == customer_session.user_id)
@@ -164,7 +270,7 @@ def customer_services(
         .limit(min(limit, 100))
     )
     return [
-        _safe_service(
+        _customer_summary(
             row,
             int(
                 db.scalar(
@@ -183,12 +289,12 @@ def customer_services(
     ]
 
 
-@customer_router.get("/{service_reference}", response_model=SafeServiceStatus)
+@customer_router.get("/{service_reference}", response_model=CustomerServiceDetail)
 def customer_service_detail(
     service_reference: str,
     customer_session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
     db: Annotated[Session, Depends(get_db_session)],
-) -> SafeServiceStatus:
+) -> CustomerServiceDetail:
     row = db.scalar(
         select(ServiceModel).where(
             ServiceModel.public_reference == service_reference,
@@ -209,7 +315,14 @@ def customer_service_detail(
         )
         or 0
     )
-    return _safe_service(row, verified)
+    summary = _customer_summary(row, verified)
+    return CustomerServiceDetail(
+        summary=summary,
+        service_health=summary.lifecycle_label,
+        eligible_operations=[],
+        delivery={"ready": summary.delivery_ready, "formats": []},
+        latest_activity=[],
+    )
 
 
 @allocation_router.post("/simulate", response_model=AllocationSimulationResponse)
