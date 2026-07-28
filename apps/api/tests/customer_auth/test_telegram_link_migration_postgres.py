@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[4]
 ALEMBIC = ROOT / "apps/api/alembic.ini"
+REVISION_LINE = re.compile(r"(?m)^([0-9]{4}_[a-z0-9_]+)\b")
 
 
 def _run(*args: str) -> str:
@@ -25,6 +27,11 @@ def _run(*args: str) -> str:
 
 def _database_url() -> str:
     return os.environ["VPN_SALE_DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://")
+
+
+def _revision_ids(output: str) -> list[str]:
+    """Extract machine revision tokens without relying on Alembic's status decoration."""
+    return REVISION_LINE.findall(output)
 
 
 @pytest.mark.skipif(
@@ -56,7 +63,10 @@ def test_telegram_link_challenge_migration_lifecycle_preserves_identity_ownershi
             )
 
         _run("upgrade", "head")
-        assert "0030_telegram_link_challenges (head)" in _run("current")
+        repository_heads = _revision_ids(_run("heads"))
+        assert len(repository_heads) == 1
+        current_revisions = _revision_ids(_run("current"))
+        assert current_revisions == repository_heads
         _run("upgrade", "head")
         with psycopg.connect(_database_url(), autocommit=True) as connection:
             assert connection.execute(

@@ -206,7 +206,7 @@ def _policy(db: Session) -> WalletPolicyModel:
     if policy is None:
         policy = WalletPolicyModel(
             currency="IRR",
-            minimum_topup_amount_rial=100_000,
+            minimum_topup_amount_rial=1_000_000,
             maximum_topup_amount_rial=500_000_000,
             maximum_wallet_balance_rial=2_000_000_000,
             default_reservation_lifetime_seconds=900,
