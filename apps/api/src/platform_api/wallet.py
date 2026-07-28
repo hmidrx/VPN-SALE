@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import base64
+import hmac
+import json
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from vpnsale_domain.identity import UserStatus, sanitize_metadata
@@ -43,6 +46,35 @@ SYSTEM_ACCOUNTS = {
     "PROMOTIONAL_EXPENSE": "PROMOTIONAL_EXPENSE",
     "REFUND_CLEARING": "REFUND_CLEARING",
 }
+
+CUSTOMER_BUCKET_LABELS = {
+    "CASH": "موجودی نقدی",
+    "REFUND": "بازپرداخت",
+    "GIFT": "هدیه",
+    "REFERRAL": "معرفی دوستان",
+    "PROMOTIONAL": "اعتبار تبلیغاتی",
+    "ADMIN_GRANT": "اعتبار مدیریتی",
+}
+CUSTOMER_CURSOR_VERSION = 1
+
+
+class CustomerWalletBucket(BaseModel):
+    bucket_type: str
+    customer_label: str
+    balance_rial: int
+    expires_at: datetime | None = None
+
+
+class CustomerWalletSummary(BaseModel):
+    currency: Literal["IRR"]
+    status: Literal["ACTIVE", "FROZEN", "CLOSED"]
+    posted_balance_rial: int
+    reserved_balance_rial: int
+    available_balance_rial: int
+    buckets: list[CustomerWalletBucket]
+    updated_at: datetime
+    has_expiring_credit: bool
+    active_reservation_count: int
 
 
 class WalletError(BaseModel):
@@ -99,6 +131,51 @@ def _hash(value: str) -> str:
 
 def _fingerprint(payload: str) -> str:
     return _hash(payload)
+
+
+def _cursor_signature(payload: bytes, settings: Settings) -> str:
+    return hmac.new(
+        settings.customer_access_token_signing_key.encode(), payload, sha256
+    ).hexdigest()
+
+
+def _encode_customer_cursor(row: JournalEntryModel, wallet_id: str, settings: Settings) -> str:
+    payload = json.dumps(
+        {
+            "v": CUSTOMER_CURSOR_VERSION,
+            "wallet": wallet_id,
+            "posted": row.posted_at.isoformat(),
+            "id": row.id,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    envelope = payload + b"." + _cursor_signature(payload, settings).encode()
+    return base64.urlsafe_b64encode(envelope).decode().rstrip("=")
+
+
+def _decode_customer_cursor(
+    cursor: str, wallet_id: str, settings: Settings
+) -> tuple[datetime, str]:
+    if len(cursor) > 1024:
+        raise ValueError("cursor too long")
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        envelope = base64.b64decode(padded, altchars=b"-_", validate=True)
+        payload, supplied_signature = envelope.rsplit(b".", 1)
+        expected = _cursor_signature(payload, settings).encode()
+        data = json.loads(payload)
+        posted_at = datetime.fromisoformat(data["posted"])
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid cursor") from exc
+    if not hmac.compare_digest(supplied_signature, expected):
+        raise ValueError("invalid cursor signature")
+    if data.get("v") != CUSTOMER_CURSOR_VERSION or data.get("wallet") != wallet_id:
+        raise ValueError("cursor does not belong to wallet")
+    entry_id = data.get("id")
+    if posted_at.tzinfo is None or not isinstance(entry_id, str) or not entry_id:
+        raise ValueError("invalid cursor values")
+    return posted_at, entry_id
 
 
 def _audit(
@@ -238,17 +315,46 @@ def _view(db: Session, wallet: WalletModel) -> dict[str, Any]:
         .where(WalletBalanceBucketModel.wallet_id == wallet.id)
         .order_by(WalletBalanceBucketModel.bucket_type)
     ).all()
+    if p.available_balance_rial + p.reserved_balance_rial != p.posted_balance_rial:
+        raise ValueError("wallet balance projection invariant violated")
+    now = datetime.now(UTC)
+    expiring = db.scalar(
+        select(func.count())
+        .select_from(WalletCreditLotModel)
+        .where(
+            WalletCreditLotModel.wallet_id == wallet.id,
+            WalletCreditLotModel.status == "ACTIVE",
+            WalletCreditLotModel.remaining_amount_rial > 0,
+            WalletCreditLotModel.expires_at.is_not(None),
+            WalletCreditLotModel.expires_at > now,
+        )
+    )
+    active_reservations = db.scalar(
+        select(func.count())
+        .select_from(WalletReservationModel)
+        .where(
+            WalletReservationModel.wallet_id == wallet.id,
+            WalletReservationModel.status == "ACTIVE",
+        )
+    )
     return {
-        "wallet_reference": wallet.id,
-        "customer_id": wallet.customer_id,
         "currency": wallet.currency,
         "status": wallet.status,
         "posted_balance_rial": p.posted_balance_rial,
         "reserved_balance_rial": p.reserved_balance_rial,
         "available_balance_rial": p.available_balance_rial,
         "buckets": [
-            {"bucket_type": b.bucket_type, "balance_rial": b.balance_rial} for b in buckets
+            {
+                "bucket_type": b.bucket_type,
+                "customer_label": CUSTOMER_BUCKET_LABELS.get(b.bucket_type, "اعتبار دیگر"),
+                "balance_rial": b.balance_rial,
+                "expires_at": None,
+            }
+            for b in buckets
         ],
+        "updated_at": p.updated_at,
+        "has_expiring_credit": bool(expiring),
+        "active_reservation_count": active_reservations or 0,
     }
 
 
@@ -382,7 +488,7 @@ def post_admin_wallet_adjustment(
     )
 
 
-def _customer_from_token(
+def current_wallet_customer_id(
     db: Annotated[Session, Depends(get_db_session)],
     settings: Annotated[Settings, Depends(get_settings)],
     request: Request,
@@ -439,21 +545,25 @@ def _customer_transaction_view(db: Session, row: JournalEntryModel) -> dict[str,
     }
 
 
-@customer_router.get("")
+@customer_router.get("", response_model=CustomerWalletSummary)
 def customer_wallet(
-    customer_id: Annotated[str, Depends(_customer_from_token)],
+    customer_id: Annotated[str, Depends(current_wallet_customer_id)],
     db: Annotated[Session, Depends(get_db_session)],
     request: Request,
 ) -> dict[str, Any]:
     wallet = _ensure_wallet(db, customer_id)
-    _audit(
-        db, "customer", customer_id, "wallet.viewed", wallet.id, request, {"wallet_id": wallet.id}
-    )
-    return _view(db, wallet)
+    _audit(db, "customer", customer_id, "wallet.viewed", None, request, {})
+    try:
+        return _view(db, wallet)
+    except ValueError as exc:
+        raise _err(503, request, "PROJECTION_MISMATCH") from exc
 
 
 @customer_router.get("/policy")
-def customer_policy(db: Annotated[Session, Depends(get_db_session)]) -> dict[str, Any]:
+def customer_policy(
+    _: Annotated[str, Depends(current_wallet_customer_id)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, Any]:
     p = _policy(db)
     return {
         "currency": p.currency,
@@ -472,27 +582,50 @@ def customer_policy(db: Annotated[Session, Depends(get_db_session)]) -> dict[str
 
 @customer_router.get("/transactions")
 def customer_transactions(
-    customer_id: Annotated[str, Depends(_customer_from_token)],
+    customer_id: Annotated[str, Depends(current_wallet_customer_id)],
     db: Annotated[Session, Depends(get_db_session)],
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
     limit: int = 50,
+    cursor: str | None = None,
 ) -> dict[str, Any]:
     wallet = _ensure_wallet(db, customer_id)
+    policy = _policy(db)
+    page_size = min(max(limit, 1), policy.max_transaction_history_page_size)
+    boundary: tuple[datetime, str] | None = None
+    if cursor:
+        try:
+            boundary = _decode_customer_cursor(cursor, wallet.id, settings)
+        except ValueError as exc:
+            raise _err(400, request, "INVALID_CURSOR") from exc
+    statement = select(JournalEntryModel).where(JournalEntryModel.wallet_id == wallet.id)
+    if boundary:
+        posted_at, entry_id = boundary
+        statement = statement.where(
+            or_(
+                JournalEntryModel.posted_at < posted_at,
+                and_(JournalEntryModel.posted_at == posted_at, JournalEntryModel.id < entry_id),
+            )
+        )
     rows = db.scalars(
-        select(JournalEntryModel)
-        .where(JournalEntryModel.wallet_id == wallet.id)
-        .order_by(JournalEntryModel.posted_at.desc())
-        .limit(min(max(limit, 1), 100))
+        statement.order_by(JournalEntryModel.posted_at.desc(), JournalEntryModel.id.desc()).limit(
+            page_size + 1
+        )
     ).all()
+    has_more = len(rows) > page_size
+    items = rows[:page_size]
     return {
-        "items": [_customer_transaction_view(db, r) for r in rows],
-        "next_cursor": None,
+        "items": [_customer_transaction_view(db, r) for r in items],
+        "next_cursor": _encode_customer_cursor(items[-1], wallet.id, settings)
+        if has_more and items
+        else None,
     }
 
 
 @customer_router.get("/transactions/{transaction_reference}")
 def customer_transaction(
     transaction_reference: str,
-    customer_id: Annotated[str, Depends(_customer_from_token)],
+    customer_id: Annotated[str, Depends(current_wallet_customer_id)],
     db: Annotated[Session, Depends(get_db_session)],
     request: Request,
 ) -> dict[str, Any]:
@@ -505,7 +638,7 @@ def customer_transaction(
 
 @customer_router.get("/credits")
 def customer_credits(
-    customer_id: Annotated[str, Depends(_customer_from_token)],
+    customer_id: Annotated[str, Depends(current_wallet_customer_id)],
     db: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, Any]:
     wallet = _ensure_wallet(db, customer_id)
@@ -533,7 +666,7 @@ def customer_credits(
 
 @customer_router.get("/reservations")
 def customer_reservations(
-    customer_id: Annotated[str, Depends(_customer_from_token)],
+    customer_id: Annotated[str, Depends(current_wallet_customer_id)],
     db: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, Any]:
     wallet = _ensure_wallet(db, customer_id)
