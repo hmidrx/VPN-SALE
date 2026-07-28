@@ -8,9 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .customer_auth.models import CustomerSessionModel
 from .customer_auth.routes import current_customer_session_dependency
 from .database import get_db_session
+from .identity.models import CustomerSessionModel
 from .management import require_perm
 from .service_models import ServiceAttachmentModel, ServiceFulfillmentRequestModel, ServiceModel
 
