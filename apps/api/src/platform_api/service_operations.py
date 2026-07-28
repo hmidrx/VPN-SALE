@@ -161,20 +161,25 @@ def create_customer_operation(
         ServiceOperationType.EXTEND_EXPIRY,
         ServiceOperationType.CHANGE_DEVICE_LIMIT,
     }
+    if billable:
+        # A browser-provided amount can never be an authoritative quote. Billable
+        # operations remain unavailable until the pricing authority issues quotes.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={"code": "OPERATION_AUTHORITATIVE_QUOTE_REQUIRED"},
+        )
     row = ServiceOperationModel(
         service_id=service.id,
         operation_type=body.operation_type.value,
-        status="AWAITING_PAYMENT" if billable else "QUEUED",
+        status="QUEUED",
         requester_type="CUSTOMER",
         requester_id=x_customer_id,
         idempotency_key_digest=digest,
         reason_code=body.reason_code,
         policy_version_id=policy_version.id,
         policy_snapshot=policy_version.immutable_snapshot,
-        desired_change={"amount": body.amount, "operation_type": body.operation_type.value},
-        quote_snapshot={"price_source": "backend_policy", "amount": body.amount}
-        if billable
-        else None,
+        desired_change={"operation_type": body.operation_type.value},
+        quote_snapshot=None,
         created_at=now,
         updated_at=now,
     )

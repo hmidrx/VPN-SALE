@@ -5,12 +5,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .customer_auth.models import CustomerSessionModel
+from .customer_auth.routes import current_customer_session_dependency
 from .database import get_db_session
 from .management import require_perm
-from .service_models import ServiceFulfillmentRequestModel, ServiceModel
+from .service_models import ServiceAttachmentModel, ServiceFulfillmentRequestModel, ServiceModel
 
 admin_router = APIRouter(prefix="/api/v1/admin/services", tags=["admin-services"])
 customer_router = APIRouter(prefix="/api/v1/customer/services", tags=["customer-services"])
@@ -82,7 +84,7 @@ def snapshot_non_negative_int(value: object, field_name: str, default: int) -> i
     return parsed
 
 
-def _safe_service(row: ServiceModel) -> SafeServiceStatus:
+def _safe_service(row: ServiceModel, verified_attachment_count: int = 0) -> SafeServiceStatus:
     entitlement = row.entitlement_snapshot
     required_attachment_count = snapshot_non_negative_int(
         entitlement.get("required_attachment_count"), "required_attachment_count", 0
@@ -95,7 +97,7 @@ def _safe_service(row: ServiceModel) -> SafeServiceStatus:
         activated_at=row.activated_at,
         expires_at=row.expires_at,
         required_attachment_count=required_attachment_count,
-        verified_attachment_count=0,
+        verified_attachment_count=verified_attachment_count,
         operational_message="وضعیت تحقق سرویس بدون نمایش اطلاعات فنی ارائه‌دهنده.",
     )
 
@@ -151,17 +153,63 @@ def fulfillment_requests(
 
 @customer_router.get("", response_model=list[SafeServiceStatus])
 def customer_services(
-    x_customer_id: str,
+    customer_session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
     db: Annotated[Session, Depends(get_db_session)],
     limit: int = 50,
 ) -> list[SafeServiceStatus]:
     rows = db.scalars(
         select(ServiceModel)
-        .where(ServiceModel.beneficiary_customer_id == x_customer_id)
+        .where(ServiceModel.beneficiary_customer_id == customer_session.user_id)
         .order_by(ServiceModel.created_at.desc())
         .limit(min(limit, 100))
     )
-    return [_safe_service(row) for row in rows]
+    return [
+        _safe_service(
+            row,
+            int(
+                db.scalar(
+                    select(func.count())
+                    .select_from(ServiceAttachmentModel)
+                    .where(
+                        ServiceAttachmentModel.service_id == row.id,
+                        ServiceAttachmentModel.required.is_(True),
+                        ServiceAttachmentModel.verification_status == "VERIFIED",
+                    )
+                )
+                or 0
+            ),
+        )
+        for row in rows
+    ]
+
+
+@customer_router.get("/{service_reference}", response_model=SafeServiceStatus)
+def customer_service_detail(
+    service_reference: str,
+    customer_session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> SafeServiceStatus:
+    row = db.scalar(
+        select(ServiceModel).where(
+            ServiceModel.public_reference == service_reference,
+            ServiceModel.beneficiary_customer_id == customer_session.user_id,
+        )
+    )
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "SERVICE_NOT_FOUND"})
+    verified = int(
+        db.scalar(
+            select(func.count())
+            .select_from(ServiceAttachmentModel)
+            .where(
+                ServiceAttachmentModel.service_id == row.id,
+                ServiceAttachmentModel.required.is_(True),
+                ServiceAttachmentModel.verification_status == "VERIFIED",
+            )
+        )
+        or 0
+    )
+    return _safe_service(row, verified)
 
 
 @allocation_router.post("/simulate", response_model=AllocationSimulationResponse)
