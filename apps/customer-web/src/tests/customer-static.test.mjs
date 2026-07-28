@@ -82,7 +82,10 @@ assert.match(source("payments/idempotency.ts"), /crypto\.randomUUID/);
 assert.doesNotMatch(source("payments/idempotency.ts"), /localStorage|sessionStorage|indexedDB/i);
 assert.match(source("components/Payments.tsx"), /وضعیت پرداخت در حال بررسی است/);
 assert.match(source("components/Payments.tsx"), /payable_total_rial/);
-assert.match(source("components/Payments.tsx"), /پرداخت آنلاین هنوز فعال نیست/);
+assert.match(source("components/Payments.tsx"), /پرداخت آنلاین فعال نیست/);
+assert.match(source("wallet/topup-policy.ts"), /MINIMUM_TOPUP_TOMAN = 100_000/);
+assert.doesNotMatch(source("components/Payments.tsx"), /حداکثر شارژ/);
+assert.doesNotMatch(source("components/Wallet.tsx"), /حداکثر شارژ/);
 assert.doesNotMatch(source("components/Payments.tsx"), /force.*success|fake.*success|card-number|CVV|crypto|subscription URL/i);
 assert.match(source("components/CustomerApp.tsx"), /page === "payments"/);
 
