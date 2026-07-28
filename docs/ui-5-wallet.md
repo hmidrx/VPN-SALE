@@ -19,3 +19,15 @@ Without an available method, amount entry, policy validation, quick amounts, and
 ## Operations
 
 Local startup remains `npm run build --workspace=@vpnsale/customer-web` followed by the existing customer-web start command. Roll out as the customer frontend artifact only. Roll back by deploying the preceding frontend artifact; there is no migration or server rollback. Real payment-provider integration remains deferred until documented contracts and credentials are supplied.
+
+## UI-5.2 — final mobile input polish
+
+Android review found that selecting the 100,000-Toman preset left the editable field as raw `100000`. The field now keeps canonical ASCII digits as its internal model while rendering Persian digits and the Persian thousands separator (`۱۰۰٬۰۰۰`). Persian, Arabic, and Latin digits and grouping-only paste are normalized; currency copy, signs, decimals, exponents, arbitrary text, and values that cannot be multiplied safely by ten are rejected rather than truncated. Empty input remains empty. The separate Toman suffix is unchanged, and the serialized request for 100,000 Toman remains the exact integer `{ "amount_rial": 1000000 }`.
+
+Preset selection updates the editable value, preserves focus without scrolling, exposes exactly one `aria-pressed` state, and resets review, redirect action, and the idempotent operation. Manual edits retain that state only while the canonical value still matches. The field uses a text control with a numeric input mode so mobile keyboards are available without browser number spinners.
+
+Telegram Desktop review also identified browser-like refresh controls and excess transaction-empty space. Overview and transaction history now share an inline-SVG refresh control with a 44 px target, accessible label, duplicate-request guard, bounded live feedback, and reduced-motion behavior. Empty history has a compact icon, explanation, and top-up action. The no-method message remains a quiet, compact support path and does not render or invoke top-up submission.
+
+Wallet scroll clearance now combines the actual mobile navigation reservation, Telegram/iPhone safe-bottom inset, and 20 px breathing room; desktop drops that reservation. Deterministic Playwright coverage captures Android, iPhone, narrow Telegram Desktop, and 1024×768, 1280×800, and 1440×900 layouts and checks overflow, selected input presentation, minimum-only copy, no-method POST safety, control sizing, and bottom-navigation separation.
+
+Roll out only the customer-web artifact. Roll back to the UI-5.1 frontend artifact if input or layout regressions appear. No API, database, provider, payment authority, wallet policy, session behavior, or migration changes are included. Local startup remains `npm run build --workspace=@vpnsale/customer-web` followed by `npm run start --workspace=@vpnsale/customer-web`.

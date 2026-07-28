@@ -56,12 +56,60 @@ export function normalizePersianDigits(value: string): string {
     .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
 }
 
-export function parseTomanInput(raw: string, requirePositive = true): number {
-  const normalized = normalizePersianDigits(raw.trim()).replace(/[٬،,\u066C\s]/g, "");
-  if (!/^[0-9]+$/.test(normalized)) {
+const EDITABLE_GROUPING = /[\u066C\u060C,\s]/g;
+
+/**
+ * Converts an editable Toman value to canonical ASCII digits. Currency words and
+ * every character other than supported digits/grouping are rejected.
+ */
+export function displayTomanToCanonicalDigits(value: string): string {
+  const normalized = normalizePersianDigits(value.trim());
+  if (normalized === "") return "";
+  if (/[^0-9\u066C\u060C,\s]/.test(normalized)) {
     throw new MoneyPresentationError("INVALID_TOMAN_INPUT");
   }
-  const toman = Number(normalized);
+  const digits = normalized.replace(EDITABLE_GROUPING, "");
+  if (!/^[0-9]+$/.test(digits)) {
+    throw new MoneyPresentationError("INVALID_TOMAN_INPUT");
+  }
+  const canonical = digits.replace(/^0+(?=\d)/, "");
+  const parsed = Number(canonical);
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed > Math.floor(Number.MAX_SAFE_INTEGER / 10)
+  ) {
+    throw new MoneyPresentationError("UNSAFE_TOMAN_AMOUNT");
+  }
+  return canonical;
+}
+
+export const normalizeTomanEditableInput = displayTomanToCanonicalDigits;
+
+export function tomanDigitsToDisplay(value: string): string {
+  if (value === "") return "";
+  if (!/^[0-9]+$/.test(value))
+    throw new MoneyPresentationError("INVALID_TOMAN_INPUT");
+  const parsed = Number(value);
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed > Math.floor(Number.MAX_SAFE_INTEGER / 10)
+  ) {
+    throw new MoneyPresentationError("UNSAFE_TOMAN_AMOUNT");
+  }
+  return new Intl.NumberFormat("fa-IR", {
+    useGrouping: true,
+    maximumFractionDigits: 0,
+  }).format(parsed);
+}
+
+export function formatEditableToman(value: string): string {
+  return tomanDigitsToDisplay(displayTomanToCanonicalDigits(value));
+}
+
+export function parseTomanInput(raw: string, requirePositive = true): number {
+  const canonical = displayTomanToCanonicalDigits(raw);
+  if (canonical === "") throw new MoneyPresentationError("INVALID_TOMAN_INPUT");
+  const toman = Number(canonical);
   if (!Number.isSafeInteger(toman) || (requirePositive && toman === 0)) {
     throw new MoneyPresentationError("UNSAFE_TOMAN_AMOUNT");
   }
@@ -87,29 +135,58 @@ const bucketFa: Record<string, string> = {
   PROMOTIONAL: "اعتبار تبلیغاتی",
   ADMIN_GRANT: "اعتبار مدیریتی",
 };
-export const bucketLabel = (code: WalletBucket): string => bucketFa[code] ?? "اعتبار دیگر";
+export const bucketLabel = (code: WalletBucket): string =>
+  bucketFa[code] ?? "اعتبار دیگر";
 export const walletStatusLabel = (status: WalletStatus): string =>
   status === "ACTIVE" ? "فعال" : status === "FROZEN" ? "محدود" : "بسته";
-export const transactionDirectionLabel = (direction?: TransactionDirection): string =>
-  direction === "INCOMING" ? "افزایش موجودی" : direction === "OUTGOING" ? "کاهش موجودی" : "بدون تغییر";
+export const transactionDirectionLabel = (
+  direction?: TransactionDirection,
+): string =>
+  direction === "INCOMING"
+    ? "افزایش موجودی"
+    : direction === "OUTGOING"
+      ? "کاهش موجودی"
+      : "بدون تغییر";
 export const creditStatusLabel = (status: CreditStatus): string =>
-  status === "ACTIVE" ? "فعال" : status === "EXHAUSTED" ? "مصرف‌شده" : status === "EXPIRED" ? "منقضی" : status === "REVERSED" ? "برگشت‌خورده" : "نامشخص";
+  status === "ACTIVE"
+    ? "فعال"
+    : status === "EXHAUSTED"
+      ? "مصرف‌شده"
+      : status === "EXPIRED"
+        ? "منقضی"
+        : status === "REVERSED"
+          ? "برگشت‌خورده"
+          : "نامشخص";
 export const reservationStatusLabel = (status: ReservationStatus): string =>
-  status === "ACTIVE" ? "فعال" : status === "RELEASED" ? "آزادشده" : status === "EXPIRED" ? "منقضی" : status === "CAPTURED" ? "برداشت‌شده" : status === "CANCELLED" ? "لغوشده" : "نامشخص";
+  status === "ACTIVE"
+    ? "فعال"
+    : status === "RELEASED"
+      ? "آزادشده"
+      : status === "EXPIRED"
+        ? "منقضی"
+        : status === "CAPTURED"
+          ? "برداشت‌شده"
+          : status === "CANCELLED"
+            ? "لغوشده"
+            : "نامشخص";
 export function transactionTypeLabel(type: string): string {
-  return ({
-    ADMIN_CREDIT: "افزایش اعتبار",
-    ADMIN_DEBIT: "کاهش اعتبار",
-    REFUND_CREDIT: "بازگشت وجه",
-    PROMOTIONAL_CREDIT: "اعتبار تبلیغاتی",
-    REFERRAL_CREDIT: "معرفی دوستان",
-    GIFT_CREDIT: "هدیه",
-    CREDIT_EXPIRATION: "انقضای اعتبار",
-    RESERVATION_CREATED: "رزرو مبلغ",
-    RESERVATION_RELEASED: "آزادسازی رزرو",
-    RESERVATION_EXPIRED: "انقضای رزرو",
-    RESERVATION_CAPTURED: "برداشت رزرو",
-    REVERSAL: "بازگشت تراکنش",
-  } as Record<string, string>)[type] ?? "تراکنش کیف پول";
+  return (
+    (
+      {
+        ADMIN_CREDIT: "افزایش اعتبار",
+        ADMIN_DEBIT: "کاهش اعتبار",
+        REFUND_CREDIT: "بازگشت وجه",
+        PROMOTIONAL_CREDIT: "اعتبار تبلیغاتی",
+        REFERRAL_CREDIT: "معرفی دوستان",
+        GIFT_CREDIT: "هدیه",
+        CREDIT_EXPIRATION: "انقضای اعتبار",
+        RESERVATION_CREATED: "رزرو مبلغ",
+        RESERVATION_RELEASED: "آزادسازی رزرو",
+        RESERVATION_EXPIRED: "انقضای رزرو",
+        RESERVATION_CAPTURED: "برداشت رزرو",
+        REVERSAL: "بازگشت تراکنش",
+      } as Record<string, string>
+    )[type] ?? "تراکنش کیف پول"
+  );
 }
 export const displayDate = formatDate;
