@@ -14,3 +14,8 @@ test-server.env
 test.env
 *.runtime.env
 *.local.env
+
+# Generated Playwright reports and run artifacts
+test-results/
+playwright-report/
+blob-report/
