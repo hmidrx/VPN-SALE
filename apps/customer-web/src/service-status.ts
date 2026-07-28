@@ -1,0 +1,75 @@
+export type ServiceTone = "success" | "warning" | "danger" | "neutral";
+export type ServiceStatus = {
+  label: string;
+  description: string;
+  tone: ServiceTone;
+  group: "active" | "provisioning" | "expired" | "suspended" | "other";
+};
+
+const states: Readonly<Record<string, ServiceStatus>> = {
+  ACTIVE: {
+    label: "فعال",
+    description: "سرویس آماده استفاده است",
+    tone: "success",
+    group: "active",
+  },
+  PROVISIONING: {
+    label: "در حال آماده‌سازی",
+    description: "اطلاعات سرویس در حال آماده‌شدن است",
+    tone: "warning",
+    group: "provisioning",
+  },
+  PENDING_ACTIVATION: {
+    label: "سفارش ثبت شد",
+    description: "در صف فعال‌سازی",
+    tone: "warning",
+    group: "provisioning",
+  },
+  EXPIRED: {
+    label: "منقضی",
+    description: "اعتبار سرویس پایان یافته است",
+    tone: "danger",
+    group: "expired",
+  },
+  SUSPENDED: {
+    label: "متوقف",
+    description: "استفاده از سرویس موقتاً متوقف است",
+    tone: "danger",
+    group: "suspended",
+  },
+  DEGRADED: {
+    label: "نیازمند بررسی",
+    description: "برخی اطلاعات موقتاً در دسترس نیست",
+    tone: "warning",
+    group: "other",
+  },
+};
+
+export function serviceStatus(value: string): ServiceStatus {
+  return (
+    states[value] ?? {
+      label: "در حال بررسی",
+      description: "وضعیت سرویس در حال بررسی است",
+      tone: "neutral",
+      group: "other",
+    }
+  );
+}
+
+const operationLabelEntries = [
+  ["RENEW", "تمدید"],
+  ["ADD_TRAFFIC", "افزایش حجم"],
+  ["EXTEND_EXPIRY", "افزایش مدت"],
+  ["CHANGE_DEVICE_LIMIT", "افزایش دستگاه"],
+  ["SUSPEND", "توقف موقت"],
+  ["RESUME", "فعال‌سازی مجدد"],
+  ["RESET_TRAFFIC", "ریست مصرف"],
+  ["CLEAR_CLIENT_IPS", "پاک‌کردن IPهای ثبت‌شده"],
+  ["CLEAR_HWID", "پاک‌کردن شناسه دستگاه"],
+  ["ROTATE_CREDENTIAL", "تعویض اطلاعات اتصال"],
+  ["ROTATE_SUBSCRIPTION_TOKEN", "تعویض لینک اشتراک"],
+  ["REFRESH_DELIVERY_PROFILE", "تازه‌سازی اطلاعات اتصال"],
+] as const satisfies ReadonlyArray<readonly [string, string]>;
+
+export const operationLabels: Readonly<Record<string, string>> =
+  Object.fromEntries(operationLabelEntries);

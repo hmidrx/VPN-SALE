@@ -33,6 +33,15 @@ if ! run_scan scan-safe.out scan-safe.err; then
   exit 1
 fi
 
+# The customer operation mapping intentionally contains the real backend token
+# rotation operation code. It must pass the real scan as a tuple value, without
+# ever being allowlisted or excluded from scanning.
+git ls-files --error-unmatch apps/customer-web/src/service-status.ts >/dev/null
+if grep -Fq 'service-status.ts' scripts/security-scan.sh; then
+  echo "Customer service status mapping must not be excluded from scanning." >&2
+  exit 1
+fi
+
 cat >"$typed_fixture" <<'PY'
 from sqlalchemy.orm import Mapped
 
