@@ -5,7 +5,7 @@ export function formatRial(value: number, locale = "fa-IR"): string { assertSafe
 export function formatTomanFromRial(value: number, locale = "fa-IR"): string { assertSafeRial(value); const toman = Math.trunc(value / 10); const rem = value % 10; return `${new Intl.NumberFormat(locale).format(toman)} تومان مشتق‌شده${rem ? ` (با ${new Intl.NumberFormat(locale).format(rem)} ریال باقی‌مانده)` : ""}`; }
 export function formatTechnicalId(value: string): string { return value.replace(/[^A-Za-z0-9:_-]/g, "").slice(0, 120) || "—"; }
 const bucketFa: Record<string, [string, string]> = { CASH: ["نقدی", "موجودی نقدی کیف پول"], REFUND: ["اعتبار بازگشت وجه", "اعتبار ناشی از بازگشت وجه"], PROMOTIONAL: ["اعتبار تبلیغاتی", "اعتبار غیرنقدی و غیرقابل برداشت"], REFERRAL: ["اعتبار معرفی", "اعتبار غیرنقدی معرفی"], GIFT: ["هدیه", "اعتبار هدیه غیرنقدی"], ADMIN_GRANT: ["اعتبار اداری", "اعتبار ثبت‌شده توسط عملیات مجاز"] };
-export function bucketLabel(code: WalletBucket): string { return bucketFa[code]?.[0] ?? "اعتبار ناشناخته"; }
+export function bucketLabel(code: WalletBucket): string { return bucketFa[code]?.[0] ?? "اعتبار دیگر"; }
 export function bucketHelp(code: WalletBucket): string { return bucketFa[code]?.[1] ?? "این دسته بدون نمایش جزئیات داخلی حسابداری نشان داده می‌شود."; }
 export function walletStatusLabel(status: WalletStatus): string { return status === "ACTIVE" ? "فعال" : status === "FROZEN" ? "یخ‌زده / محدود" : "بسته"; }
 export function transactionDirectionLabel(direction?: TransactionDirection): string { return direction === "INCOMING" ? "افزایش از دید مشتری" : direction === "OUTGOING" ? "کاهش از دید مشتری" : "بدون تغییر مستقیم"; }

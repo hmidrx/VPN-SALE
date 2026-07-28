@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
@@ -12,6 +13,7 @@ from vpnsale_domain.payments import PaymentAmount, PaymentDomainError
 
 from .database import get_db_session
 from .payment_models import PaymentMethodModel, PaymentMethodPolicyModel
+from .wallet import current_wallet_customer_id
 
 customer_router = APIRouter(prefix="/api/v1/customer/payments", tags=["customer-payments"])
 admin_router = APIRouter(prefix="/api/v1/admin/payments", tags=["admin-payments"])
@@ -22,19 +24,12 @@ MAX_WEBHOOK_BODY_BYTES = 64 * 1024
 
 class PublicPaymentMethod(BaseModel):
     code: str
-    provider_code: str
-    adapter_version: str
-    method_kind: str
-    currency: str
-    supported_purposes: list[str]
-    supported_channels: list[str]
-    priority: int
-    public_config: dict[str, object]
-    display_name: str | None = None
+    display_name: str
     description: str | None = None
-    min_amount_rial: int | None = None
-    max_amount_rial: int | None = None
-    maintenance_mode: bool = False
+    icon_kind: str
+    minimum_amount_rial: int
+    maximum_amount_rial: int
+    availability: str
 
 
 class CreateWalletTopupIntentRequest(BaseModel):
@@ -83,6 +78,7 @@ def _safe_error(exc: PaymentDomainError) -> HTTPException:
 @customer_router.get("/methods", response_model=list[PublicPaymentMethod])
 async def list_available_payment_methods(
     purpose: str | None = None,
+    _: str = Depends(current_wallet_customer_id),
     session: Session = DB_SESSION_DEPENDENCY,
 ) -> list[PublicPaymentMethod]:
     rows = session.execute(
@@ -92,7 +88,14 @@ async def list_available_payment_methods(
     ).scalars()
     out: list[PublicPaymentMethod] = []
     for row in rows:
-        if purpose and purpose not in row.supported_purposes:
+        if (
+            purpose not in {"WALLET_TOPUP", "ORDER_PAYMENT"}
+            or purpose not in row.supported_purposes
+            or "CUSTOMER_WEB" not in row.supported_channels
+            or row.currency != "IRR"
+            or row.maintenance_mode
+            or row.credential_state != "CONFIGURED"
+        ):
             continue
         policies = (
             session.execute(
@@ -103,28 +106,19 @@ async def list_available_payment_methods(
             .scalars()
             .all()
         )
-        policy = next(
-            (p for p in policies if p.purpose == purpose), policies[0] if policies else None
-        )
+        policy = next((p for p in policies if p.purpose == purpose), None)
+        if policy is None:
+            continue
         public = row.public_config or {}
         out.append(
             PublicPaymentMethod(
                 code=row.code,
-                provider_code=row.provider_code,
-                adapter_version=row.adapter_version,
-                method_kind=row.method_kind,
-                currency=row.currency,
-                supported_purposes=row.supported_purposes,
-                supported_channels=row.supported_channels,
-                priority=row.priority,
-                public_config=public,
-                display_name=str(public.get("display_name"))
-                if public.get("display_name")
-                else None,
+                display_name=str(public.get("display_name") or "روش پرداخت امن"),
                 description=str(public.get("description")) if public.get("description") else None,
-                min_amount_rial=policy.min_amount_rial if policy else None,
-                max_amount_rial=policy.max_amount_rial if policy else None,
-                maintenance_mode=row.maintenance_mode,
+                icon_kind=str(public.get("icon_kind") or "payment"),
+                minimum_amount_rial=policy.min_amount_rial,
+                maximum_amount_rial=policy.max_amount_rial,
+                availability="AVAILABLE",
             )
         )
     return out
@@ -133,18 +127,27 @@ async def list_available_payment_methods(
 @customer_router.post(
     "/wallet-topups", response_model=CustomerPaymentAction, status_code=status.HTTP_201_CREATED
 )
-async def create_wallet_topup_intent(body: CreateWalletTopupIntentRequest) -> CustomerPaymentAction:
+async def create_wallet_topup_intent(
+    body: CreateWalletTopupIntentRequest,
+    _: Annotated[str, Depends(current_wallet_customer_id)],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=16, max_length=240)],
+) -> CustomerPaymentAction:
+    # Authentication and idempotency are mandatory even while provider writes are disabled.
     try:
         PaymentAmount(body.amount_rial)
     except PaymentDomainError as exc:
         raise _safe_error(exc) from exc
-    ref = f"pi_{uuid4().hex[:24]}"
-    return CustomerPaymentAction(
-        intent_reference=ref,
-        status="REQUIRES_CUSTOMER_ACTION",
-        action_type="REDIRECT",
-        action_url=f"/api/customer/payments/return/{ref}",
-        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    if not idempotency_key.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "IDEMPOTENCY_KEY_REQUIRED"},
+        )
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "code": "PAYMENT_PROVIDER_NOT_CONFIGURED",
+            "message": "No configured provider is available for wallet top-up.",
+        },
     )
 
 
@@ -194,25 +197,25 @@ async def handle_payment_return(intent_reference: str) -> dict[str, str]:
     }
 
 
-@admin_router.get("/methods", response_model=list[PublicPaymentMethod])
+@admin_router.get("/methods")
 async def admin_list_payment_methods(
     session: Session = DB_SESSION_DEPENDENCY,
-) -> list[PublicPaymentMethod]:
+) -> list[dict[str, object]]:
     rows = session.execute(
         select(PaymentMethodModel).order_by(PaymentMethodModel.priority)
     ).scalars()
     return [
-        PublicPaymentMethod(
-            code=row.code,
-            provider_code=row.provider_code,
-            adapter_version=row.adapter_version,
-            method_kind=row.method_kind,
-            currency=row.currency,
-            supported_purposes=row.supported_purposes,
-            supported_channels=row.supported_channels,
-            priority=row.priority,
-            public_config=row.public_config,
-        )
+        {
+            "code": row.code,
+            "provider_code": row.provider_code,
+            "adapter_version": row.adapter_version,
+            "method_kind": row.method_kind,
+            "currency": row.currency,
+            "supported_purposes": row.supported_purposes,
+            "supported_channels": row.supported_channels,
+            "priority": row.priority,
+            "public_config": row.public_config,
+        }
         for row in rows
     ]
 
