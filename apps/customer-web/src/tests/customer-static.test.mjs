@@ -75,7 +75,19 @@ assert.match(source("components/Payments.tsx"), /پارامترهای مرورگ
 assert.match(source("components/Payments.tsx"), /مبلغ فاکتور غیرقابل ویرایش/);
 assert.match(source("components/Payments.tsx"), /هیچ سرویس، QR یا لینک پیکربندی/);
 assert.doesNotMatch(source("components/Payments.tsx"), /force.*success|fake.*success|card-number|CVV|crypto|subscription URL/i);
-assert.match(source("components/CustomerApp.tsx"), /href:"\/payments"/);
+assert.match(source("components/CustomerApp.tsx"), /page === "payments"/);
+
+const customerCss = source("../app/customer.css");
+const customerApp = source("components/CustomerApp.tsx");
+const navigation = source("components/customer-navigation.tsx");
+assert.equal((navigation.split("export const accountNavigation")[0].match(/{ label:/g) ?? []).length, 5);
+for (const route of ["/", "/catalog/products", "/services", "/wallet", "/profile", "/security", "/sessions", "/support"]) assert.match(navigation, new RegExp(`href: \\"${route.replaceAll("/", "\\/")}\\"`));
+assert.match(customerApp, /aria-current=\{primaryPage === item\.page \? "page"/);
+assert.equal((customerApp.match(/className="customer-bottom-nav"/g) ?? []).length, 1);
+assert.doesNotMatch(customerApp, /<Card>\{page ===/);
+assert.doesNotMatch(customerApp, /initData.*StateScreen|StateScreen.*initData/i);
+for (const legacy of [/\.customer\.dark/, /\.dark\s+\./, /font-family:system-ui/, /(^|})button\{/m, /input,select/, /background:#fff/]) assert.doesNotMatch(customerCss, legacy);
+for (const token of ["--color-canvas", "--color-surface", "--color-border", "--color-text", "--color-primary", "--safe-top", "--safe-bottom", "--app-height"]) assert.match(customerCss, new RegExp(token));
 
 assert.match(source("../app/services/[serviceReference]/migration/page.tsx"), /params: Promise<\{ serviceReference: string \}>/);
 assert.match(source("../app/services/[serviceReference]/migration/page.tsx"), /await params/);

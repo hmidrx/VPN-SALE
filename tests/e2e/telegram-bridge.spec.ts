@@ -27,12 +27,16 @@ test("ordinary browser reports Telegram unavailable", async ({ page }) => {
 
 test("simulated Telegram bridge logs in and calls ready and expand without rendering initData", async ({ page }) => {
   const loginBodies = await mockCustomerApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript((initData) => {
     (window as typeof window & { __bridgeCalls: string[]; Telegram: unknown }).__bridgeCalls = [];
     (window as typeof window & { Telegram: unknown }).Telegram = { WebApp: { initData, version: "8.0", ready: () => (window as typeof window & { __bridgeCalls: string[] }).__bridgeCalls.push("ready"), expand: () => (window as typeof window & { __bridgeCalls: string[] }).__bridgeCalls.push("expand") } };
   }, SYNTHETIC_INIT_DATA);
   await page.goto("/");
-  await expect(page.getByRole("navigation", { name: "ناوبری حساب مشتری" })).toBeVisible();
+  const navigation = page.getByRole("navigation", { name: "ناوبری اصلی مشتری" });
+  await expect(navigation).toBeVisible();
+  await expect(navigation.getByRole("link")).toHaveCount(5);
+  await expect(page.getByRole("heading", { name: "Test" })).toBeVisible();
   expect(loginBodies).toHaveLength(1);
   expect(JSON.parse(loginBodies[0]).init_data).toBe(SYNTHETIC_INIT_DATA);
   expect(await page.evaluate(() => (window as typeof window & { __bridgeCalls: string[] }).__bridgeCalls)).toEqual(["expand", "ready"]);

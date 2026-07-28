@@ -1,3 +1,5 @@
-export default function ServicesPage() {
-  return <main dir="rtl"><h1>سرویس‌های من</h1><p>وضعیت آماده‌سازی و تحویل کانفیگ فقط بعد از تایید backend نمایش داده می‌شود.</p></main>;
+import { CustomerApp } from "../../src/components/CustomerApp";
+
+export default function ServicesPage(): React.ReactElement {
+  return <CustomerApp page="services" />;
 }
