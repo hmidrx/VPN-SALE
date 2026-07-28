@@ -154,10 +154,28 @@ printf 'historical migration isolation confirmed\n'
 printf 'first migration complete\n'
 "${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini upgrade head
 printf 'second migration complete\n'
-"${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini current | grep -Eq '0030_telegram_link_challenges.*\(head\)'
+revision_tokens() {
+  awk '$1 ~ /^[0-9][0-9][0-9][0-9]_[a-z0-9_]+$/ { print $1 }'
+}
+repository_heads_output="$(docker run --rm "$project-api" alembic -c /app/apps/api/alembic.ini heads)"
+mapfile -t repository_heads < <(printf '%s\n' "$repository_heads_output" | revision_tokens)
+[[ "${#repository_heads[@]}" -eq 1 ]] || {
+  printf 'expected exactly one repository migration head\n' >&2
+  exit 1
+}
+current_revisions_output="$("${compose[@]}" run --rm api alembic -c /app/apps/api/alembic.ini current)"
+mapfile -t current_revisions < <(printf '%s\n' "$current_revisions_output" | revision_tokens)
+[[ "${#current_revisions[@]}" -eq 1 ]] || {
+  printf 'expected exactly one current database revision\n' >&2
+  exit 1
+}
+[[ "${current_revisions[0]}" == "${repository_heads[0]}" ]] || {
+  printf 'database revision does not match repository migration head\n' >&2
+  exit 1
+}
 [[ "$(postgres_scalar \
   "SELECT to_regclass('public.telegram_link_challenges') IS NOT NULL")" == "t" ]]
-printf 'migration head confirmed\n'
+printf 'migration head confirmed: %s\n' "${repository_heads[0]}"
 "${compose[@]}" up -d api customer admin reseller
 printf 'application containers started\n'
 sync_check="$("${compose[@]}" exec -T api python -m platform_api.sync_database_check)"

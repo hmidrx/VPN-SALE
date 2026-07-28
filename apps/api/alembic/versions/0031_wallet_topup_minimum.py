@@ -1,4 +1,6 @@
-"""Set the customer wallet top-up minimum to 100,000 toman.
+"""Set the minimum to 1,000,000 rial (100,000 toman).
+
+Downgrade restores the legacy 100,000 rial (10,000 toman) value.
 
 Revision ID: 0031_wallet_topup_minimum
 Revises: 0030_telegram_link_challenges
