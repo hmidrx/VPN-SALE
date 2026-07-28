@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
-const output = "test-results/screenshots/customer-ui1";
+const output = "test-results/screenshots/customer-ui2";
 const profile = { customer_id: "customer-preview", account_status: "ACTIVE", telegram_user_id: 100, username: "drping", account_username: null, first_name: "کاربر آزمایشی با نام بسیار طولانی برای بررسی چیدمان فارسی", last_name: null, language_code: "fa", created_at: "2026-01-01T00:00:00Z", last_seen_at: null, current_session_id: "session-preview" };
 const capabilities = { password_login: false, public_registration: false, telegram_login: true, telegram_linking: false, web_credential_enrollment: false, email_recovery: false, telegram_recovery: false, recovery_codes: false };
 const bridgeScript = "https://telegram.org/js/telegram-web-app.js?63";
@@ -18,8 +18,12 @@ test.beforeAll(async () => mkdir(output, { recursive: true }));
 for (const scenario of [
   { name: "home-360-dark", width: 360, height: 800, theme: "dark" },
   { name: "home-390-light", width: 390, height: 844, theme: "light" },
+  { name: "home-393-dark", width: 393, height: 852, theme: "dark" },
+  { name: "home-430-light", width: 430, height: 932, theme: "light" },
   { name: "home-430-dark", width: 430, height: 932, theme: "dark" },
   { name: "home-768-dark", width: 768, height: 1024, theme: "dark" },
+  { name: "telegram-desktop-1024", width: 1024, height: 768, theme: "dark" },
+  { name: "browser-1280", width: 1280, height: 800, theme: "light" },
   { name: "home-1440-dark", width: 1440, height: 900, theme: "dark" },
 ] as const) test(scenario.name, async ({ page }) => {
   await page.setViewportSize(scenario);
@@ -66,4 +70,16 @@ test("ordinary browser Telegram unavailable state", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "تلگرام در دسترس نیست" })).toBeVisible();
   await page.screenshot({ path: `${output}/telegram-unavailable.png`, animations: "disabled" });
+});
+
+
+test("unauthorized state", async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.route(bridgeScript, route => route.fulfill({ contentType: "application/javascript", body: "" }));
+  await page.addInitScript(() => { (window as typeof window & { Telegram: unknown }).Telegram = { WebApp: { colorScheme: "dark", version: "8.0", themeParams: {}, initData: "", ready() {}, expand() {}, onEvent() {}, offEvent() {} } }; });
+  await page.route("**/api/v1/customer/auth/capabilities", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(capabilities) }));
+  await page.route("**/api/v1/customer/auth/browser-bootstrap", route => route.fulfill({ status: 401, contentType: "application/json", body: "{}" }));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "وضعیت دسترسی" })).toBeVisible();
+  await page.screenshot({ path: `${output}/unauthorized.png`, animations: "disabled" });
 });
