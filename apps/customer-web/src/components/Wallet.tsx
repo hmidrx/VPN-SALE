@@ -1,23 +1,144 @@
 "use client";
+
 import React from "react";
-import { getTransaction, getWalletPolicy, getWalletSummary, listCredits, listReservations, listTransactions } from "../wallet/api";
-import { bucketHelp, bucketLabel, creditStatusLabel, displayDate, formatRial, formatTechnicalId, formatTomanFromRial, reservationStatusLabel, transactionDirectionLabel, transactionTypeLabel, walletStatusLabel } from "../wallet/format";
+import {
+  getTransaction,
+  getWalletPolicy,
+  getWalletSummary,
+  listCredits,
+  listReservations,
+  listTransactions,
+} from "../wallet/api";
+import {
+  bucketLabel,
+  creditStatusLabel,
+  displayDate,
+  formatTomanFromRial,
+  reservationStatusLabel,
+  transactionDirectionLabel,
+  transactionTypeLabel,
+  walletStatusLabel,
+} from "../wallet/format";
 import type { CreditLot, Reservation, Transaction, WalletPolicy, WalletSummary } from "../wallet/types";
+
 type WalletPage = "overview" | "transactions" | "transaction" | "credits" | "reservations" | "policy";
 type LoadState<T> = { loading: boolean; data?: T; error?: string; refreshedAt?: string };
-export function WalletShell({ page, transactionReference }: { page: WalletPage; transactionReference?: string }): React.ReactElement { return <div className="wallet-page" aria-live="polite"><nav className="wallet-tabs" aria-label="ناوبری کیف پول"><a href="/wallet">نمای کلی</a><a href="/wallet/transactions">تراکنش‌ها</a><a href="/wallet/credits">اعتبارها</a><a href="/wallet/reservations">رزروها</a><a href="/wallet/policy">سیاست‌ها</a></nav>{page === "transactions" ? <Transactions /> : page === "transaction" && transactionReference ? <TransactionDetail reference={transactionReference} /> : page === "credits" ? <Credits /> : page === "reservations" ? <Reservations /> : page === "policy" ? <Policy /> : <Overview />}</div>; }
-function useLoad<T>(loader: (signal: AbortSignal) => Promise<T>): [LoadState<T>, () => void] { const [tick, setTick] = React.useState(0); const [state, setState] = React.useState<LoadState<T>>({ loading: true }); React.useEffect(() => { const c = new AbortController(); setState((s) => ({ ...s, loading: true, error: undefined })); loader(c.signal).then((data) => setState({ loading: false, data, refreshedAt: new Date().toISOString() })).catch((e) => { if (!c.signal.aborted) setState((s) => ({ ...s, loading: false, error: typeof e?.code === "string" ? e.code : e instanceof Error ? e.message : "WALLET_ERROR" })); }); return () => c.abort(); }, [tick]); return [state, () => setTick((v) => v + 1)]; }
-function Money({ value }: { value: number }): React.ReactElement { return <span className="money"><b>{formatRial(value)}</b><small>{formatTomanFromRial(value)}</small></span>; }
-function ErrorState({ code, onRetry }: { code?: string; onRetry: () => void }): React.ReactElement { const text = code === "projection_mismatch" || code === "PROJECTION_MISMATCH" ? "اطلاعات مالی موقتاً برای نگهداری در دسترس نیست." : code === "SERVICE_UNAVAILABLE" ? "سرویس کیف پول موقتاً در دسترس نیست." : code === "AUTHENTICATION_REQUIRED" ? "برای مشاهده کیف پول ورود لازم است." : code === "CUSTOMER_BLOCKED" || code === "PERMISSION_DENIED" ? "دسترسی به این بخش طبق سیاست حساب محدود شده است." : "نمایش امن اطلاعات کیف پول ممکن نیست."; return <section className="wallet-state error"><h1>وضعیت امن کیف پول</h1><p>{text}</p><small dir="ltr">{code ?? "UNKNOWN"}</small><button onClick={onRetry}>تلاش دوباره</button></section>; }
-function StatusBanner({ summary }: { summary: WalletSummary }): React.ReactElement | null { if (summary.status === "ACTIVE") return null; return <section className="wallet-state warn"><h2>{summary.status === "FROZEN" ? "کیف پول یخ‌زده است" : "کیف پول بسته است"}</h2><p>{summary.status === "FROZEN" ? "مشاهده تاریخچه مجاز است، اما خرج‌کردن و رزروهای آینده محدود خواهد بود." : "عملیات عادی کیف پول ارائه نمی‌شود و تاریخچه مجاز همچنان خواندنی است."}</p></section>; }
-function Overview(): React.ReactElement { const [summary, refresh] = useLoad(getWalletSummary); const [policy] = useLoad(getWalletPolicy); const [tx] = useLoad((s) => listTransactions(undefined, s)); const [credits] = useLoad(listCredits); const [reservations] = useLoad(listReservations); if (summary.error) return <ErrorState code={summary.error} onRetry={refresh} />; if (summary.loading || !summary.data) return <Skeleton title="کیف پول" />; const expiring = credits.data?.items.find((c) => c.status === "ACTIVE" && c.expires_at); const activeReservations = reservations.data?.items.filter((r) => r.status === "ACTIVE") ?? []; return <div><header className="wallet-hero"><div><p>کیف پول</p><h1>موجودی در دسترس</h1><Money value={summary.data.available_balance_rial} /><p>این مبلغ پس از کسر رزروهای فعال، اکنون برای خرید قابل استفاده است.</p></div><span className="status-pill">● {walletStatusLabel(summary.data.status)}</span></header><div className="wallet-actions"><a className="button" href="/wallet/top-up">افزایش موجودی</a><a href="/wallet/transactions">مشاهده تراکنش‌ها</a></div><StatusBanner summary={summary.data} /><section className="wallet-grid"><article><h2>رزرو شده</h2><Money value={summary.data.reserved_balance_rial} /><p>رزرو شده برای عملیات آینده نگه داشته شده و خرید تکمیل‌شده نیست.</p></article><article><h2>موجودی ثبت‌شده</h2><Money value={summary.data.posted_balance_rial} /><p>مجموع موجودی ثبت‌شده قبل از کسر رزروهای فعال.</p></article><article><h2>سیاست شارژ آینده</h2>{policy.data ? <p>از <Money value={policy.data.minimum_topup_amount_rial} /> تا <Money value={policy.data.maximum_topup_amount_rial} /></p> : <p>در حال دریافت…</p>}<p>امکان شارژ آنلاین کیف پول در مرحله پرداخت فعال خواهد شد.</p></article></section><section><h2>تفکیک سبدهای موجودی</h2><div className="wallet-grid">{summary.data.buckets.length ? summary.data.buckets.map((b) => <article key={b.bucket_type}><h3>{bucketLabel(b.bucket_type)}</h3><Money value={b.balance_rial} /><p>{bucketHelp(b.bucket_type)}</p></article>) : <p>موجودی ثبت نشده است.</p>}</div></section>{expiring ? <section className="wallet-state warn"><h2>اعتبارهای در حال انقضا</h2><p>{bucketLabel(expiring.bucket_type)} باقیمانده <Money value={expiring.remaining_amount_rial} /> تا <b>{displayDate(expiring.expires_at)}</b></p></section> : null}<section className="wallet-grid"><article><h2>تراکنش‌های اخیر</h2>{tx.data?.items.slice(0,3).map((t) => <TxCard key={t.transaction_reference} tx={t} />) ?? <p>تراکنشی برای نمایش نیست.</p>}<a href="/wallet/transactions">مشاهده همه</a></article><article><h2>رزروهای فعال</h2>{activeReservations.length ? activeReservations.map((r) => <ReservationCard key={r.reservation_reference} reservation={r} />) : <p>رزروی وجود ندارد؛ رزروها در تسویه آینده برای نگهداری موجودی استفاده می‌شوند.</p>}</article></section><button onClick={refresh}>به‌روزرسانی دستی</button>{summary.refreshedAt ? <small>آخرین دریافت: {displayDate(summary.refreshedAt)}</small> : null}</div>; }
-function Transactions(): React.ReactElement { const [items,setItems]=React.useState<Transaction[]>([]); const [cursor,setCursor]=React.useState<string|null|undefined>(undefined); const [loading,setLoading]=React.useState(true); const [error,setError]=React.useState<string>(); const pending=React.useRef(false); const load=React.useCallback(async(reset=false)=>{if(pending.current)return;pending.current=true;setLoading(true);setError(undefined);try{const page=await listTransactions(reset?undefined:cursor??undefined);setItems(old=>reset?page.items:[...old,...page.items.filter(next=>!old.some(current=>current.transaction_reference===next.transaction_reference))]);setCursor(page.next_cursor);}catch(e){setError(typeof (e as {code?:unknown}).code==="string"?(e as {code:string}).code:"WALLET_ERROR");}finally{pending.current=false;setLoading(false);}},[cursor]);React.useEffect(()=>{void load(true);},[]);if(error&&!items.length)return <ErrorState code={error} onRetry={()=>void load(true)} />;return <section><header className="wallet-section-head"><div><p>کیف پول</p><h1>تاریخچه تراکنش‌ها</h1></div><button onClick={()=>void load(true)} disabled={loading}>به‌روزرسانی</button></header><div className="wallet-filter-tabs" role="tablist" aria-label="فیلتر تراکنش‌ها">{["همه","واریز","برداشت","رزرو","آزادسازی","بازگشت"].map((label,index)=><button key={label} role="tab" aria-selected={index===0}>{label}</button>)}</div>{items.length?items.map(tx=><TxCard key={tx.transaction_reference} tx={tx}/>):loading?<Skeleton title="تراکنش‌ها"/>:<section className="wallet-empty"><h2>هنوز تراکنشی ثبت نشده است</h2><p>پس از ثبت یک عملیات مالی، تاریخچه امن آن در این بخش نمایش داده می‌شود.</p></section>}{error?<p className="danger-text">دریافت صفحه بعد ممکن نشد؛ موارد قبلی حفظ شدند.</p>:null}{cursor?<button className="wallet-load-more" disabled={loading} onClick={()=>void load(false)}>{loading?"در حال دریافت…":"نمایش تراکنش‌های بیشتر"}</button>:null}</section>; }
-function TxCard({ tx }: { tx: Transaction }): React.ReactElement { return <a className="wallet-row" href={`/wallet/transactions/${encodeURIComponent(tx.transaction_reference)}`}><b>{transactionTypeLabel(tx.type)}</b><span>{transactionDirectionLabel(tx.direction)}</span>{tx.amount_rial == null ? null : <Money value={tx.amount_rial} />}<time>{displayDate(tx.occurred_at)}</time><code dir="ltr">{formatTechnicalId(tx.transaction_reference)}</code></a>; }
-function TransactionDetail({ reference }: { reference: string }): React.ReactElement { const [state, refresh] = useLoad((s) => getTransaction(reference, s)); if (state.error) return <ErrorState code={state.error} onRetry={refresh} />; if (state.loading || !state.data) return <Skeleton title="جزئیات تراکنش" />; const tx = state.data; return <section><h1>جزئیات تراکنش</h1><Field label="شناسه امن" value={<code dir="ltr">{formatTechnicalId(tx.transaction_reference)}</code>} /><Field label="نوع" value={transactionTypeLabel(tx.type)} /><Field label="جهت" value={transactionDirectionLabel(tx.direction)} />{tx.amount_rial != null ? <Field label="مبلغ" value={<Money value={tx.amount_rial} />} /> : null}<Field label="زمان رخداد" value={displayDate(tx.occurred_at)} /><Field label="وضعیت" value={tx.status} />{tx.reversal_of_reference ? <Field label="برگشت مرتبط" value={<code dir="ltr">{formatTechnicalId(tx.reversal_of_reference)}</code>} /> : null}<button onClick={() => void navigator.clipboard?.writeText(tx.transaction_reference)}>کپی شناسه امن</button></section>; }
-function Credits(): React.ReactElement { const [state, refresh] = useLoad(listCredits); if (state.error) return <ErrorState code={state.error} onRetry={refresh} />; return <section><h1>اعتبارها و انقضا</h1>{state.loading ? <Skeleton title="اعتبارها" /> : state.data?.items.length ? state.data.items.map((c) => <CreditCard key={c.credit_reference} credit={c} />) : <p>اعتبار تاریخ‌دار وجود ندارد.</p>}</section>; }
-function CreditCard({ credit }: { credit: CreditLot }): React.ReactElement { return <article className="wallet-row"><b>{bucketLabel(credit.bucket_type)}</b><Money value={credit.remaining_amount_rial} /><span>{creditStatusLabel(credit.status)}</span><span>صدور: {displayDate(credit.issued_at ?? null)}</span><span>انقضا: {displayDate(credit.expires_at)}</span><code dir="ltr">{formatTechnicalId(credit.credit_reference)}</code></article>; }
-function Reservations(): React.ReactElement { const [state, refresh] = useLoad(listReservations); if (state.error) return <ErrorState code={state.error} onRetry={refresh} />; return <section><h1>رزروهای کیف پول</h1><p>رزروها خرید تکمیل‌شده یا سفارش نیستند و این رابط امکان ایجاد، برداشت یا آزادسازی رزرو ندارد.</p>{state.loading ? <Skeleton title="رزروها" /> : state.data?.items.length ? state.data.items.map((r) => <ReservationCard key={r.reservation_reference} reservation={r} />) : <p>رزروی وجود ندارد؛ در تسویه آینده برای نگهداری موقت موجودی استفاده خواهد شد.</p>}</section>; }
-function ReservationCard({ reservation }: { reservation: Reservation }): React.ReactElement { return <article className="wallet-row"><b>{reservationStatusLabel(reservation.status)}</b><Money value={reservation.amount_rial} /><span>{reservation.purpose_code ?? "هدف عمومی آینده"}</span><span>انقضا: {displayDate(reservation.expires_at)}</span><code dir="ltr">{formatTechnicalId(reservation.reservation_reference)}</code></article>; }
-function Policy(): React.ReactElement { const [state, refresh] = useLoad(getWalletPolicy); if (state.error) return <ErrorState code={state.error} onRetry={refresh} />; if (state.loading || !state.data) return <Skeleton title="سیاست کیف پول" />; const p: WalletPolicy = state.data; return <section><h1>سیاست‌ها و محدودیت‌های کیف پول</h1><Field label="واحد پول" value="IRR / ریال" /><Field label="حداقل شارژ آینده" value={<Money value={p.minimum_topup_amount_rial} />} /><Field label="حداکثر شارژ آینده" value={<Money value={p.maximum_topup_amount_rial} />} />{p.maximum_wallet_balance_rial ? <Field label="حداکثر موجودی" value={<Money value={p.maximum_wallet_balance_rial} />} /> : null}<Field label="عملیات مشتری" value={p.customer_wallet_operations_enabled ? "فعال طبق backend" : "غیرفعال طبق backend"} /><p className="wallet-state warn">امکان شارژ آنلاین کیف پول در مرحله پرداخت فعال خواهد شد. هیچ دکمه پرداخت، فرم مبلغ یا مسیر تسویه فعال در این milestone وجود ندارد.</p></section>; }
-function Field({ label, value }: { label: string; value: React.ReactNode }): React.ReactElement { return <div className="field"><span>{label}</span><b>{value}</b></div>; }
-function Skeleton({ title }: { title: string }): React.ReactElement { return <section className="wallet-state"><h1>{title}</h1><p>در حال دریافت امن اطلاعات از backend…</p></section>; }
+
+export function WalletNavigation({ current }: { current: "overview" | "transactions" | "top-up" }): React.ReactElement {
+  const items = [
+    ["overview", "/wallet", "نمای کلی"],
+    ["transactions", "/wallet/transactions", "تراکنش‌ها"],
+    ["top-up", "/wallet/top-up", "افزایش موجودی"],
+  ] as const;
+  return <nav className="wallet-tabs" aria-label="بخش‌های اصلی کیف پول">{items.map(([id, href, label]) => <a key={id} href={href} aria-current={current === id ? "page" : undefined}>{label}</a>)}</nav>;
+}
+
+export function WalletShell({ page, transactionReference }: { page: WalletPage; transactionReference?: string }): React.ReactElement {
+  return <div className="wallet-page"><WalletNavigation current={page === "transactions" || page === "transaction" ? "transactions" : "overview"} />{page === "transactions" ? <Transactions /> : page === "transaction" && transactionReference ? <TransactionDetail reference={transactionReference} /> : page === "credits" ? <Credits /> : page === "reservations" ? <Reservations /> : page === "policy" ? <Policy /> : <Overview />}</div>;
+}
+
+function useLoad<T>(loader: (signal: AbortSignal) => Promise<T>): [LoadState<T>, () => void] {
+  const [tick, setTick] = React.useState(0);
+  const [state, setState] = React.useState<LoadState<T>>({ loading: true });
+  React.useEffect(() => {
+    const controller = new AbortController();
+    setState((old) => ({ ...old, loading: true, error: undefined }));
+    loader(controller.signal).then((data) => {
+      if (!controller.signal.aborted) setState({ loading: false, data, refreshedAt: new Date().toISOString() });
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) setState((old) => ({ ...old, loading: false, error: errorCode(error) }));
+    });
+    return () => controller.abort();
+  }, [tick]);
+  return [state, () => setTick((value) => value + 1)];
+}
+
+function errorCode(error: unknown): string {
+  return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : "WALLET_ERROR";
+}
+
+export function TomanAmount({ value, className }: { value: number; className?: string }): React.ReactElement {
+  return <span className={className ?? "toman-amount"}>{formatTomanFromRial(value)}</span>;
+}
+
+function ErrorState({ code, onRetry }: { code?: string; onRetry: () => void }): React.ReactElement {
+  const mismatch = code === "projection_mismatch" || code === "PROJECTION_MISMATCH" || code === "NON_EXACT_TOMAN_AMOUNT";
+  const title = mismatch ? "نمایش موجودی موقتاً ممکن نیست" : code === "AUTHENTICATION_REQUIRED" ? "برای مشاهده کیف پول وارد حساب شوید." : "دریافت اطلاعات کیف پول ممکن نشد.";
+  return <section className="wallet-state error" role="alert"><h1>{title}</h1>{mismatch ? <p>برای محافظت از اطلاعات مالی، موجودی تا پایان بررسی نمایش داده نمی‌شود.</p> : null}<button onClick={onRetry}>تلاش دوباره</button></section>;
+}
+
+function WalletHeader({ summary, refreshedAt, refresh, loading }: { summary: WalletSummary; refreshedAt?: string; refresh: () => void; loading: boolean }): React.ReactElement {
+  return <header className="wallet-section-head"><div><p className="eyebrow">کیف پول</p><h1>موجودی حساب</h1><small>{walletStatusLabel(summary.status)} · {refreshedAt ? displayDate(refreshedAt) : displayDate(summary.updated_at)}</small></div><button className="wallet-refresh" onClick={refresh} disabled={loading} aria-label="به‌روزرسانی کیف پول"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5M6.1 9a7 7 0 0 1 11.5-2.4L20 9M4 15l2.4 2.4A7 7 0 0 0 18 15" /></svg></button></header>;
+}
+
+function WalletBalanceHero({ summary }: { summary: WalletSummary }): React.ReactElement {
+  return <section className={`wallet-balance-hero status-${summary.status.toLowerCase()}`}><div className="wallet-hero-meta"><span>موجودی قابل استفاده</span><span className="status-pill">{walletStatusLabel(summary.status)}</span></div><TomanAmount className="wallet-balance" value={summary.available_balance_rial} /><p>قابل استفاده برای خرید و تمدید سرویس</p>{summary.reserved_balance_rial > 0 ? <a className="reserved-summary" href="/wallet/reservations">رزروشده: <TomanAmount value={summary.reserved_balance_rial} /></a> : null}<div className="wallet-actions"><a className="button" href="/wallet/top-up">افزایش موجودی</a><a href="/wallet/transactions">تراکنش‌ها</a></div></section>;
+}
+
+function Overview(): React.ReactElement {
+  const [summary, refresh] = useLoad(getWalletSummary);
+  const [transactions] = useLoad((signal) => listTransactions(undefined, signal));
+  if (summary.error) return <ErrorState code={summary.error} onRetry={refresh} />;
+  if (!summary.data) return <WalletSkeleton />;
+  return <main className="wallet-overview"><WalletHeader summary={summary.data} refreshedAt={summary.refreshedAt} refresh={refresh} loading={summary.loading} /><div className="wallet-overview-grid"><WalletBalanceHero summary={summary.data} /><RecentTransactions transactions={transactions.data?.items.slice(0, 3) ?? []} loading={transactions.loading} /></div><WalletBalanceDetails summary={summary.data} /></main>;
+}
+
+function RecentTransactions({ transactions, loading }: { transactions: Transaction[]; loading: boolean }): React.ReactElement {
+  return <section className="wallet-recent"><header><h2>تراکنش‌های اخیر</h2>{transactions.length ? <a href="/wallet/transactions">مشاهده همه</a> : null}</header>{loading && !transactions.length ? <TransactionSkeleton /> : transactions.length ? transactions.map((tx) => <WalletTransactionRow key={tx.transaction_reference} tx={tx} />) : <WalletEmptyState title="هنوز تراکنشی ندارید" description="پس از شارژ یا خرید، تراکنش‌ها اینجا نمایش داده می‌شوند." />}</section>;
+}
+
+function WalletBalanceDetails({ summary }: { summary: WalletSummary }): React.ReactElement {
+  const buckets = summary.buckets.filter((bucket) => bucket.balance_rial > 0);
+  return <details className="wallet-details"><summary>جزئیات کیف پول</summary><div className="detail-links"><a href="/wallet/credits">اعتبارها</a><a href="/wallet/reservations">رزروها</a><a href="/wallet/policy">قوانین و محدودیت‌ها</a></div>{summary.posted_balance_rial !== summary.available_balance_rial ? <div className="detail-row"><span>موجودی کل</span><TomanAmount value={summary.posted_balance_rial} /></div> : null}{buckets.map((bucket) => <div className="detail-row" key={bucket.bucket_type}><span>{bucketLabel(bucket.bucket_type)}</span><TomanAmount value={bucket.balance_rial} /></div>)}</details>;
+}
+
+function WalletTransactionRow({ tx }: { tx: Transaction }): React.ReactElement {
+  const incoming = tx.direction === "INCOMING";
+  return <a className="wallet-row transaction-row" href={`/wallet/transactions/${encodeURIComponent(tx.transaction_reference)}`}><span className={`transaction-icon ${incoming ? "incoming" : "outgoing"}`} aria-hidden="true">{incoming ? "+" : "−"}</span><span><b>{transactionTypeLabel(tx.type)}</b><time>{displayDate(tx.occurred_at)}</time></span>{tx.amount_rial == null ? null : <span className={incoming ? "amount-incoming" : "amount-outgoing"} aria-label={`${transactionDirectionLabel(tx.direction)}، ${formatTomanFromRial(tx.amount_rial)}`}><TomanAmount value={tx.amount_rial} /></span>}</a>;
+}
+
+function Transactions(): React.ReactElement {
+  const [items, setItems] = React.useState<Transaction[]>([]);
+  const [cursor, setCursor] = React.useState<string | null>();
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState(false);
+  const pending = React.useRef(false);
+  const load = React.useCallback(async (reset: boolean) => {
+    if (pending.current) return;
+    pending.current = true; setLoading(true); setError(false);
+    try {
+      const page = await listTransactions(reset ? undefined : cursor ?? undefined);
+      setItems((old) => reset ? page.items : [...old, ...page.items.filter((next) => !old.some((current) => current.transaction_reference === next.transaction_reference))]);
+      setCursor(page.next_cursor);
+    } catch { setError(true); } finally { pending.current = false; setLoading(false); }
+  }, [cursor]);
+  React.useEffect(() => { void load(true); }, []);
+  return <main><header className="wallet-section-head"><div><p className="eyebrow">کیف پول</p><h1>تراکنش‌ها</h1></div><button className="wallet-refresh" onClick={() => void load(true)} disabled={loading}>به‌روزرسانی</button></header>{items.length ? <><div className="wallet-filter-tabs" aria-label="فیلتر تراکنش‌ها">{["همه", "واریز", "برداشت", "رزرو", "آزادسازی", "بازگشت"].map((label) => <button key={label}>{label}</button>)}</div>{items.map((tx) => <WalletTransactionRow key={tx.transaction_reference} tx={tx} />)}</> : loading ? <TransactionSkeleton /> : <WalletEmptyState title="هنوز تراکنشی ندارید" description="پس از شارژ یا خرید، تراکنش‌ها اینجا نمایش داده می‌شوند." />}{error ? <p className="danger-text">دریافت موارد بیشتر ممکن نشد؛ تراکنش‌های قبلی حفظ شدند.</p> : null}{cursor ? <button className="wallet-load-more" onClick={() => void load(false)} disabled={loading}>نمایش موارد بیشتر</button> : null}</main>;
+}
+
+function TransactionDetail({ reference }: { reference: string }): React.ReactElement {
+  const [state, refresh] = useLoad((signal) => getTransaction(reference, signal));
+  const [copied, setCopied] = React.useState(false);
+  if (state.error) return <ErrorState code={state.error} onRetry={refresh} />;
+  if (!state.data) return <TransactionSkeleton />;
+  const tx = state.data;
+  const shortReference = `${tx.transaction_reference.slice(0, 6)}…${tx.transaction_reference.slice(-4)}`;
+  const copy = async () => { await navigator.clipboard?.writeText(tx.transaction_reference); setCopied(true); globalThis.setTimeout(() => setCopied(false), 1800); };
+  return <main><header className="wallet-section-head"><div><p className="eyebrow">تراکنش</p><h1>{transactionTypeLabel(tx.type)}</h1></div></header><section className="wallet-detail-card">{tx.amount_rial != null ? <TomanAmount className="wallet-balance" value={tx.amount_rial} /> : null}<Field label="نوع تغییر" value={transactionDirectionLabel(tx.direction)} /><Field label="وضعیت" value="ثبت‌شده" /><Field label="زمان" value={displayDate(tx.occurred_at)} /><div className="field"><span>شماره پیگیری</span><button onClick={() => void copy()}><bdi>{shortReference}</bdi> · کپی</button></div><span className="sr-only" aria-live="polite">{copied ? "کپی شد" : ""}</span></section></main>;
+}
+
+function Credits(): React.ReactElement {
+  const [state, refresh] = useLoad(listCredits);
+  if (state.error) return <ErrorState code={state.error} onRetry={refresh} />;
+  return <SecondaryPage title="اعتبارها">{state.loading ? <TransactionSkeleton /> : state.data?.items.length ? state.data.items.map((credit) => <CreditRow key={credit.credit_reference} credit={credit} />) : <WalletEmptyState title="اعتبار تاریخ‌دار ندارید" />}</SecondaryPage>;
+}
+function CreditRow({ credit }: { credit: CreditLot }): React.ReactElement { return <article className="wallet-row"><b>{bucketLabel(credit.bucket_type)}</b><TomanAmount value={credit.remaining_amount_rial} /><span>{creditStatusLabel(credit.status)}</span><small>صدور: {displayDate(credit.issued_at ?? null)} · انقضا: {displayDate(credit.expires_at)}</small></article>; }
+function Reservations(): React.ReactElement { const [state, refresh] = useLoad(listReservations); if (state.error) return <ErrorState code={state.error} onRetry={refresh} />; return <SecondaryPage title="رزروها"><p>مبالغ رزروشده تا پایان عملیات قابل استفاده نیستند.</p>{state.loading ? <TransactionSkeleton /> : state.data?.items.length ? state.data.items.map((reservation) => <ReservationRow key={reservation.reservation_reference} reservation={reservation} />) : <WalletEmptyState title="رزرو فعالی ندارید" />}</SecondaryPage>; }
+function ReservationRow({ reservation }: { reservation: Reservation }): React.ReactElement { return <article className="wallet-row"><b>{reservationStatusLabel(reservation.status)}</b><TomanAmount value={reservation.amount_rial} /><small>انقضا: {displayDate(reservation.expires_at)}</small></article>; }
+function Policy(): React.ReactElement { const [state, refresh] = useLoad(getWalletPolicy); if (state.error) return <ErrorState code={state.error} onRetry={refresh} />; return <SecondaryPage title="قوانین و محدودیت‌ها">{state.data ? <PolicyRows policy={state.data} /> : <TransactionSkeleton />}</SecondaryPage>; }
+function PolicyRows({ policy }: { policy: WalletPolicy }): React.ReactElement { return <section className="wallet-detail-card"><Field label="حداقل شارژ" value={<TomanAmount value={policy.minimum_topup_amount_rial} />} /><Field label="حداکثر شارژ" value={<TomanAmount value={policy.maximum_topup_amount_rial} />} />{policy.maximum_wallet_balance_rial ? <Field label="سقف موجودی" value={<TomanAmount value={policy.maximum_wallet_balance_rial} />} /> : null}<Field label="وضعیت شارژ آنلاین" value="فعلاً غیرفعال" /><a href="/support">ارتباط با پشتیبانی</a></section>; }
+function SecondaryPage({ title, children }: { title: string; children: React.ReactNode }): React.ReactElement { return <main><header className="wallet-section-head"><div><p className="eyebrow">جزئیات کیف پول</p><h1>{title}</h1></div></header>{children}</main>; }
+function Field({ label, value }: { label: string; value: React.ReactNode }): React.ReactElement { return <div className="field"><span>{label}</span><strong>{value}</strong></div>; }
+function WalletEmptyState({ title, description }: { title: string; description?: string }): React.ReactElement { return <section className="wallet-empty"><h2>{title}</h2>{description ? <p>{description}</p> : null}</section>; }
+function WalletSkeleton(): React.ReactElement { return <div aria-label="در حال دریافت اطلاعات" className="wallet-skeleton"><span /><span /><span /></div>; }
+function TransactionSkeleton(): React.ReactElement { return <div aria-label="در حال دریافت تراکنش‌ها" className="transaction-skeleton"><span /><span /><span /></div>; }

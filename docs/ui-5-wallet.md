@@ -1,21 +1,21 @@
-# UI-5 — Customer wallet and safe top-up
+# UI-5.1 — premium Toman-first customer wallet
 
-## Financial authority and customer DTOs
+## Diagnosis and scope
 
-Wallet projections remain authoritative. The API validates `available + reserved = posted` and returns a maintenance error on disagreement; the browser repeats the validation and never repairs values. Customer responses intentionally omit wallet, customer, journal, posting, correlation, and provider identifiers. Bucket codes are translated through an allowlist with a safe fallback.
+The previous mobile wallet treated every balance projection, bucket, reservation, and policy value as an equal card. Five primary links wrapped on narrow screens, technical identifiers reached customers, and amounts repeated both Rial and derived Toman. The redesigned customer wallet uses one available-balance hero, three primary destinations, three recent transactions, and a collapsed details area. Credits, reservations, and policy remain reachable as secondary pages.
 
-Transaction history uses a signed opaque cursor bound to the authenticated wallet. Ordering is descending by posting time and journal reference, so equal timestamps remain stable. Page size is bounded by wallet policy.
+This is a presentation-only rollout. Database and API amounts remain authoritative integer Rial fields. No provider, payment success path, wallet credit, redirect construction, or browser balance authority is enabled.
 
-## Currency and payment restrictions
+## Exact conversion boundary
 
-All API values and submissions are integer rial. Toman is a derived, explicitly labelled display only. TEST and default deployments expose no payment method unless it is active, configured, IRR-compatible, customer-channel compatible, and purpose compatible. Top-up creation remains unavailable with `PAYMENT_PROVIDER_NOT_CONFIGURED`; there is no placeholder redirect, synthetic success, provider write, or automatic wallet credit.
+`wallet/format.ts` validates every received Rial amount as a nonnegative safe integer and requires exact divisibility by ten. A remainder raises `NON_EXACT_TOMAN_AMOUNT`; the UI fails closed rather than rounding. Toman input accepts Persian, Arabic, and Latin digits plus ordinary grouping separators, while rejecting signs, decimals, scientific notation, empty/zero input, text, and unsafe integers. The safe integer Toman value is multiplied by exactly ten before `amount_rial` is serialized.
 
-## Accessibility and responsive QA
+## Customer experience and accessibility
 
-The wallet uses semantic headings, RTL layout, isolated references, 44px controls, visible focus, textual status labels, reduced-motion handling, and horizontally scrollable tabs at 320px. Validate Android/iPhone mobile widths, Telegram Desktop, and wide desktop with both themes. Screenshot baselines should be captured once authenticated deterministic wallet fixtures are available.
+All customer wallet and payment amounts render exactly one Persian-localized `تومان` label. Zero buckets and zero reservation summaries are suppressed. The 3-column primary navigation remains a single row at 320 px. Controls have 44 px targets, focus rings, semantic labels, RTL layout, bounded live copy feedback, reduced-motion behavior, and mobile bottom-navigation clearance.
 
-## Rollout and rollback
+Without an available method, amount entry, policy validation, quick amounts, and support remain useful, but no create button is rendered and no POST can occur. A configured deterministic method exposes review only after valid input; changing the amount invalidates review and rotates the idempotency operation.
 
-Deploy the API before the customer application. Monitor projection mismatch and invalid cursor errors; never log cursors or credentials. Roll back the web bundle and API together if DTO validation errors rise. No migration or external provider configuration is introduced, so rollback does not require data changes.
+## Operations
 
-Local startup remains `docker compose up --build`. Provider writes must remain disabled until a separately reviewed adapter rollout supplies credentials, host allowlists, webhook verification, and trusted settlement.
+Local startup remains `npm run build --workspace=@vpnsale/customer-web` followed by the existing customer-web start command. Roll out as the customer frontend artifact only. Roll back by deploying the preceding frontend artifact; there is no migration or server rollback. Real payment-provider integration remains deferred until documented contracts and credentials are supplied.
