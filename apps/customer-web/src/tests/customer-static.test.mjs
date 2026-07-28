@@ -33,6 +33,15 @@ assert.match(source("catalog/comparison.ts"), /COMPARISON_LIMIT = 3/);
 assert.match(source("components/Catalog.tsx"), /fa\.catalog\.nonBinding/);
 assert.match(source("components/Catalog.tsx"), /validateComponentSum/);
 assert.doesNotMatch(source("components/Catalog.tsx"), /server ip|inbound|provider|panel/i);
+const catalogSource = source("components/Catalog.tsx");
+assert.match(catalogSource, /className="catalog-toolbar"/);
+assert.match(catalogSource, /className="catalog-inline-state"/);
+assert.doesNotMatch(catalogSource, /className="state"|location\.reload/);
+assert.match(catalogSource, /code="no-results"/);
+assert.match(catalogSource, /product\.name\?\.trim\(\) \|\| "پلن خدمات شبکه"/);
+assert.match(catalogSource, /validateComponentSum\(preview\.subtotal_minor, preview\.components\)/);
+assert.doesNotMatch(catalogSource, /subtotal_minor\s*=|final_amount_minor\s*=/);
+
 assert.doesNotMatch(source("catalog/api.ts"), /localStorage|sessionStorage|indexedDB|initDataUnsafe/i);
 
 assert.match(source("wallet/api.ts"), /\/api\/v1\/customer\/wallet/);
@@ -88,6 +97,10 @@ assert.doesNotMatch(customerApp, /<Card>\{page ===/);
 assert.doesNotMatch(customerApp, /initData.*StateScreen|StateScreen.*initData/i);
 for (const legacy of [/\.customer\.dark/, /\.dark\s+\./, /font-family:system-ui/, /(^|})button\{/m, /input,select/, /background:#fff/]) assert.doesNotMatch(customerCss, legacy);
 for (const token of ["--color-canvas", "--color-surface", "--color-border", "--color-text", "--color-primary", "--safe-top", "--safe-bottom", "--app-height"]) assert.match(customerCss, new RegExp(token));
+for (const catalogClass of ["catalog-page", "catalog-toolbar", "catalog-search", "catalog-grid", "catalog-card", "catalog-inline-state"]) assert.match(customerCss, new RegExp(`\\.${catalogClass}`));
+assert.match(customerCss, /scroll-padding-block-end/);
+assert.match(customerCss, /calc\(110px \+ var\(--safe-bottom\)\)/);
+
 
 assert.match(source("../app/services/[serviceReference]/migration/page.tsx"), /params: Promise<\{ serviceReference: string \}>/);
 assert.match(source("../app/services/[serviceReference]/migration/page.tsx"), /await params/);
