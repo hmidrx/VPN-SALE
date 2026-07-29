@@ -1,0 +1,1 @@
+import{ManagementShell}from'../../../src/components/ManagementShell';import{ManualTopupQueue}from'../../../src/manual-topups/ManualTopups';export default function Page():React.ReactElement{return <ManagementShell title="واریزهای کارت‌به‌کارت" required="manual_topups.read"><ManualTopupQueue/></ManagementShell>}

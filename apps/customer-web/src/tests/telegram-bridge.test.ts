@@ -3,7 +3,7 @@ import { bootstrapCustomer, resetBootstrapForTests } from "../auth/bootstrap";
 import { createTelegramAdapter } from "../telegram/adapter";
 
 const SYNTHETIC_INIT_DATA = "query_id=synthetic-test-only&user=%7B%22id%22%3A42%7D&auth_date=1700000000&hash=not-a-real-hash";
-const capabilities = { password_login: false, public_registration: false, telegram_login: true, telegram_linking: false, web_credential_enrollment: false, email_recovery: false, telegram_recovery: false, recovery_codes: false };
+const capabilities = { password_login: false, public_registration: false, telegram_login: true, telegram_linking: false, web_credential_enrollment: false, email_recovery: false, telegram_recovery: false, recovery_codes: false, manual_card_topups: false };
 const profile = { customer_id: "synthetic-customer", account_status: "ACTIVE", telegram_user_id: 42, username: null, account_username: null, first_name: "Test", last_name: null, language_code: "fa", created_at: "2026-01-01T00:00:00Z", last_seen_at: null, current_session_id: "synthetic-session" };
 
 function response(status: number, body: unknown): Response {

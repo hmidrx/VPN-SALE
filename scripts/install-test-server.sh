@@ -4,7 +4,7 @@ phase="initialization"
 fail(){ printf 'ERROR during %s: %s\n' "$phase" "$*" >&2; printf 'Safe diagnostics are redacted. Run scripts/verify-test-server.sh for details after fixing the error.\n' >&2; exit 1; }
 trap 'fail "command failed on line $LINENO"' ERR
 DOMAIN=""; REPO="https://github.com/hmidrx/VPN-SALE.git"; REF="main"; EXPECTED_COMMIT=""; RUNTIME_DIR="/opt/vpn-sale-runtime"; INSTALL_DIR="/opt/vpn-sale"; PROJECT="vpn-sale"
-ENABLE_TELEGRAM=false; RESET_PG=false; SKIP_DNS=false; NON_INTERACTIVE=false; OVERRIDE_OS=false; TELEGRAM_BOT_TOKEN_FILE=""; TELEGRAM_BOT_USERNAME=""
+ENABLE_TELEGRAM=false; ENABLE_MANUAL_CARD_TOPUPS=false; RESET_PG=false; SKIP_DNS=false; NON_INTERACTIVE=false; OVERRIDE_OS=false; TELEGRAM_BOT_TOKEN_FILE=""; TELEGRAM_BOT_USERNAME=""
 usage(){ cat <<USAGE
 Usage: scripts/install-test-server.sh --domain DOMAIN [options]
 
@@ -16,6 +16,7 @@ Options:
   --runtime-dir DIR                  Runtime state directory.
   --install-dir DIR                  Checkout directory.
   --enable-telegram                  Enable Telegram polling bot.
+  --enable-manual-card-topups        Enable reviewed manual card-transfer requests.
   --telegram-bot-token-file FILE     Mode-0600 Telegram token file.
   --telegram-bot-username USERNAME   Expected Telegram bot username.
   --reset-disposable-postgres        Reset only disposable TEST PostgreSQL resources.
@@ -25,7 +26,7 @@ Options:
   --help                             Show this help and exit.
 USAGE
 }
-while [[ $# -gt 0 ]]; do case "$1" in --help) usage; exit 0;; --domain) DOMAIN="${2:?}"; shift 2;; --repo) REPO="${2:?}"; shift 2;; --ref) REF="${2:?}"; shift 2;; --expected-commit) EXPECTED_COMMIT="${2:?}"; shift 2;; --runtime-dir) RUNTIME_DIR="${2:?}"; shift 2;; --install-dir) INSTALL_DIR="${2:?}"; shift 2;; --enable-telegram) ENABLE_TELEGRAM=true; shift;; --telegram-bot-token-file) TELEGRAM_BOT_TOKEN_FILE="${2:?}"; shift 2;; --telegram-bot-username) TELEGRAM_BOT_USERNAME="${2:?}"; shift 2;; --reset-disposable-postgres) RESET_PG=true; shift;; --skip-dns-wait) SKIP_DNS=true; shift;; --non-interactive) NON_INTERACTIVE=true; shift;; --allow-unsupported-os) OVERRIDE_OS=true; shift;; *) fail "unknown option $1";; esac; done
+while [[ $# -gt 0 ]]; do case "$1" in --help) usage; exit 0;; --domain) DOMAIN="${2:?}"; shift 2;; --repo) REPO="${2:?}"; shift 2;; --ref) REF="${2:?}"; shift 2;; --expected-commit) EXPECTED_COMMIT="${2:?}"; shift 2;; --runtime-dir) RUNTIME_DIR="${2:?}"; shift 2;; --install-dir) INSTALL_DIR="${2:?}"; shift 2;; --enable-telegram) ENABLE_TELEGRAM=true; shift;; --enable-manual-card-topups) ENABLE_MANUAL_CARD_TOPUPS=true; shift;; --telegram-bot-token-file) TELEGRAM_BOT_TOKEN_FILE="${2:?}"; shift 2;; --telegram-bot-username) TELEGRAM_BOT_USERNAME="${2:?}"; shift 2;; --reset-disposable-postgres) RESET_PG=true; shift;; --skip-dns-wait) SKIP_DNS=true; shift;; --non-interactive) NON_INTERACTIVE=true; shift;; --allow-unsupported-os) OVERRIDE_OS=true; shift;; *) fail "unknown option $1";; esac; done
 [[ $(id -u) -eq 0 ]] || fail "must run as root"
 [[ -n "$DOMAIN" ]] || fail "--domain is required; no implicit production domain is used"
 [[ "$DOMAIN" != "fast.dr-ping.com" && "$DOMAIN" != *".fast.dr-ping.com" ]] || fail "refusing unrelated hostname fast.dr-ping.com"
@@ -113,7 +114,7 @@ BOT_TOKEN=""; if [[ -n "$TELEGRAM_BOT_TOKEN_FILE" ]]; then validate_secret_file 
 if [[ "$ENABLE_TELEGRAM" == true && -z "$BOT_TOKEN" && "$NON_INTERACTIVE" == false ]]; then read -r -s -p 'Telegram bot token: ' BOT_TOKEN </dev/tty; printf '\n' >/dev/tty; fi
 [[ "$ENABLE_TELEGRAM" == false || -n "$BOT_TOKEN" ]] || fail "telegram token required via --telegram-bot-token-file or hidden prompt"
 if [[ "$ENABLE_TELEGRAM" == true ]]; then me_json="$(telegram_api "$BOT_TOKEN" getMe)" || fail "Telegram getMe failed"; [[ "$(jq -r '.ok' <<<"$me_json")" == true ]] || fail "Telegram getMe failed"; derived_username="$(jq -r '.result.username // empty' <<<"$me_json")"; [[ -n "$derived_username" ]] || fail "Telegram getMe returned no username"; [[ -z "$TELEGRAM_BOT_USERNAME" || "$TELEGRAM_BOT_USERNAME" == "$derived_username" ]] || fail "provided Telegram username does not match getMe"; TELEGRAM_BOT_USERNAME="$derived_username"; else TELEGRAM_BOT_USERNAME="disabled_bot"; fi
-set_kv_atomic "$ENV_FILE" VPN_SALE_IDENTITY_ENCRYPTION_KEY_VERSION test-v1; set_kv_atomic "$ENV_FILE" VPN_SALE_API_PUBLIC_ORIGIN "$API_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_PUBLIC_APP_ORIGIN "$CUSTOMER_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_API_FRONTEND_URL "$API_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_CORS_ALLOWED_ORIGINS "[\"$CUSTOMER_ORIGIN\",\"$ADMIN_ORIGIN\",\"$RESELLER_ORIGIN\"]"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_APP_NAME "VPN-SALE Test"; set_kv_atomic "$ENV_FILE" VPN_SALE_TELEGRAM_BOT_USERNAME "$TELEGRAM_BOT_USERNAME"; set_kv_atomic "$ENV_FILE" VPN_SALE_TELEGRAM_BOT_TOKEN "$BOT_TOKEN"; set_kv_atomic "$ENV_FILE" VPN_SALE_BOT_ENABLED "$ENABLE_TELEGRAM"; set_kv_atomic "$ENV_FILE" VPN_SALE_BOT_MODE "$([[ "$ENABLE_TELEGRAM" == true ]] && echo polling || echo disabled)"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_MINI_APP_URL "$CUSTOMER_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_MINI_APP_ALLOWED_HOSTS "app.$DOMAIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_PROVIDER_WRITES_ENABLED false; set_kv_atomic "$ENV_FILE" VPN_SALE_PAYMENT_FAKE_SUCCESS_PUBLIC_ENABLED false; set_kv_atomic "$ENV_FILE" VPN_SALE_FAKE_CUSTOMER_AUTH_ENABLED false
+set_kv_atomic "$ENV_FILE" VPN_SALE_IDENTITY_ENCRYPTION_KEY_VERSION test-v1; set_kv_atomic "$ENV_FILE" VPN_SALE_API_PUBLIC_ORIGIN "$API_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_PUBLIC_APP_ORIGIN "$CUSTOMER_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_API_FRONTEND_URL "$API_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_CORS_ALLOWED_ORIGINS "[\"$CUSTOMER_ORIGIN\",\"$ADMIN_ORIGIN\",\"$RESELLER_ORIGIN\"]"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_APP_NAME "VPN-SALE Test"; set_kv_atomic "$ENV_FILE" VPN_SALE_TELEGRAM_BOT_USERNAME "$TELEGRAM_BOT_USERNAME"; set_kv_atomic "$ENV_FILE" VPN_SALE_TELEGRAM_BOT_TOKEN "$BOT_TOKEN"; set_kv_atomic "$ENV_FILE" VPN_SALE_BOT_ENABLED "$ENABLE_TELEGRAM"; set_kv_atomic "$ENV_FILE" VPN_SALE_BOT_MODE "$([[ "$ENABLE_TELEGRAM" == true ]] && echo polling || echo disabled)"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_MINI_APP_URL "$CUSTOMER_ORIGIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_CUSTOMER_MINI_APP_ALLOWED_HOSTS "app.$DOMAIN"; set_kv_atomic "$ENV_FILE" VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED "$ENABLE_MANUAL_CARD_TOPUPS"; set_kv_atomic "$ENV_FILE" VPN_SALE_PROVIDER_WRITES_ENABLED false; set_kv_atomic "$ENV_FILE" VPN_SALE_PAYMENT_FAKE_SUCCESS_PUBLIC_ENABLED false; set_kv_atomic "$ENV_FILE" VPN_SALE_FAKE_CUSTOMER_AUTH_ENABLED false
 for k in POSTGRES_PASSWORD VPN_SALE_DATABASE_URL POSTGRES_USER POSTGRES_DB VPN_SALE_REDIS_URL VPN_SALE_API_PUBLIC_ORIGIN VPN_SALE_PUBLIC_APP_ORIGIN VPN_SALE_TELEGRAM_BOT_USERNAME; do [[ -n "$(get_env "$k" "$ENV_FILE")" ]] || fail "missing required config $k"; done
 phase_done secrets
 phase="compose render"
@@ -122,7 +123,7 @@ phase="compose render"
 ! grep -Eq '0\.0\.0\.0:(5432|6379)|:(5432|6379):(5432|6379)' /tmp/vpn-sale-compose.rendered.yml || fail "PostgreSQL or Redis host binding detected"
 phase_done compose
 phase="build images"
-profiles=( ); [[ "$ENABLE_TELEGRAM" == true ]] && profiles=(--profile telegram)
+profiles=( ); [[ "$ENABLE_TELEGRAM" == true ]] && profiles+=(--profile telegram); [[ "$ENABLE_MANUAL_CARD_TOPUPS" == true ]] && profiles+=(--profile ops)
 "${compose[@]}" "${profiles[@]}" build api worker customer-web admin-web reseller-web telegram-bot
 phase_done build
 phase="database and redis"
@@ -134,7 +135,7 @@ phase="migrations"
 "${compose[@]}" run --rm --no-deps api alembic -c /app/apps/api/alembic.ini upgrade head
 phase_done migrations
 phase="start services"
-start_services=(api customer-web admin-web reseller-web); [[ "$ENABLE_TELEGRAM" == true ]] && start_services+=(telegram-bot)
+start_services=(api customer-web admin-web reseller-web); [[ "$ENABLE_MANUAL_CARD_TOPUPS" == true ]] && start_services+=(worker); [[ "$ENABLE_TELEGRAM" == true ]] && start_services+=(telegram-bot)
 "${compose[@]}" "${profiles[@]}" up -d "${start_services[@]}"
 ./scripts/wait-for-http.sh http://127.0.0.1:8000/health 60; ./scripts/wait-for-http.sh http://127.0.0.1:8000/ready 60
 for p in 3000 3001 3002; do ./scripts/wait-for-http.sh "http://127.0.0.1:$p" 60; done

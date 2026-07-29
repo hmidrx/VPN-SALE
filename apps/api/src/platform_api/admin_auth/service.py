@@ -826,6 +826,20 @@ class AdminAuthService:
             )
         )
 
+    def verify_strong_confirmation(
+        self, admin_id: str, password: str, proof_code: str, *, now: datetime | None = None
+    ) -> bool:
+        """Verify the strongest enrolled factors without returning or logging either secret."""
+        now = now or datetime.now(UTC)
+        admin = self.session.get(AdminModel, admin_id)
+        credential = self.active_totp_credential(admin_id)
+        return bool(
+            admin
+            and credential
+            and self.hasher.verify(password, admin.password_hash)
+            and self._valid_totp_or_recovery(credential, proof_code, now=now)
+        )
+
     def regenerate_recovery_codes(
         self, admin_id: str, password: str, proof_code: str, *, now: datetime | None = None
     ) -> list[str]:

@@ -496,3 +496,7 @@ async def disable_totp(
     except ValueError as exc:
         raise _generic_http(400, request) from exc
     return OkResponse()
+
+
+# Public factory for sensitive application services that reuse admin reauthentication.
+admin_auth_service = _service

@@ -1,0 +1,1 @@
+import{CustomerApp}from'../../../../../src/components/CustomerApp';export default async function Page({params}:{params:Promise<{reference:string}>}):Promise<React.ReactElement>{const{reference}=await params;return <CustomerApp page="manual-topup-detail" manualTopupReference={reference}/>}

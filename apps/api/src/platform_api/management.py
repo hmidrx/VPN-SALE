@@ -1165,3 +1165,7 @@ def reopen_security(
     x.resolved_by_admin_id = None
     _audit(db, actor.id, "security_event.reopened", "security_event", event_id, request)
     return {"ok": True}
+
+
+# Public application-layer permission query for compound authorization rules.
+active_permissions = _active_permissions

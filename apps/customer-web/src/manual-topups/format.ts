@@ -1,0 +1,6 @@
+import type {ManualTopupStatus} from './types';
+export const statusLabels:Record<ManualTopupStatus,string>={AWAITING_SUPPORT:'در انتظار دریافت اطلاعات کارت',AWAITING_RECEIPT:'در انتظار ارسال فیش',UNDER_REVIEW:'در انتظار بررسی',NEEDS_RESUBMISSION:'نیازمند ارسال فیش جدید',APPROVED:'تأییدشده',REJECTED:'ردشده',CANCELLED:'لغوشده',EXPIRED:'منقضی‌شده'};
+export function rialToToman(value:number):number{if(!Number.isSafeInteger(value)||value<0||value%10!==0)throw new Error('invalid_amount');return value/10}
+export function tomanToRial(value:string|number):number{const normalized=String(value).replace(/[٬,\s]/g,'').replace(/[۰-۹]/g,d=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));if(!/^\d+$/.test(normalized))throw new Error('invalid_amount');const toman=Number(normalized);const rial=toman*10;if(!Number.isSafeInteger(rial)||toman<100_000)throw new Error('invalid_amount');return rial}
+export const toman=(rial:number):string=>`${new Intl.NumberFormat('fa-IR').format(rialToToman(rial))} تومان`;
+export const safeError=(status:number):string=>status===409?'وضعیت درخواست تغییر کرده است. صفحه را به‌روزرسانی کنید.':status===413||status===422?'فایل انتخاب‌شده معتبر نیست. تصویر دیگری انتخاب کنید.':status===429?'تعداد تلاش‌ها زیاد است. کمی بعد دوباره تلاش کنید.':status>=500?'سرویس موقتاً در دسترس نیست. دوباره تلاش کنید.':'انجام درخواست ممکن نشد. دوباره تلاش کنید.';
