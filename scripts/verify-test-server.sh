@@ -34,7 +34,8 @@ manual_enabled="$(get_env VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED "$ENV_FILE")"
 if [[ "$manual_enabled" == true ]]; then
   worker_id="$(compose_service_container_id worker "${compose[@]}" 2>/dev/null || true)"
   [[ -n "$worker_id" && "$(docker_container_state "$worker_id")" == running ]] || fail "manual top-up outbox worker is not running"
-  "${compose[@]}" exec -T api sh -c 'test "$(stat -c %a /var/lib/vpnsale/private/manual-topups)" = 700' || fail "receipt directory permissions are not 0700"
+  receipt_mode="$("${compose[@]}" exec -T api stat -c %a /var/lib/vpnsale/private/manual-topups | tr -d '\r\n')"
+  [[ "$receipt_mode" == 700 ]] || fail "receipt directory permissions are not 0700"
 fi
 ! rg -i 'card(_|-)?(number|destination)|iban|account_destination' "$ENV_FILE" >/dev/null || fail "forbidden destination configuration present"
 ok "manual top-up flag, worker, private evidence, and no-destination configuration verified"
