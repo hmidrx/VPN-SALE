@@ -116,6 +116,12 @@ class Settings(BaseSettings):
     worker_concurrency: int = Field(default=4, ge=1, le=128)
     request_body_limit_bytes: int = Field(default=10485760, ge=1024, le=104857600)
     upload_file_limit_bytes: int = Field(default=5242880, ge=1024, le=52428800)
+    manual_card_topups_enabled: bool = False
+    manual_topup_private_upload_root: str = "/var/lib/vpnsale/private/manual-topups"
+    manual_topup_max_receipt_bytes: int = Field(default=5_242_880, ge=1024, le=5_242_880)
+    manual_topup_image_dimension_limit: int = Field(default=8_192, ge=256, le=16_384)
+    manual_topup_max_active_requests: int = Field(default=3, ge=1, le=10)
+    manual_topup_max_receipt_versions: int = Field(default=5, ge=1, le=10)
     maintenance_mode_enabled: bool = False
     provider_credential_vault_key_version: str = "dev-v1"
     object_storage_url: str = "file:///tmp/vpnsale-media"
