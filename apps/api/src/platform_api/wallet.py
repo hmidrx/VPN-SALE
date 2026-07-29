@@ -1089,3 +1089,9 @@ def update_policy(
     p.updated_at = datetime.now(UTC)
     _audit(db, "admin", admin.id, "wallet.policy_updated", p.id, request, {"currency": "IRR"})
     return get_policy(admin, db)
+
+
+# Application services use these transaction-preserving ledger primitives.
+wallet_policy = _policy
+wallet_projection = _projection
+post_wallet_adjustment = _post_adjustment

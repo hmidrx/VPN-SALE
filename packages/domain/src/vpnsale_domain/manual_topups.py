@@ -24,6 +24,7 @@ class ManualTopupStatus(StrEnum):
 _TRANSITIONS = {
     ManualTopupStatus.AWAITING_SUPPORT: {
         ManualTopupStatus.AWAITING_RECEIPT,
+        ManualTopupStatus.UNDER_REVIEW,
         ManualTopupStatus.CANCELLED,
         ManualTopupStatus.EXPIRED,
     },
@@ -63,10 +64,14 @@ def approval_amounts(verified_rial: int, bonus_rial: int) -> tuple[int, int, int
         raise ValueError("verified transfer must be positive")
     if isinstance(bonus_rial, bool) or bonus_rial < 0:
         raise ValueError("bonus cannot be negative")
-    return verified_rial, bonus_rial, verified_rial + bonus_rial
+    total = verified_rial + bonus_rial
+    if total > 9_223_372_036_854_775_807:
+        raise ValueError("manual top-up total exceeds the database integer range")
+    return verified_rial, bonus_rial, total
 
 
 _DIGIT_RUN = re.compile(r"(?<!\d)(?:\d[\s\-]*){16}(?!\d)")
+_IBAN = re.compile(r"(?i)(?<![A-Z0-9])IR[\s\-]*\d(?:[\s\-]*\d){23}(?!\d)")
 
 
 def customer_safe_text(value: str, *, maximum: int = MAX_CUSTOMER_MESSAGE_LENGTH) -> str:
@@ -76,4 +81,6 @@ def customer_safe_text(value: str, *, maximum: int = MAX_CUSTOMER_MESSAGE_LENGTH
         raise ValueError("invalid customer-visible text")
     if _DIGIT_RUN.search(normalized.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))):
         raise ValueError("customer-visible text contains a prohibited digit sequence")
+    if _IBAN.search(normalized.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))):
+        raise ValueError("customer-visible text contains prohibited banking data")
     return normalized
