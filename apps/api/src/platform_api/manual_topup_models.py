@@ -202,6 +202,8 @@ class ManualTopupMessageModel(IdentityBase):
 class ManualTopupNotificationOutboxModel(IdentityBase):
     __tablename__ = "manual_topup_notification_outbox"
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    event_reference: Mapped[str] = mapped_column(String(64), nullable=False)
+    deduplication_key: Mapped[str] = mapped_column(String(96), nullable=False)
     request_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False),
         ForeignKey("manual_topup_requests.id", ondelete="RESTRICT"),
@@ -220,14 +222,11 @@ class ManualTopupNotificationOutboxModel(IdentityBase):
     )
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
-        UniqueConstraint(
-            "request_id",
-            "event_type",
-            "delivery_channel",
-            name="uq_manual_topup_notification_event",
-        ),
+        UniqueConstraint("event_reference", name="uq_manual_topup_outbox_event_reference"),
+        UniqueConstraint("deduplication_key", name="uq_manual_topup_outbox_deduplication_key"),
         CheckConstraint(
             "status in ('PENDING','PROCESSING','SENT','FAILED')",
             name="ck_manual_topup_outbox_status",
         ),
+        Index("ix_manual_topup_outbox_delivery", "status", "available_at"),
     )
