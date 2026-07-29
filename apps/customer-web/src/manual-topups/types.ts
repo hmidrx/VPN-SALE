@@ -1,0 +1,3 @@
+export type ManualTopupStatus="AWAITING_SUPPORT"|"AWAITING_RECEIPT"|"UNDER_REVIEW"|"NEEDS_RESUBMISSION"|"APPROVED"|"REJECTED"|"CANCELLED"|"EXPIRED";
+export type ManualTopup={reference:string;requested_amount_rial:number;status:ManualTopupStatus;created_at:string;submitted_at:string|null;decided_at:string|null;receipt_state:string;current_receipt_reference:string|null;customer_message:string|null;messages:Array<{reference:string;body:string;created_at:string}>;verified_amount_rial:number|null;bonus_amount_rial:number|null;total_credited_rial:number|null;timeline:Array<{event:string;at:string}>};
+export type ManualTopupPage={items:ManualTopup[];limit:number;offset:number};

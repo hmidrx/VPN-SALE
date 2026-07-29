@@ -29,6 +29,15 @@ ok "runtime state is TEST for $DOMAIN at commit $(jq -r '.selected_commit' "$RUN
 [[ $(stat -c %a "$RUNTIME_DIR") == 700 && $(stat -c %a "$ENV_FILE") == 600 && $(stat -c %a "$RUNTIME_DIR/state.json") == 600 ]] || fail "runtime permissions are not 0700/0600"; ok "runtime and state permissions are restrictive"
 docker --version | redact >/dev/null; docker compose version | redact >/dev/null; ok "Docker Engine and Compose versions available"
 for key in VPN_SALE_PROVIDER_WRITES_ENABLED VPN_SALE_PAYMENT_FAKE_SUCCESS_PUBLIC_ENABLED VPN_SALE_FAKE_CUSTOMER_AUTH_ENABLED; do [[ "$(get_env "$key" "$ENV_FILE")" == false ]] || fail "$key must remain disabled"; done; ok "provider writes, fake payment success, and fake customer auth disabled"
+manual_enabled="$(get_env VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED "$ENV_FILE")"
+[[ "$manual_enabled" == true || "$manual_enabled" == false ]] || fail "invalid manual top-up feature value"
+if [[ "$manual_enabled" == true ]]; then
+  worker_id="$(compose_service_container_id worker "${compose[@]}" 2>/dev/null || true)"
+  [[ -n "$worker_id" && "$(docker_container_state "$worker_id")" == running ]] || fail "manual top-up outbox worker is not running"
+  "${compose[@]}" exec -T api sh -c 'test "$(stat -c %a /var/lib/vpnsale/private/manual-topups)" = 700' || fail "receipt directory permissions are not 0700"
+fi
+! rg -i 'card(_|-)?(number|destination)|iban|account_destination' "$ENV_FILE" >/dev/null || fail "forbidden destination configuration present"
+ok "manual top-up flag, worker, private evidence, and no-destination configuration verified"
 for svc in api customer-web admin-web reseller-web postgres redis; do [[ "$(compose_service_field "$svc" RestartCount "${compose[@]}" 2>/dev/null || printf 0)" == 0 ]] || fail "$svc has restarted"; done; ok "zero service restart loops"
 "$repo_root/scripts/verify-test-server-compose.sh" "$ENV_FILE" >/dev/null; ok "Compose config renders with expected services/profiles"
 for svc in postgres redis; do [[ "$(compose_service_field "$svc" Health "${compose[@]}")" == healthy ]] || fail "$svc not healthy"; ok "$svc healthy"; done
