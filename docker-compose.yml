@@ -41,6 +41,7 @@ services:
       VPN_SALE_ACCOUNT_RECOVERY_ENABLED: "${VPN_SALE_ACCOUNT_RECOVERY_ENABLED:-false}"
       VPN_SALE_TELEGRAM_ACCOUNT_LINKING_ENABLED: "${VPN_SALE_TELEGRAM_ACCOUNT_LINKING_ENABLED:-false}"
       VPN_SALE_UNIFIED_ADMIN_IDENTITY_ENABLED: "${VPN_SALE_UNIFIED_ADMIN_IDENTITY_ENABLED:-false}"
+      VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED: "${VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED:-false}"
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -60,9 +61,14 @@ services:
     env_file: .env.example
     environment:
       VPN_SALE_REDIS_URL: redis://redis:6379/0
+      VPN_SALE_DATABASE_URL: ${VPN_SALE_DATABASE_URL:-postgresql+asyncpg://vpnsale:vpnsale_dev_password@postgres:5432/vpnsale}
+      VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED: "${VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED:-false}"
+      VPN_SALE_BOT_ENABLED: "${VPN_SALE_BOT_ENABLED:-false}"
+      VPN_SALE_PUBLIC_APP_ORIGIN: "${VPN_SALE_PUBLIC_APP_ORIGIN:-http://localhost:3000}"
     depends_on:
+      postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
-    restart: "no"
+    restart: unless-stopped
 
   telegram-bot:
     profiles: ["telegram"]

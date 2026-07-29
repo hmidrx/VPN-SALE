@@ -75,6 +75,7 @@ class AuthCapabilitiesResponse(BaseModel):
     email_recovery: bool = False
     telegram_recovery: bool = False
     recovery_codes: bool = False
+    manual_card_topups: bool = False
     telegram_linking: bool = False
     web_credential_enrollment: bool = False
 
@@ -259,6 +260,7 @@ def capabilities(
         public_registration=settings.public_account_registration_enabled,
         telegram_login=settings.telegram_customer_auth_enabled,
         telegram_linking=settings.telegram_account_linking_enabled,
+        manual_card_topups=settings.manual_card_topups_enabled,
         web_credential_enrollment=(
             settings.telegram_account_linking_enabled and settings.password_account_login_enabled
         ),

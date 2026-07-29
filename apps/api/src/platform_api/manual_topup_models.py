@@ -218,11 +218,13 @@ class ManualTopupNotificationOutboxModel(IdentityBase):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_category: Mapped[str | None] = mapped_column(String(48))
     __table_args__ = (
         UniqueConstraint("event_reference", name="uq_manual_topup_outbox_event_reference"),
         UniqueConstraint("deduplication_key", name="uq_manual_topup_outbox_deduplication_key"),
         CheckConstraint(
-            "status in ('PENDING','PROCESSING','SENT','FAILED')",
+            "status in ('PENDING','PROCESSING','SENT','FAILED','SKIPPED')",
             name="ck_manual_topup_outbox_status",
         ),
         Index("ix_manual_topup_outbox_delivery", "status", "available_at"),

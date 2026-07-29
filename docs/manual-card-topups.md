@@ -79,3 +79,30 @@ No destination card number, IBAN, payment-provider success path, public receipt 
 settlement is stored or exposed. Customer/admin visual redesign, native Telegram photo intake, and
 the notification delivery worker are explicitly deferred. Outbox rows therefore remain `PENDING`
 until that worker is safely delivered. PAY-1 is not yet claimed as fully customer-usable.
+
+## PAY-1C customer, review, and delivery experience
+
+The customer wallet now offers manual card transfer only when the authenticated capability is
+enabled. Amounts are entered and rendered exclusively in Toman, converted to exact integer Rial at
+the API boundary, and never enter the online-provider intent flow. A request detail screen provides
+private receipt selection, deliberate upload, progress, cancellation where allowed, history,
+customer-safe messages, and exact requested/verified/bonus/total presentation. Temporary receipt
+object URLs are revoked on replacement and unmount.
+
+The admin console adds a `manual_topups.read`-gated navigation item, queue filters, private evidence
+viewer, decision/message history, strong password-plus-TOTP confirmation, exact approval
+calculation, clearly separated resubmission and rejection forms, and safe notification delivery
+observability. Credentials and the one-use approval token remain only in component memory.
+
+The worker claims committed outbox rows with `FOR UPDATE SKIP LOCKED`, recovers stale processing
+claims, applies bounded exponential retry, and records safe sent, skipped, or terminal failure
+states. Telegram delivery occurs only for linked customers who permit payment notifications and
+only when the bot is enabled. Telegram content contains no receipt link or evidence, internal note,
+or transfer destination. Native receipt-photo intake in Telegram chat remains deferred to PAY-1D.
+
+Deployments remain disabled by default. The test-server installer accepts
+`--enable-manual-card-topups`, renders the explicit runtime flag, starts the outbox worker, and the
+verifier checks migration head, worker state, restrictive evidence permissions, provider/fake
+payment disablement, and absence of destination configuration. Roll back by disabling the flag
+first, allowing in-flight delivery claims to settle, then rolling back web/worker code while
+retaining financial and receipt evidence.

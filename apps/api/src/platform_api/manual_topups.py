@@ -691,6 +691,8 @@ def _admin_dto(db: Session, row: ManualTopupRequestModel) -> dict[str, object]:
                 "attempts": e.attempts,
                 "available_at": e.available_at,
                 "sent_at": e.sent_at,
+                "last_error_category": e.last_error_category,
+                "next_retry_at": e.available_at,
             }
             for e in events
         ],
