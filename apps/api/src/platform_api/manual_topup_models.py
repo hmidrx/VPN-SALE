@@ -157,9 +157,6 @@ class ManualTopupDecisionModel(IdentityBase):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    __table_args__ = (
-        UniqueConstraint("request_id", "decision", name="uq_manual_topup_decision_request_kind"),
-    )
 
 
 class ManualTopupIdempotencyModel(IdentityBase):

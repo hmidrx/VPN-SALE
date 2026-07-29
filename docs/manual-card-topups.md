@@ -42,3 +42,40 @@ Rollback first disables the feature so new mutations fail closed. Application ro
 requests, evidence, decisions, notifications, and all wallet journal entries. Schema downgrade is
 only appropriate when no retained PAY-1 data is required; it must never be used to reverse a posted
 wallet credit.
+
+## PAY-1B backend contract
+
+The authenticated customer API exposes create/list/detail, multipart receipt replacement, private
+receipt streaming, and pre-review cancellation under `/api/v1/customer/manual-topups`. Mutation
+requests require CSRF, a bounded fail-closed rate check, the disabled-by-default feature flag, and
+an `Idempotency-Key`; reads remain available while the flag is disabled so customers retain access
+to historical evidence. Ownership always comes from the authenticated customer session.
+
+The protected admin API exposes the review queue/detail/receipt and resubmission, rejection,
+approval, and durable-message mutations under `/api/v1/admin/manual-topups`. Permissions are
+`manual_topups.read`, `manual_topups.review`, `manual_topups.message`, and
+`manual_topups.override_amount`; approval also requires `wallets.adjust`. These permissions are
+registered but are not assigned automatically to any administrator role. Operators must explicitly
+assign them to a locally designated high-trust finance role.
+
+Approval consumes a hash-only, session/purpose/reference-bound confirmation obtained with the
+administrator's password and enrolled TOTP (or one-use recovery proof). It expires after five
+minutes. Override confirmation also binds the acknowledgement. The request, confirmation,
+idempotency record, immutable decision, messages, pending notification, audit row, CASH journal,
+optional separate ADMIN_GRANT journal, postings, and wallet projections share the request-scoped
+PostgreSQL transaction. An exception rolls all database effects back; sanitized upload files are
+removed when database persistence fails.
+
+Revision `0033_manual_topup_application` removes the decision-kind uniqueness defect in the PAY-1
+foundation so multiple legitimate resubmission cycles can retain immutable decisions, and registers
+the four permissions. Downgrade restores the constraint and removes only these permission rows; it
+will intentionally fail if repeated decision history must first be retained. Deploy 0033, provision
+the mode-0700 evidence volume, explicitly assign permissions, verify Redis and PostgreSQL, then
+enable `VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED` for a controlled cohort. Roll back by disabling the
+flag before rolling back application code; never downgrade or delete posted ledger evidence as a
+financial reversal.
+
+No destination card number, IBAN, payment-provider success path, public receipt URL, or fake payment
+settlement is stored or exposed. Customer/admin visual redesign, native Telegram photo intake, and
+the notification delivery worker are explicitly deferred. Outbox rows therefore remain `PENDING`
+until that worker is safely delivered. PAY-1 is not yet claimed as fully customer-usable.

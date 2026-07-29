@@ -24,6 +24,8 @@ from .knowledge_status import public_router as knowledge_router
 from .logging import configure_logging
 from .management import public_router as admin_invitation_router
 from .management import router as management_router
+from .manual_topups import admin_router as admin_manual_topup_router
+from .manual_topups import customer_router as customer_manual_topup_router
 from .notification_preferences import router as customer_notification_preferences_router
 from .operations import assert_startup_configuration
 from .operations import router as operations_router
@@ -134,6 +136,7 @@ def create_app(settings: Settings) -> FastAPI:
             "X-Correlation-ID",
             "X-CSRF-Token",
             "X-VPN-Sale-Client",
+            "Idempotency-Key",
         ],
         expose_headers=["Retry-After", "X-Request-ID"],
     )
@@ -160,6 +163,8 @@ def create_app(settings: Settings) -> FastAPI:
         payment_webhook_router,
         admin_wallet_router,
         admin_customer_router,
+        customer_manual_topup_router,
+        admin_manual_topup_router,
         admin_ledger_router,
         admin_invitation_router,
         runtime_configuration_router,
