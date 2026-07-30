@@ -269,6 +269,8 @@ app.$domain {
 }
 api.$domain {
   import app_headers
+  @telegram_internal path /api/v1/internal/telegram /api/v1/internal/telegram/*
+  respond @telegram_internal 404
   reverse_proxy 127.0.0.1:8000 {
     header_up X-Forwarded-Proto {scheme}
     header_up X-Forwarded-Host {host}

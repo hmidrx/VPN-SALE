@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import Protocol, cast
+from urllib.parse import unquote, urlparse
+
+from redis import Redis
 
 from telegram_bot.screens import ScreenId
 
@@ -59,6 +62,12 @@ class ConversationStoreV2(Protocol):
     def cancel(self, key: str) -> bool: ...
 
 
+class SyncRedis(Protocol):
+    def get(self, name: str) -> object | None: ...
+    def set(self, name: str, value: str, *, ex: int) -> object: ...
+    def delete(self, *names: str) -> int: ...
+
+
 class DurableMemoryConversationStore(ConversationStoreV2):
     def __init__(self) -> None:
         self._states: dict[str, ConversationStateV2] = {}
@@ -81,25 +90,59 @@ class DurableMemoryConversationStore(ConversationStoreV2):
 class RedisConversationStore(ConversationStoreV2):
     """TTL-bound state; keys are HMAC-derived by the handler and values contain no PII."""
 
-    def __init__(self, redis_url: str) -> None:
-        from redis import Redis
-
-        self._redis = Redis.from_url(redis_url, socket_connect_timeout=1, socket_timeout=1)
+    def __init__(self, redis_url: str, *, client: SyncRedis | None = None) -> None:
+        parsed = urlparse(redis_url)
+        if parsed.scheme not in {"redis", "rediss"} or not parsed.hostname:
+            raise ValueError("invalid Redis URL")
+        database = int(parsed.path.removeprefix("/") or "0")
+        self._redis = client or cast(
+            SyncRedis,
+            Redis(
+                host=parsed.hostname,
+                port=parsed.port or 6379,
+                db=database,
+                username=unquote(parsed.username) if parsed.username else None,
+                password=unquote(parsed.password) if parsed.password else None,
+                ssl=parsed.scheme == "rediss",
+                decode_responses=True,
+                socket_connect_timeout=1,
+                socket_timeout=1,
+            ),
+        )
 
     def get(self, key: str, at: datetime) -> ConversationStateV2:
         raw = self._redis.get(key)
         if raw is None:
             return ConversationStateV2()
-        value = json.loads(raw)
-        state = ConversationStateV2(
-            current_screen=ScreenId(value["screen"]),
-            navigation_stack=tuple(ScreenId(item) for item in value["stack"][-MAX_STACK:]),
-            active_menu_message_id=value.get("menu_message"),
-            state_version=int(value["version"]),
-            updated_at=datetime.fromisoformat(value["updated_at"]),
-            expires_at=datetime.fromisoformat(value["expires_at"]),
-        )
-        return ConversationStateV2() if state.expired(at) else state
+        if not isinstance(raw, str):
+            self._redis.delete(key)
+            return ConversationStateV2()
+        try:
+            decoded = json.loads(raw)
+            if not isinstance(decoded, dict):
+                raise ValueError("conversation state must be an object")
+            value = cast(dict[str, object], decoded)
+            stack_value = value["stack"]
+            if not isinstance(stack_value, list):
+                raise ValueError("conversation stack must be a list")
+            stack_items = cast(list[object], stack_value)
+            stack = tuple(ScreenId(str(item)) for item in stack_items[-MAX_STACK:])
+            menu_message = value.get("menu_message")
+            state = ConversationStateV2(
+                current_screen=ScreenId(str(value["screen"])),
+                navigation_stack=stack,
+                active_menu_message_id=(menu_message if isinstance(menu_message, int) else None),
+                state_version=int(str(value["version"])),
+                updated_at=datetime.fromisoformat(str(value["updated_at"])),
+                expires_at=datetime.fromisoformat(str(value["expires_at"])),
+            )
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            self._redis.delete(key)
+            return ConversationStateV2()
+        if state.expired(at):
+            self._redis.delete(key)
+            return ConversationStateV2()
+        return state
 
     def save(self, key: str, state: ConversationStateV2) -> None:
         payload = json.dumps(

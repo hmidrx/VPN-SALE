@@ -6,9 +6,9 @@ import hashlib
 import hmac
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,7 +17,9 @@ from .config import Settings, get_settings
 from .database import get_db_session
 from .identity.models import CustomerProfileModel, TelegramAccountModel, UserModel
 
-router = APIRouter(prefix="/api/v1/internal/telegram", tags=["internal-telegram"])
+router = APIRouter(
+    prefix="/api/v1/internal/telegram", tags=["internal-telegram"], include_in_schema=False
+)
 
 
 class ResolveRequest(BaseModel):
@@ -120,17 +122,25 @@ def profile(
     }
 
 
-@router.post("/identity/blocked", status_code=204)
+@router.post(
+    "/identity/blocked",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 def blocked(
     _: InternalAuth, db: Database, x_telegram_subject: Annotated[int, Header(gt=0)]
-) -> None:
+) -> Response:
     account, _user = _account(db, x_telegram_subject)
     account.blocked_bot = True
     db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-# These collection routes intentionally return only customer-safe DTO shapes. Domain-backed
-# expansion is performed in the respective service modules; no database identifier is exposed.
+def _projection_unavailable() -> NoReturn:
+    """Never substitute plausible customer data when an authoritative projection is absent."""
+    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="unavailable")
+
+
 @router.get("/services")
 def services(
     response: Response,
@@ -140,7 +150,7 @@ def services(
 ) -> dict[str, object]:
     _account(db, x_telegram_subject)
     _no_store(response)
-    return {"items": []}
+    _projection_unavailable()
 
 
 @router.get("/wallet")
@@ -152,7 +162,7 @@ def wallet(
 ) -> dict[str, object]:
     _account(db, x_telegram_subject)
     _no_store(response)
-    return {"balance_minor": 0, "currency": "IRR"}
+    _projection_unavailable()
 
 
 @router.get("/wallet/transactions")
@@ -164,4 +174,4 @@ def transactions(
 ) -> dict[str, object]:
     _account(db, x_telegram_subject)
     _no_store(response)
-    return {"items": []}
+    _projection_unavailable()

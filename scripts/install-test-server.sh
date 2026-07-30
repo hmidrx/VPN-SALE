@@ -38,7 +38,7 @@ source "$repo_root/scripts/test-server-installer-lib.sh"
 source "$repo_root/scripts/test-server-compose-json.sh"
 umask 077
 # Database URLs are built with urlencode() semantics via urllib.parse.quote(os.environ["RAW_VALUE"], safe="") in test-server-installer-lib.sh.
-STATE_FILE="$RUNTIME_DIR/state.json"; ENV_FILE="$RUNTIME_DIR/test.env"; SECRETS_DIR="$RUNTIME_DIR/secrets"; PG_PASSWORD_FILE="$SECRETS_DIR/postgres-password"; CADDY_MARKER="$RUNTIME_DIR/caddy-managed.sha256"
+STATE_FILE="$RUNTIME_DIR/state.json"; ENV_FILE="$RUNTIME_DIR/test.env"; SECRETS_DIR="$RUNTIME_DIR/secrets"; PG_PASSWORD_FILE="$SECRETS_DIR/postgres-password"; TELEGRAM_INTERNAL_TOKEN_FILE="$SECRETS_DIR/telegram-internal-token"; CADDY_MARKER="$RUNTIME_DIR/caddy-managed.sha256"
 compose=("$repo_root/scripts/vpn-sale-compose-test-server" --env-file "$ENV_FILE")
 pg_volume="${PROJECT}_test_server_postgres_data"; pg_container="${PROJECT}-postgres-1"
 volume_exists(){ docker volume inspect "$pg_volume" >/dev/null 2>&1; }
@@ -101,12 +101,14 @@ fi
 # state mismatch: PostgreSQL volume with missing postgres-password refusing to generate replacement password
 if volume_exists && ! validate_secret_file "$PG_PASSWORD_FILE"; then fail "state mismatch: PostgreSQL volume $pg_volume exists but $PG_PASSWORD_FILE is missing, empty, or not mode 0600; refusing to generate replacement password"; fi
 ensure_secret_file "$PG_PASSWORD_FILE" || fail "invalid PostgreSQL password secret file permissions/content"
+ensure_secret_file "$TELEGRAM_INTERNAL_TOKEN_FILE" || fail "invalid Telegram internal token secret file permissions/content"
 PG_PASS="$(cat "$PG_PASSWORD_FILE")"
 POSTGRES_USER="vpnsale"; POSTGRES_DB="vpnsale"
 ASYNC_DB_URL="$(build_pg_url '+asyncpg' "$POSTGRES_USER" "$PG_PASS" postgres 5432 "$POSTGRES_DB")"
 SYNC_DB_URL="$(build_pg_url '' "$POSTGRES_USER" "$PG_PASS" postgres 5432 "$POSTGRES_DB")"
 printf 'Re-rendering runtime env file from preserved secret sources: %s\n' "$ENV_FILE" >&2
 : >"$ENV_FILE"; chmod 600 "$ENV_FILE"
+set_kv_atomic "$ENV_FILE" VPN_SALE_TELEGRAM_INTERNAL_TOKEN_FILE_HOST "$TELEGRAM_INTERNAL_TOKEN_FILE"
 set_kv_atomic "$ENV_FILE" VPN_SALE_ENVIRONMENT TEST; set_kv_atomic "$ENV_FILE" POSTGRES_USER "$POSTGRES_USER"; set_kv_atomic "$ENV_FILE" POSTGRES_DB "$POSTGRES_DB"; set_kv_atomic "$ENV_FILE" POSTGRES_PASSWORD "$PG_PASS"; set_kv_atomic "$ENV_FILE" VPN_SALE_DATABASE_URL "$ASYNC_DB_URL"; set_kv_atomic "$ENV_FILE" DATABASE_URL "$ASYNC_DB_URL"; set_kv_atomic "$ENV_FILE" VPN_SALE_SYNC_DATABASE_URL "$SYNC_DB_URL"; set_kv_atomic "$ENV_FILE" VPN_SALE_REDIS_URL redis://redis:6379/0
 for k in VPN_SALE_IDENTITY_ENCRYPTION_KEY VPN_SALE_ADMIN_ACCESS_TOKEN_SIGNING_KEY VPN_SALE_CUSTOMER_ACCESS_TOKEN_SIGNING_KEY VPN_SALE_ADMIN_CSRF_SECRET VPN_SALE_CUSTOMER_CSRF_SECRET VPN_SALE_TELEGRAM_RATE_LIMIT_KEY; do f="$SECRETS_DIR/$k"; ensure_secret_file "$f"; set_kv_atomic "$ENV_FILE" "$k" "$(cat "$f")"; done
 CUSTOMER_ORIGIN="https://app.$DOMAIN"; API_ORIGIN="https://api.$DOMAIN"; ADMIN_ORIGIN="https://admin.$DOMAIN"; RESELLER_ORIGIN="https://reseller.$DOMAIN"
