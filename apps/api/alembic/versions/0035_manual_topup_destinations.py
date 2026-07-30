@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0035_manual_topup_destinations"
-down_revision = "0034_manual_topup_delivery"
+revision: str = "0035_manual_topup_destinations"
+down_revision: str = "0034_manual_topup_delivery"
 branch_labels = None
 depends_on = None
 
