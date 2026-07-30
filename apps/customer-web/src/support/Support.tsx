@@ -1,2 +1,11 @@
 import React from "react";
-export function CustomerSupportHome(): React.ReactElement { return <section className="support" dir="rtl"><h1>پشتیبانی</h1><p>گفتگوی زنده و تیکت‌ها از یک مدل مکالمه پایدار backend استفاده می‌کنند.</p><ul><li>انتخاب دسته، پیوست امن، وضعیت خوانده‌شدن و ادامه در تلگرام</li><li>مهلت پاسخ فقط از backend نمایش داده می‌شود؛ وضعیت آنلاین جعلی وجود ندارد.</li><li>یادداشت داخلی، شناسه خام تلگرام، token و initData در مرورگر ذخیره نمی‌شود.</li></ul><form><label>دسته<select aria-label="دسته"><option>GENERAL</option><option>PAYMENT</option><option>ORDER</option><option>ACCOUNT</option><option>RESELLER</option></select></label><label>موضوع<input maxLength={240} /></label><label>پیام<textarea maxLength={4000} /></label><button type="button">ایجاد مکالمه</button></form></section>; }
+import { loadCustomerConfig } from "../config/public-config";
+import { EmptyState, PageHeader, PageShell, PremiumCard } from "../components/customer-ui";
+
+export function CustomerSupportHome(): React.ReactElement {
+  const botUsername = loadCustomerConfig().botUsername;
+  return <PageShell labelledBy="page-title">
+    <PageHeader title="پشتیبانی" subtitle="برای پرسش‌ها و پیگیری درخواست‌ها همراه شما هستیم." />
+    {botUsername ? <PremiumCard className="support-entry"><span className="support-entry__icon" aria-hidden="true">◌</span><div><h2>گفت‌وگو با پشتیبانی</h2><p>پیام خود را در تلگرام ارسال کنید. هیچ اطلاعات حساسی به نشانی افزوده نمی‌شود.</p></div><a className="ui-button" href={`https://t.me/${botUsername}`} rel="noreferrer">باز کردن پشتیبانی</a></PremiumCard> : <EmptyState title="پشتیبانی در دسترس نیست" description="راه ارتباطی هنوز تنظیم نشده است. کمی بعد دوباره بررسی کنید." />}
+  </PageShell>;
+}
