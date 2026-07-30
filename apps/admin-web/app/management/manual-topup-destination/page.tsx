@@ -1,0 +1,1 @@
+import{ManagementShell}from'../../../src/components/ManagementShell';import{DestinationSettings}from'../../../src/manual-topups/DestinationSettings';export default function Page():React.ReactElement{return <ManagementShell title="تنظیمات کارت‌به‌کارت" required="manual_topups.destination.read"><DestinationSettings/></ManagementShell>}

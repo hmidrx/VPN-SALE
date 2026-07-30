@@ -10,7 +10,17 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
@@ -20,6 +30,8 @@ from vpnsale_domain.manual_topups import (
     ManualTopupStatus,
     approval_amounts,
     customer_safe_text,
+    format_card_number,
+    normalize_card_number,
     require_transition,
     validate_requested_amount,
 )
@@ -39,9 +51,12 @@ from platform_api.identity.models import (
     CustomerSessionModel,
     TelegramAccountModel,
 )
+from platform_api.identity.security import EncryptedSecret, FernetSecretEncryptor
 from platform_api.management import active_permissions, require_perm
 from platform_api.manual_topup_models import (
     ManualTopupDecisionModel,
+    ManualTopupDestinationSettingsModel,
+    ManualTopupDestinationVersionModel,
     ManualTopupIdempotencyModel,
     ManualTopupMessageModel,
     ManualTopupNotificationOutboxModel,
@@ -98,6 +113,24 @@ class StrongConfirmation(BaseModel):
     current_password: str = Field(min_length=1, max_length=1024)
     totp_code: str = Field(min_length=6, max_length=64)
     override_acknowledged: bool = False
+
+
+class DestinationConfirmation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str = Field(min_length=1, max_length=1024)
+    totp_code: str = Field(min_length=6, max_length=64)
+    expected_version: int = Field(gt=0)
+    customer_display_enabled: bool
+    replacement_card_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+
+class DestinationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(gt=0)
+    customer_display_enabled: bool
+    card_number: str | None = Field(default=None, min_length=16, max_length=40)
+    card_holder_name: str | None = Field(default=None, max_length=120)
+    strong_confirmation_token: str = Field(min_length=32, max_length=256)
 
 
 def _now() -> datetime:
@@ -261,6 +294,51 @@ def _customer_dto(db: Session, row: ManualTopupRequestModel) -> dict[str, object
     }
 
 
+def _destination_settings(
+    db: Session, *, lock: bool = False
+) -> ManualTopupDestinationSettingsModel:
+    statement = select(ManualTopupDestinationSettingsModel).where(
+        ManualTopupDestinationSettingsModel.key == "default"
+    )
+    if lock:
+        statement = statement.with_for_update()
+    settings = db.scalar(statement)
+    if settings is None:
+        settings = ManualTopupDestinationSettingsModel(key="default", version=1)
+        db.add(settings)
+        db.flush()
+    return settings
+
+
+def _encryptor(settings: Settings) -> FernetSecretEncryptor:
+    return FernetSecretEncryptor(
+        settings.identity_encryption_key, settings.identity_encryption_key_version
+    )
+
+
+def _destination_dto(
+    db: Session, row: ManualTopupDestinationSettingsModel, settings: Settings
+) -> dict[str, object]:
+    destination = db.get(ManualTopupDestinationVersionModel, row.active_destination_version_id)
+    holder = None
+    if destination and destination.encrypted_card_holder_name:
+        holder = _encryptor(settings).decrypt(
+            EncryptedSecret(
+                destination.encryption_key_version, destination.encrypted_card_holder_name
+            )
+        )
+    return {
+        "configured": destination is not None,
+        "customer_display_enabled": row.customer_display_enabled,
+        "masked_card_number": f"**** **** **** {destination.card_last4}" if destination else None,
+        "card_last4": destination.card_last4 if destination else None,
+        "card_holder_name": holder,
+        "destination_version_reference": destination.reference if destination else None,
+        "version": row.version,
+        "updated_at": row.updated_at,
+    }
+
+
 def _outbox(db: Session, row: ManualTopupRequestModel, event: str, mutation_ref: str) -> None:
     db.add(
         ManualTopupNotificationOutboxModel(
@@ -363,13 +441,20 @@ async def create_manual_topup(
     if active >= settings.manual_topup_max_active_requests:
         raise _error(409, "ACTIVE_REQUEST_LIMIT")
     reference = _ref("mtp")
+    destination_settings = _destination_settings(db)
+    destination_id = (
+        destination_settings.active_destination_version_id
+        if destination_settings.customer_display_enabled
+        else None
+    )
     row = ManualTopupRequestModel(
         reference=reference,
         customer_id=session.user_id,
         wallet_id=wallet.id,
         requested_amount_rial=body.amount_rial,
         currency="IRR",
-        status="AWAITING_SUPPORT",
+        status="AWAITING_RECEIPT" if destination_id else "AWAITING_SUPPORT",
+        destination_version_id=destination_id,
         source_channel=body.source_channel,
         customer_note=body.customer_note,
         expires_at=_now() + timedelta(days=7),
@@ -404,6 +489,222 @@ def list_manual_topups(
         .offset(offset)
     ).all()
     return {"items": [_customer_dto(db, row) for row in rows], "limit": limit, "offset": offset}
+
+
+@customer_router.get("/{reference}/destination")
+def customer_destination(
+    reference: str,
+    response: Response,
+    session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, object]:
+    row = _request(db, reference, session.user_id)
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
+    destination_settings = _destination_settings(db)
+    if not destination_settings.customer_display_enabled or not row.destination_version_id:
+        return {"mode": "SUPPORT_ONLY", "support_required": True}
+    destination = db.get(ManualTopupDestinationVersionModel, row.destination_version_id)
+    if destination is None:
+        return {"mode": "SUPPORT_ONLY", "support_required": True}
+    encryptor = _encryptor(settings)
+    card = encryptor.decrypt(
+        EncryptedSecret(destination.encryption_key_version, destination.encrypted_card_number)
+    )
+    holder = (
+        encryptor.decrypt(
+            EncryptedSecret(
+                destination.encryption_key_version, destination.encrypted_card_holder_name
+            )
+        )
+        if destination.encrypted_card_holder_name
+        else None
+    )
+    return {
+        "mode": "DIRECT_CARD",
+        "card_number": card,
+        "formatted_card_number": format_card_number(card),
+        "card_holder_name": holder,
+        "support_required": False,
+    }
+
+
+@admin_router.get("/destination")
+def admin_destination(
+    _: Annotated[AdminModel, Depends(require_perm("manual_topups.destination.read"))],
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, object]:
+    return _destination_dto(db, _destination_settings(db), settings)
+
+
+@admin_router.post("/destination/strong-confirmation")
+async def destination_strong_confirmation(
+    body: DestinationConfirmation,
+    admin: Annotated[AdminModel, Depends(require_perm("manual_topups.destination.manage"))],
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+    csrf: Annotated[str | None, Header(alias="X-CSRF-Token")] = None,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    session = _admin_session(db, settings, authorization)
+    _admin_csrf(session, csrf)
+    await _rate(limiter, "manual-topup-destination-confirm", admin.id, 5)
+    current = _destination_settings(db)
+    if current.version != body.expected_version:
+        raise _error(409, "STALE_VERSION")
+    from platform_api.admin_auth.routes import admin_auth_service
+
+    if not admin_auth_service(db, settings).verify_strong_confirmation(
+        admin.id, body.current_password, body.totp_code, now=_now()
+    ):
+        raise _error(403, "STRONG_CONFIRMATION_FAILED")
+    token = secrets.token_urlsafe(48)
+    binding = _fingerprint(
+        {
+            "admin": admin.id,
+            "session": session.id,
+            "purpose": "MANUAL_TOPUP_DESTINATION_UPDATE",
+            "version": body.expected_version,
+            "enabled": body.customer_display_enabled,
+            "card_fingerprint": body.replacement_card_fingerprint,
+        }
+    )
+    db.add(
+        ManualTopupIdempotencyModel(
+            scope="CONFIRMATION",
+            scope_id=session.id,
+            operation="MANUAL_TOPUP_DESTINATION_UPDATE",
+            key_hash=_hash(token),
+            request_fingerprint=binding,
+            result_reference="unused",
+            expires_at=_now() + timedelta(minutes=5),
+        )
+    )
+    return {"strong_confirmation_token": token, "expires_in_seconds": 300}
+
+
+@admin_router.patch("/destination")
+def update_admin_destination(
+    body: DestinationUpdate,
+    request: Request,
+    admin: Annotated[AdminModel, Depends(require_perm("manual_topups.destination.manage"))],
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    csrf: Annotated[str | None, Header(alias="X-CSRF-Token")] = None,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    session = _admin_session(db, settings, authorization)
+    _admin_csrf(session, csrf)
+    normalized = normalize_card_number(body.card_number) if body.card_number else None
+    card_fingerprint = _hash(normalized) if normalized else None
+    safe_body = {
+        "expected_version": body.expected_version,
+        "customer_display_enabled": body.customer_display_enabled,
+        "card_fingerprint": card_fingerprint,
+        "card_holder_name_present": bool(body.card_holder_name),
+    }
+    fingerprint = _fingerprint(safe_body)
+    prior = _idem(
+        db,
+        scope="ADMIN",
+        scope_id=admin.id,
+        operation="DESTINATION_UPDATE",
+        key=idempotency_key,
+        fingerprint=fingerprint,
+    )
+    if prior:
+        return _destination_dto(db, _destination_settings(db), settings)
+    current = _destination_settings(db, lock=True)
+    if current.version != body.expected_version:
+        raise _error(409, "STALE_VERSION")
+    confirmation = db.scalar(
+        select(ManualTopupIdempotencyModel)
+        .where(
+            ManualTopupIdempotencyModel.scope == "CONFIRMATION",
+            ManualTopupIdempotencyModel.scope_id == session.id,
+            ManualTopupIdempotencyModel.operation == "MANUAL_TOPUP_DESTINATION_UPDATE",
+            ManualTopupIdempotencyModel.key_hash == _hash(body.strong_confirmation_token),
+        )
+        .with_for_update()
+    )
+    binding = _fingerprint(
+        {
+            "admin": admin.id,
+            "session": session.id,
+            "purpose": "MANUAL_TOPUP_DESTINATION_UPDATE",
+            "version": body.expected_version,
+            "enabled": body.customer_display_enabled,
+            "card_fingerprint": card_fingerprint,
+        }
+    )
+    if (
+        confirmation is None
+        or confirmation.expires_at.replace(tzinfo=UTC) < _now()
+        or confirmation.request_fingerprint != binding
+    ):
+        raise _error(403, "STRONG_CONFIRMATION_INVALID")
+    db.delete(confirmation)
+    old = db.get(ManualTopupDestinationVersionModel, current.active_destination_version_id)
+    destination = old
+    if normalized:
+        encrypted = _encryptor(settings).encrypt(normalized)
+        holder = (
+            _encryptor(settings).encrypt(body.card_holder_name.strip())
+            if body.card_holder_name and body.card_holder_name.strip()
+            else None
+        )
+        destination = ManualTopupDestinationVersionModel(
+            reference=_ref("mtd"),
+            encrypted_card_number=encrypted.ciphertext,
+            encrypted_card_holder_name=holder.ciphertext if holder else None,
+            card_last4=normalized[-4:],
+            encryption_key_version=encrypted.key_version,
+            created_by_admin_id=admin.id,
+        )
+        db.add(destination)
+        db.flush()
+        if old:
+            old.retired_at = _now()
+        current.active_destination_version_id = destination.id
+    if body.customer_display_enabled and destination is None:
+        raise _error(409, "DESTINATION_REQUIRED")
+    current.customer_display_enabled = body.customer_display_enabled
+    current.version += 1
+    current.updated_by_admin_id = admin.id
+    current.updated_at = _now()
+    _idem(
+        db,
+        scope="ADMIN",
+        scope_id=admin.id,
+        operation="DESTINATION_UPDATE",
+        key=idempotency_key,
+        fingerprint=fingerprint,
+        result=str(current.version),
+    )
+    db.add(
+        AuditLogModel(
+            actor_type="admin",
+            actor_id=admin.id,
+            target_type="manual_topup_destination",
+            target_id=destination.id if destination else admin.id,
+            event_code="manual_topup.destination.updated",
+            occurred_at=_now(),
+            correlation_id=request.headers.get("x-request-id", "local"),
+            metadata_=sanitize_metadata(
+                {
+                    "enabled": current.customer_display_enabled,
+                    "old_reference": old.reference if old else None,
+                    "new_reference": destination.reference if destination else None,
+                    "admin_reference": admin.id,
+                }
+            ),
+        )
+    )
+    return _destination_dto(db, current, settings)
 
 
 @customer_router.get("/{reference}")

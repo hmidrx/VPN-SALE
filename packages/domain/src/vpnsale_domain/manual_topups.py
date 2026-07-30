@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from enum import StrEnum
 
 MINIMUM_REQUEST_RIAL = 1_000_000
@@ -19,6 +20,28 @@ class ManualTopupStatus(StrEnum):
     REJECTED = "REJECTED"
     CANCELLED = "CANCELLED"
     EXPIRED = "EXPIRED"
+
+
+def normalize_card_number(value: str) -> str:
+    """Normalize an Iranian card destination without guessing or correcting input."""
+    digits: list[str] = []
+    for character in value:
+        if character in {" ", "-"}:
+            continue
+        try:
+            digit = unicodedata.digit(character)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("card number contains unsupported characters") from exc
+        digits.append(str(digit))
+    normalized = "".join(digits)
+    if len(normalized) != 16 or len(set(normalized)) == 1:
+        raise ValueError("card number must contain 16 non-identical digits")
+    return normalized
+
+
+def format_card_number(value: str) -> str:
+    normalized = normalize_card_number(value)
+    return " ".join(normalized[index : index + 4] for index in range(0, 16, 4))
 
 
 _TRANSITIONS = {
