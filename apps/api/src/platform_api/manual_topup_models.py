@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -25,6 +26,17 @@ def _uuid() -> str:
     return str(uuid4())
 
 
+postgres_last4_constraint = CheckConstraint(
+    "card_last4 ~ '^[0-9]{4}$'",
+    name="ck_manual_topup_destination_last4",
+).ddl_if(dialect="postgresql")
+
+sqlite_last4_constraint = CheckConstraint(
+    "length(card_last4) = 4 " "AND card_last4 GLOB '[0-9][0-9][0-9][0-9]'",
+    name="ck_manual_topup_destination_last4_sqlite",
+).ddl_if(dialect="sqlite")
+
+
 class ManualTopupRequestModel(IdentityBase):
     __tablename__ = "manual_topup_requests"
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
@@ -39,6 +51,9 @@ class ManualTopupRequestModel(IdentityBase):
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="IRR")
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     source_channel: Mapped[str] = mapped_column(String(24), nullable=False)
+    destination_version_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("manual_topup_destination_versions.id", ondelete="RESTRICT")
+    )
     current_receipt_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False),
         ForeignKey(
@@ -95,6 +110,51 @@ class ManualTopupRequestModel(IdentityBase):
         ),
         Index("ix_manual_topup_customer_status_created", "customer_id", "status", "created_at"),
         Index("ix_manual_topup_review_queue", "status", "submitted_at", "created_at"),
+    )
+
+
+class ManualTopupDestinationVersionModel(IdentityBase):
+    __tablename__ = "manual_topup_destination_versions"
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    reference: Mapped[str] = mapped_column(String(48), unique=True, nullable=False)
+    encrypted_card_number: Mapped[str] = mapped_column(Text, nullable=False)
+    encrypted_card_holder_name: Mapped[str | None] = mapped_column(Text)
+    card_last4: Mapped[str] = mapped_column(String(4), nullable=False)
+    encryption_key_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_by_admin_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("admins.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        postgres_last4_constraint,
+        sqlite_last4_constraint,
+    )
+
+
+class ManualTopupDestinationSettingsModel(IdentityBase):
+    __tablename__ = "manual_topup_destination_settings"
+    key: Mapped[str] = mapped_column(String(32), primary_key=True, default="default")
+    active_destination_version_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("manual_topup_destination_versions.id", ondelete="RESTRICT")
+    )
+    customer_display_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    updated_by_admin_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("admins.id", ondelete="RESTRICT")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        CheckConstraint("key = 'default'", name="ck_manual_topup_destination_singleton"),
+        CheckConstraint("version > 0", name="ck_manual_topup_destination_settings_version"),
+        CheckConstraint(
+            "NOT customer_display_enabled OR active_destination_version_id IS NOT NULL",
+            name="ck_manual_topup_destination_enabled_requires_card",
+        ),
     )
 
 

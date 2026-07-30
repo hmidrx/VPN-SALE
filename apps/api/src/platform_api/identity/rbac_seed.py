@@ -52,6 +52,8 @@ INITIAL_PERMISSIONS: tuple[tuple[str, str], ...] = (
     ("manual_topups.review", "Review manual top-up requests"),
     ("manual_topups.message", "Send customer-visible manual top-up messages"),
     ("manual_topups.override_amount", "Approve manual top-ups with amount overrides"),
+    ("manual_topups.destination.read", "Read masked manual top-up destination settings"),
+    ("manual_topups.destination.manage", "Manage manual top-up financial destination"),
     ("customer_wallets.read", "Read customer wallet inspection"),
     ("customer_wallets.freeze", "Freeze and unfreeze customer wallets"),
     ("customer_wallets.adjust", "Request customer wallet adjustments"),

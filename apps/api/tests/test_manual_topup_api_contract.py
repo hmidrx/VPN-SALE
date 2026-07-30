@@ -10,6 +10,7 @@ def test_manual_topup_routes_and_security_contract_are_registered() -> None:
     for route in (
         '@customer_router.post("")',
         '@customer_router.get("")',
+        '@customer_router.get("/{reference}/destination")',
         '@customer_router.get("/{reference}")',
         '@customer_router.post("/{reference}/receipts")',
         '@customer_router.get("/{reference}/receipt")',
@@ -23,7 +24,11 @@ def test_manual_topup_routes_and_security_contract_are_registered() -> None:
         '@admin_router.post("/{reference}/messages")',
     ):
         assert route in source
-    forbidden = ("card_number", "destination_card", "public_url", "PaymentSettlement")
+    ordinary_customer_dto = source[
+        source.index("def _customer_dto(") : source.index("def _destination_settings(")
+    ]
+    assert "card_number" not in ordinary_customer_dto
+    forbidden = ("destination_card", "public_url", "PaymentSettlement")
     assert not any(value in source for value in forbidden)
 
 

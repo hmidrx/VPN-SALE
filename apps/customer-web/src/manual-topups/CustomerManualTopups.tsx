@@ -5,13 +5,14 @@ import {
   cancelManualTopup,
   createManualTopup,
   getManualTopup,
+  getManualTopupDestination,
   listManualTopups,
   logicalKey,
   privateReceiptObjectUrl,
   uploadReceipt,
 } from "./api";
 import { statusLabels, toman, tomanToRial } from "./format";
-import type { ManualTopup, ManualTopupStatus } from "./types";
+import type { ManualTopup, ManualTopupDestination, ManualTopupStatus } from "./types";
 
 const presets = [100_000, 250_000, 500_000, 1_000_000, 2_000_000];
 const formatToman = (value: number): string =>
@@ -300,6 +301,8 @@ function ManualDetail({
   reference: string;
 }): React.ReactElement {
   const [data, setData] = React.useState<ManualTopup>();
+  const [destination, setDestination] = React.useState<ManualTopupDestination>();
+  const [copied, setCopied] = React.useState(false);
   const [file, setFile] = React.useState<File>();
   const [preview, setPreview] = React.useState<string>();
   const [progress, setProgress] = React.useState(0);
@@ -316,6 +319,18 @@ function ManualDetail({
   React.useEffect(() => {
     void load();
   }, [load]);
+  React.useEffect(() => {
+    const controller = new AbortController();
+    setDestination(undefined);
+    void getManualTopupDestination(reference, controller.signal)
+      .then(setDestination)
+      .catch(() => setDestination({ mode: "SUPPORT_ONLY", support_required: true }));
+    return () => {
+      controller.abort();
+      setDestination(undefined);
+      setCopied(false);
+    };
+  }, [reference]);
   React.useEffect(
     () => () => {
       if (preview) URL.revokeObjectURL(preview);
@@ -447,12 +462,23 @@ function ManualDetail({
         </header>
         {uploadable && (
           <>
-            <a
-              className="manual-support"
-              href={`/support?manual_topup_reference=${encodeURIComponent(data.reference)}`}
-            >
-              دریافت اطلاعات کارت از پشتیبانی
-            </a>
+            {!destination ? <div className="manual-destination-skeleton" role="status">در حال دریافت اطلاعات واریز…</div> : destination.mode === "DIRECT_CARD" ? (
+              <section className="manual-destination" aria-label="اطلاعات واریز">
+                <h3>اطلاعات واریز</h3>
+                <bdi dir="ltr" className="manual-card-number">{destination.formatted_card_number}</bdi>
+                {destination.card_holder_name && <p>{destination.card_holder_name}</p>}
+                <button type="button" className="manual-copy" onClick={() => { void navigator.clipboard.writeText(destination.card_number).then(() => setCopied(true)); }}>
+                  {copied ? "کپی شد" : "کپی شماره کارت"}
+                </button>
+                <p>پس از واریز، تصویر فیش را در همین صفحه ارسال کنید.</p>
+              </section>
+            ) : (
+              <section className="manual-destination manual-support-only">
+                <h3>دریافت اطلاعات کارت</h3>
+                <p>برای دریافت شماره کارت، با پشتیبانی در ارتباط باشید.</p>
+                <a className="manual-support" href={`/support?manual_topup_reference=${encodeURIComponent(data.reference)}`}>دریافت شماره کارت از پشتیبانی</a>
+              </section>
+            )}
             <ReceiptPicker
               file={file}
               preview={preview}
