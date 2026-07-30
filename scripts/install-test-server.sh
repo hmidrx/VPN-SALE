@@ -101,7 +101,7 @@ fi
 # state mismatch: PostgreSQL volume with missing postgres-password refusing to generate replacement password
 if volume_exists && ! validate_secret_file "$PG_PASSWORD_FILE"; then fail "state mismatch: PostgreSQL volume $pg_volume exists but $PG_PASSWORD_FILE is missing, empty, or not mode 0600; refusing to generate replacement password"; fi
 ensure_secret_file "$PG_PASSWORD_FILE" || fail "invalid PostgreSQL password secret file permissions/content"
-ensure_secret_file "$TELEGRAM_INTERNAL_TOKEN_FILE" || fail "invalid Telegram internal token secret file permissions/content"
+ensure_container_secret_source "$TELEGRAM_INTERNAL_TOKEN_FILE" || fail "unsafe Telegram internal token secret file"
 PG_PASS="$(cat "$PG_PASSWORD_FILE")"
 POSTGRES_USER="vpnsale"; POSTGRES_DB="vpnsale"
 ASYNC_DB_URL="$(build_pg_url '+asyncpg' "$POSTGRES_USER" "$PG_PASS" postgres 5432 "$POSTGRES_DB")"
@@ -127,6 +127,12 @@ phase_done compose
 phase="build images"
 profiles=( ); [[ "$ENABLE_TELEGRAM" == true ]] && profiles+=(--profile telegram); [[ "$ENABLE_MANUAL_CARD_TOPUPS" == true ]] && profiles+=(--profile ops)
 "${compose[@]}" "${profiles[@]}" build api worker customer-web admin-web reseller-web telegram-bot
+api_image="$("${compose[@]}" images -q api)"; bot_image="$("${compose[@]}" --profile telegram images -q telegram-bot)"
+api_identity="$(container_runtime_identity "$api_image")"; bot_identity="$(container_runtime_identity "$bot_image")"
+IFS=: read -r api_uid api_gid <<<"$api_identity"; IFS=: read -r bot_uid bot_gid <<<"$bot_identity"
+[[ "$api_uid" =~ ^[0-9]+$ && "$api_uid" -ne 0 && "$bot_uid" =~ ^[0-9]+$ && "$bot_uid" -ne 0 ]] || fail "container runtime user must be non-root"
+[[ "$api_gid" == "$bot_gid" ]] || fail "API and Telegram bot runtime groups differ"
+prepare_container_secret_file "$TELEGRAM_INTERNAL_TOKEN_FILE" "$api_gid" || fail "could not prepare Telegram internal token permissions"
 phase_done build
 phase="database and redis"
 "${compose[@]}" up -d postgres redis
@@ -141,6 +147,30 @@ start_services=(api customer-web admin-web reseller-web); [[ "$ENABLE_MANUAL_CAR
 "${compose[@]}" "${profiles[@]}" up -d "${start_services[@]}"
 ./scripts/wait-for-http.sh http://127.0.0.1:8000/health 60; ./scripts/wait-for-http.sh http://127.0.0.1:8000/ready 60
 for p in 3000 3001 3002; do ./scripts/wait-for-http.sh "http://127.0.0.1:$p" 60; done
+[[ "$(stat -c %u:%a "$SECRETS_DIR")" == "0:700" ]] || fail "runtime secrets directory ownership/mode changed"
+[[ "$(stat -c %u:%g:%a "$TELEGRAM_INTERNAL_TOKEN_FILE")" == "0:$api_gid:640" ]] || fail "Telegram internal token ownership/mode changed"
+api_secret_fingerprint="$("${compose[@]}" exec -T api python - <<'PY'
+from hashlib import sha256
+from pathlib import Path
+import os
+assert os.getuid() != 0
+value = Path("/run/secrets/telegram-internal-token").read_bytes()
+assert len(value) >= 43
+print(sha256(value).hexdigest())
+PY
+)"
+bot_secret_fingerprint="$("${compose[@]}" --profile telegram run --rm --no-deps --entrypoint python telegram-bot - <<'PY'
+from hashlib import sha256
+from pathlib import Path
+import os
+assert os.getuid() != 0
+value = Path("/run/secrets/telegram-internal-token").read_bytes()
+assert len(value) >= 43
+print(sha256(value).hexdigest())
+PY
+)"
+[[ -n "$api_secret_fingerprint" && "$api_secret_fingerprint" == "$bot_secret_fingerprint" ]] || fail "container Telegram internal credentials differ"
+unset api_secret_fingerprint bot_secret_fingerprint
 phase_done services
 phase="Caddy"
 tmp_caddy="$(mktemp)"

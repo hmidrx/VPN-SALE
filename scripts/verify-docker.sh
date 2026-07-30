@@ -45,7 +45,26 @@ docker compose config
 log "Test-server Compose port isolation"
 "$repo_root/scripts/verify-test-server-compose.sh"
 log "Build core images"
-docker compose build api
+docker compose --profile telegram build api telegram-bot
+api_image="$(docker compose images -q api)"
+bot_image="$(docker compose --profile telegram images -q telegram-bot)"
+[[ -n "$api_image" && -n "$bot_image" ]]
+api_identity="$(docker run --rm --network none --entrypoint sh "$api_image" -c \
+  'printf "%s:%s" "$(id -u vpnsale)" "$(id -g vpnsale)"')"
+bot_identity="$(docker run --rm --network none --entrypoint sh "$bot_image" -c \
+  'printf "%s:%s" "$(id -u vpnsale)" "$(id -g vpnsale)"')"
+IFS=: read -r api_uid api_gid <<<"$api_identity"
+IFS=: read -r bot_uid bot_gid <<<"$bot_identity"
+[[ "$api_uid" =~ ^[0-9]+$ && "$api_gid" =~ ^[0-9]+$ && "$api_uid" -ne 0 ]]
+[[ "$bot_uid" =~ ^[0-9]+$ && "$bot_gid" =~ ^[0-9]+$ && "$bot_uid" -ne 0 ]]
+[[ "$api_gid" == "$bot_gid" ]]
+printf 'API runtime identity: uid=%s gid=%s\n' "$api_uid" "$api_gid"
+printf 'Telegram bot runtime identity: uid=%s gid=%s\n' "$bot_uid" "$bot_gid"
+docker run --rm --network none --user 0:0 \
+  --mount "type=bind,src=$secret_dir,dst=/fixture" --entrypoint sh "$api_image" \
+  -c 'chown 0:"$1" /fixture/telegram-internal-token && chmod 0640 /fixture/telegram-internal-token' \
+  helper "$api_gid"
+[[ "$(stat -c %u:%g:%a "$secret_file")" == "0:$api_gid:640" ]]
 log "Start core stack"
 docker compose up -d postgres redis api reverse-proxy
 log "Verify private Telegram credential mount"
@@ -53,8 +72,21 @@ docker compose exec -T api python - <<'PY'
 from pathlib import Path
 
 value = Path("/run/secrets/telegram-internal-token").read_text(encoding="utf-8").strip()
+assert __import__("os").getuid() != 0
 assert len(value) >= 43
-print("telegram internal credential mount is valid")
+print("TELEGRAM_INTERNAL_SECRET_READABLE_BY_API")
+PY
+log "Verify Telegram bot runtime credential mount"
+docker run --rm --network none --user "$bot_uid:$bot_gid" \
+  --mount "type=bind,src=$secret_file,dst=/run/secrets/telegram-internal-token,readonly" \
+  --entrypoint python "$bot_image" - <<'PY'
+from pathlib import Path
+import os
+
+assert os.getuid() != 0
+value = Path("/run/secrets/telegram-internal-token").read_text(encoding="utf-8").strip()
+assert len(value) >= 43
+print("TELEGRAM_INTERNAL_SECRET_READABLE_BY_BOT")
 PY
 log "Wait for proxy endpoints"
 scripts/wait-for-http.sh http://localhost:8080/health 90
@@ -85,7 +117,7 @@ for endpoint in register password-login; do
     -X POST -H 'content-type: application/json' --data '{}' \
     "http://localhost:8080/api/v1/customer/auth/$endpoint")"
   [[ "$code" == 404 ]]
-  ! grep -qi '^set-cookie:' /tmp/vpnsale-disabled-auth-headers
+  if grep -qi '^set-cookie:' /tmp/vpnsale-disabled-auth-headers; then exit 1; fi
 done
 rm -f /tmp/vpnsale-disabled-auth-headers
 combined="$health$ready$version$metrics"
