@@ -8,15 +8,33 @@ need_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "Missing required command
 need_cmd docker
 need_cmd curl
 need_cmd jq
+need_cmd python
+secret_dir=""
 cleanup() {
   status=$?
   if [[ $status -ne 0 ]]; then
     docker compose logs --no-color api reverse-proxy postgres redis || true
   fi
   docker compose down --volumes --remove-orphans || true
-  exit $status
+  if [[ -n "$secret_dir" && -d "$secret_dir" ]]; then
+    rm -rf -- "$secret_dir"
+  fi
+  exit "$status"
 }
 trap cleanup EXIT
+
+secret_dir="$(mktemp -d)"
+chmod 0700 "$secret_dir"
+secret_file="$secret_dir/telegram-internal-token"
+python - "$secret_file" <<'PY'
+from pathlib import Path
+import secrets
+import sys
+
+Path(sys.argv[1]).write_text(secrets.token_urlsafe(48), encoding="utf-8")
+PY
+chmod 0600 "$secret_file"
+export VPN_SALE_TELEGRAM_INTERNAL_TOKEN_FILE_HOST="$secret_file"
 
 log "Docker versions"
 docker --version
@@ -30,6 +48,14 @@ log "Build core images"
 docker compose build api
 log "Start core stack"
 docker compose up -d postgres redis api reverse-proxy
+log "Verify private Telegram credential mount"
+docker compose exec -T api python - <<'PY'
+from pathlib import Path
+
+value = Path("/run/secrets/telegram-internal-token").read_text(encoding="utf-8").strip()
+assert len(value) >= 43
+print("telegram internal credential mount is valid")
+PY
 log "Wait for proxy endpoints"
 scripts/wait-for-http.sh http://localhost:8080/health 90
 scripts/wait-for-http.sh http://localhost:8080/version 90
@@ -46,6 +72,9 @@ health="$(curl --fail --silent http://localhost:8080/health)"
 ready="$(curl --fail --silent http://localhost:8080/ready)"
 version="$(curl --fail --silent http://localhost:8080/version)"
 metrics="$(curl --fail --silent http://localhost:8080/metrics)"
+internal_code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  http://localhost:8080/api/v1/internal/telegram/profile)"
+[[ "$internal_code" == 404 ]]
 printf '%s' "$health" | jq -e '.status == "ok"' >/dev/null
 printf '%s' "$ready" | jq -e '.status == "ready" and .checks.database == true and .checks.redis == true' >/dev/null
 printf '%s' "$version" | jq -e '.version and .environment' >/dev/null
