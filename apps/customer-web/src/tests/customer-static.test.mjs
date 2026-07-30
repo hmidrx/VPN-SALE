@@ -93,7 +93,7 @@ const customerCss = source("../app/customer.css");
 const customerApp = source("components/CustomerApp.tsx");
 const navigation = source("components/customer-navigation.tsx");
 assert.equal((navigation.split("export const accountNavigation")[0].match(/{ label:/g) ?? []).length, 5);
-for (const route of ["/", "/catalog/products", "/services", "/wallet", "/profile", "/security", "/sessions", "/support"]) assert.match(navigation, new RegExp(`href: \\"${route.replaceAll("/", "\\/")}\\"`));
+for (const route of ["/", "/services", "/wallet", "/support", "/profile", "/security", "/sessions"]) assert.match(navigation, new RegExp(`href: \\"${route.replaceAll("/", "\\/")}\\"`));
 assert.match(customerApp, /aria-current=\{primaryPage === item\.page \? "page"/);
 assert.equal((customerApp.match(/className="customer-bottom-nav"/g) ?? []).length, 1);
 assert.doesNotMatch(customerApp, /<Card>\{page ===/);
@@ -103,6 +103,11 @@ for (const token of ["--color-canvas", "--color-surface", "--color-border", "--c
 for (const catalogClass of ["catalog-page", "catalog-toolbar", "catalog-search", "catalog-grid", "catalog-card", "catalog-inline-state"]) assert.match(customerCss, new RegExp(`\\.${catalogClass}`));
 assert.match(customerCss, /scroll-padding-block-end/);
 assert.match(customerCss, /calc\(110px \+ var\(--safe-bottom\)\)/);
+assert.match(customerCss, /prefers-reduced-motion:reduce/);
+assert.match(customerCss, /max-height:520px/);
+assert.doesNotMatch(customerApp, /نسخه آزمایشی|customer_id}.*Field|telegram_user_id}.*Field|current_session_id}.*Field/);
+assert.doesNotMatch(source("support/Support.tsx"), /backend|GENERAL|PAYMENT|customer_id|telegram_user_id|initData|token/i);
+assert.doesNotMatch(source("components/customer-ui.tsx"), /dangerouslySetInnerHTML|localStorage|sessionStorage/);
 
 
 assert.match(source("../app/services/[serviceReference]/migration/page.tsx"), /params: Promise<\{ serviceReference: string \}>/);
