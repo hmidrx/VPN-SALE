@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -75,3 +76,43 @@ class DurableMemoryConversationStore(ConversationStoreV2):
 
     def cancel(self, key: str) -> bool:
         return self._states.pop(key, None) is not None
+
+
+class RedisConversationStore(ConversationStoreV2):
+    """TTL-bound state; keys are HMAC-derived by the handler and values contain no PII."""
+
+    def __init__(self, redis_url: str) -> None:
+        from redis import Redis
+
+        self._redis = Redis.from_url(redis_url, socket_connect_timeout=1, socket_timeout=1)
+
+    def get(self, key: str, at: datetime) -> ConversationStateV2:
+        raw = self._redis.get(key)
+        if raw is None:
+            return ConversationStateV2()
+        value = json.loads(raw)
+        state = ConversationStateV2(
+            current_screen=ScreenId(value["screen"]),
+            navigation_stack=tuple(ScreenId(item) for item in value["stack"][-MAX_STACK:]),
+            active_menu_message_id=value.get("menu_message"),
+            state_version=int(value["version"]),
+            updated_at=datetime.fromisoformat(value["updated_at"]),
+            expires_at=datetime.fromisoformat(value["expires_at"]),
+        )
+        return ConversationStateV2() if state.expired(at) else state
+
+    def save(self, key: str, state: ConversationStateV2) -> None:
+        payload = json.dumps(
+            {
+                "screen": state.current_screen.value,
+                "stack": [item.value for item in state.navigation_stack[-MAX_STACK:]],
+                "menu_message": state.active_menu_message_id,
+                "version": state.state_version,
+                "updated_at": state.updated_at.isoformat(),
+                "expires_at": state.expires_at.isoformat(),
+            }
+        )
+        self._redis.set(key, payload, ex=STATE_TTL_SECONDS)
+
+    def cancel(self, key: str) -> bool:
+        return bool(self._redis.delete(key))

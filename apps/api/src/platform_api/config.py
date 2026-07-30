@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     admin_password_max_length: int = 512
 
     telegram_bot_token: str = ""
+    telegram_internal_token_file: str = ""
     telegram_init_data_max_age_seconds: int = 86400
     telegram_init_data_future_skew_seconds: int = 60
     telegram_init_data_max_length: int = 4096

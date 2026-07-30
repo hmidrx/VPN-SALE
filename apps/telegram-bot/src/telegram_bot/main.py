@@ -4,9 +4,10 @@ import asyncio
 import logging
 import signal
 
-from telegram_bot.application.identity import InMemoryTelegramIdentityService
 from telegram_bot.cli import load_settings_from_environment
 from telegram_bot.config import BotMode, BotSettings
+from telegram_bot.conversation import RedisConversationStore
+from telegram_bot.internal_api import PrivatePlatformClient
 from telegram_bot.runtime.lifecycle import BotRuntime
 from telegram_bot.transport.polling import TelegramPollingRuntime
 
@@ -36,7 +37,13 @@ async def _serve_until_stopped(runtime: BotRuntime) -> None:
 
 
 async def _run_polling(settings: BotSettings) -> None:
-    polling = TelegramPollingRuntime(settings, InMemoryTelegramIdentityService())
+    platform = PrivatePlatformClient(settings.internal_api_url, settings.internal_token_file)
+    polling = TelegramPollingRuntime(
+        settings,
+        platform,
+        portal=platform,
+        conversations=RedisConversationStore(settings.redis_url),
+    )
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, polling.stop)
