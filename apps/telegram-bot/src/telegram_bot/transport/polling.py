@@ -10,6 +10,8 @@ from typing import Any, Protocol, cast
 
 from telegram_bot.application.identity import TelegramIdentityPort
 from telegram_bot.config import BotMode, BotSettings
+from telegram_bot.conversation import ConversationStoreV2
+from telegram_bot.portal import CustomerPortalPort
 from telegram_bot.runtime.handlers import (
     BotCommandHandler,
     IncomingCallback,
@@ -75,13 +77,19 @@ class TelegramPollingRuntime:
         identity: TelegramIdentityPort,
         transport: TelegramTransport | None = None,
         *,
+        portal: CustomerPortalPort | None = None,
+        conversations: ConversationStoreV2 | None = None,
         retry_base_seconds: float = 0.2,
         retry_max_seconds: float = 5.0,
     ) -> None:
         validate_polling(settings)
         self.settings = settings
         self.transport = transport or UrlLibTelegramTransport(settings.token)
-        self.handler = BotCommandHandler(settings, identity)
+        if settings.production_like and (portal is None or conversations is None):
+            raise ValueError("production polling requires real portal and durable state")
+        self.handler = BotCommandHandler(
+            settings, identity, portal=portal, conversations=conversations
+        )
         self.retry_base_seconds = retry_base_seconds
         self.retry_max_seconds = retry_max_seconds
         self.offset = 0
