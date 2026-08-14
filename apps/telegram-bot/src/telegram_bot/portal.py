@@ -192,6 +192,9 @@ class CustomerPortalPort(Protocol):
     ) -> ManualTopup: ...
     def manual_topups(self, context: CustomerContext) -> list[ManualTopup]: ...
     def manual_topup(self, context: CustomerContext, reference: str) -> ManualTopup | None: ...
+    def cancel_manual_topup(
+        self, context: CustomerContext, reference: str, idempotency_key: str
+    ) -> ManualTopup: ...
     def manual_topup_destination_mode(self, context: CustomerContext, reference: str) -> str: ...
     def upload_manual_topup_receipt(
         self,
@@ -245,6 +248,7 @@ class InMemoryCustomerPortal(CustomerPortalPort):
         self._notification_preferences: dict[str, NotificationPreferences] = {}
         self._notification_idempotency: dict[tuple[str, str], NotificationPreferences] = {}
         self._manual_topups: dict[str, ManualTopup] = {}
+        self._manual_topup_cancellations: dict[str, ManualTopup] = {}
 
     def profile(self, context: CustomerContext) -> CustomerProfile:
         return CustomerProfile(
@@ -282,6 +286,28 @@ class InMemoryCustomerPortal(CustomerPortalPort):
 
     def manual_topup(self, context: CustomerContext, reference: str) -> ManualTopup | None:
         return self._manual_topups.get(reference)
+
+    def cancel_manual_topup(
+        self, context: CustomerContext, reference: str, idempotency_key: str
+    ) -> ManualTopup:
+        if idempotency_key in self._manual_topup_cancellations:
+            return self._manual_topup_cancellations[idempotency_key]
+        request = self._manual_topups[reference]
+        if request.status not in {"AWAITING_SUPPORT", "AWAITING_RECEIPT", "NEEDS_RESUBMISSION"}:
+            raise ValueError("manual top-up cannot be cancelled")
+        cancelled = ManualTopup(
+            request.reference,
+            request.amount_toman,
+            "CANCELLED",
+            request.created_at,
+            request.submitted_at,
+            request.verified_amount_toman,
+            request.bonus_amount_toman,
+            request.total_credited_toman,
+        )
+        self._manual_topups[reference] = cancelled
+        self._manual_topup_cancellations[idempotency_key] = cancelled
+        return cancelled
 
     def manual_topup_destination_mode(self, context: CustomerContext, reference: str) -> str:
         return "SUPPORT_ONLY"

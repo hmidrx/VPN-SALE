@@ -226,6 +226,19 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
         except PrivateApiUnavailable:
             return None
 
+    def cancel_manual_topup(
+        self, context: CustomerContext, reference: str, idempotency_key: str
+    ) -> ManualTopup:
+        return self._manual_topup(
+            self._request(
+                "POST",
+                f"/manual-topups/{reference}/cancel",
+                context.telegram_user_id,
+                {},
+                idempotency_key,
+            )
+        )
+
     def manual_topup_destination_mode(self, context: CustomerContext, reference: str) -> str:
         data = self._request(
             "GET", f"/manual-topups/{reference}/destination-mode", context.telegram_user_id

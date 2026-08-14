@@ -206,6 +206,12 @@ class ScreenRenderer:
             )
             rows = [
                 [{"text": "➕ افزایش موجودی", "callback_data": cb(CallbackAction.TOP_UP)}],
+                [
+                    {
+                        "text": "📋 درخواست‌های کارت‌به‌کارت",
+                        "callback_data": cb(CallbackAction.LIST_MANUAL_TOPUPS),
+                    }
+                ],
                 *self.nav_rows(locale),
             ]
             return RenderedScreen(text, rows, screen)

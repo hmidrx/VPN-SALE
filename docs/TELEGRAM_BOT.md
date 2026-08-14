@@ -28,6 +28,6 @@ Production and staging startup require the bridge URL, token file, and Redis URL
 
 The bridge reuses the customer service, wallet, notification-preference, and manual-topup application operations. Native top-up amount entry and confirmation are Redis-backed; confirmation creates one idempotent customer-owned request. Receipt photos and JPEG/PNG/WebP documents are size checked before Telegram `getFile`, downloaded only from Telegram's fixed HTTPS file host without redirects, and uploaded immediately for authoritative backend sanitization. Redis stores only the request reference and expected input, never card data or receipt bytes.
 
-Request-list/detail presentation and explicit lifecycle-aware cancellation controls still require further bot UI coverage before BOT-1 should be described as complete.
+The wallet and top-up screens expose a native recent-request list and opaque-reference detail view. Receipt and cancellation controls are lifecycle-aware: local conversation cancellation never mutates a financial request, while request cancellation uses the sensitive callback policy and the authoritative private API before Redis flow state is cleared. Approved details keep the verified transfer, management gift, and total credited amount separate.
 
 The bot image exposes the `vpn-sale-telegram-bot-v2-foundation` marker so test-server verification can confirm the deployed image contains the Bot V2 foundation.
