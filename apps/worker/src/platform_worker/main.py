@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import time
 
 import httpx
@@ -14,6 +15,7 @@ from .manual_topup_delivery import (
     ManualTopupDeliveryWorker,
     TelegramDeliveryError,
 )
+from .order_fulfillment import DisabledProvisioner, OrderFulfillmentWorker
 
 
 class BotApiTransport:
@@ -54,8 +56,20 @@ def main() -> None:
         BotApiTransport(token),
         DeliverySettings(enabled, os.getenv("VPN_SALE_PUBLIC_APP_ORIGIN", "http://localhost:3000")),
     )
+    fulfillment = OrderFulfillmentWorker(
+        factory, DisabledProvisioner(), f"{socket.gethostname()}:{os.getpid()}"
+    )
     while True:
-        processed = worker.run_once()
+        processed = 0
+        try:
+            processed += worker.run_once()
+        except Exception:
+            # A responsibility is isolated so its next poll remains available. Log only type.
+            print("manual_topup_worker_cycle_failed", flush=True)
+        try:
+            processed += fulfillment.run_once()
+        except Exception:
+            print("order_fulfillment_worker_cycle_failed", flush=True)
         time.sleep(1 if processed else 5)
 
 
