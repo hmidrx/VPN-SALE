@@ -33,6 +33,12 @@ and reviewed revision; a committed purchase therefore wins over later catalog ch
 revisions receive distinct quote child keys, while all retries of one revision resolve to the same
 quote and order.
 
+A separate `telegram_purchase_idempotency` anchor is unique by customer and hashed external
+Telegram purchase key. Its locked `REVIEWING` state permits pre-checkout reconfirmation revisions;
+once any revision commits, `COMMITTED` points to exactly one order and every later body/revision
+returns that order before catalog or wallet work. The unique row plus `SELECT … FOR UPDATE`
+serializes concurrent revisions on PostgreSQL.
+
 Catalog machine codes are converted to compact opaque Telegram plan references, keeping callback
 payloads below Telegram's 64-byte limit even for the longest valid machine code.
 
@@ -49,8 +55,10 @@ All routes remain below `/api/v1/internal/telegram`, require the file-mounted be
 `X-Telegram-Subject`, and perform ownership lookup server-side. Caddy configuration is unchanged.
 Amounts are integral rial in commerce and converted to integral toman only at the Telegram boundary.
 
-No migration is required. Rollback consists of reverting the bot callbacks/state fields and private
-routes; existing orders remain valid and can continue through the standard fulfillment outbox.
+Migration `0036_telegram_purchase_idem` adds the purchase-level idempotency anchor. Its downgrade
+drops only that anchor; existing orders remain valid and continue through the standard fulfillment
+outbox. Application rollback should precede migration downgrade so no running bot loses the global
+economic-key guard.
 Local startup remains `docker compose up --build` after configuring the documented secret files.
 
 ## Known external enablement

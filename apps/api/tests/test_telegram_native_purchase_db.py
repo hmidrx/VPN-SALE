@@ -317,3 +317,54 @@ async def test_db_insufficient_balance_after_review_is_authoritative_409(
     with factory() as db:
         assert db.scalar(select(func.count()).select_from(OrderModel)) == 0
         assert db.scalar(select(func.count()).select_from(WalletPaymentModel)) == 0
+
+
+@pytest.mark.asyncio
+async def test_db_same_external_key_cannot_buy_changed_revision_twice(
+    purchase_app: PurchaseApp,
+) -> None:
+    app, factory, _ = purchase_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://private") as client:
+        item = await plan(client)
+        original_body = purchase_body(item)
+        first = await client.post(
+            "/api/v1/internal/telegram/purchase/confirm",
+            headers=headers("global-economic-key"),
+            json=original_body,
+        )
+        assert first.status_code == 200
+        with factory() as db:
+            projection = db.scalar(select(WalletBalanceProjectionModel))
+            assert projection is not None
+            balance_after_first = projection.posted_balance_rial
+
+        changed_body = {
+            **original_body,
+            "reviewed_price_toman": original_body["reviewed_price_toman"] + 70_000,
+            "reviewed_selection": {
+                **original_body["reviewed_selection"],
+                "duration_days": 60,
+            },
+        }
+        second = await client.post(
+            "/api/v1/internal/telegram/purchase/confirm",
+            headers=headers("global-economic-key"),
+            json=changed_body,
+        )
+
+    assert second.status_code == 200
+    assert second.json()["order_reference"] == first.json()["order_reference"]
+    with factory() as db:
+        assert db.scalar(select(func.count()).select_from(OrderModel)) == 1
+        assert db.scalar(select(func.count()).select_from(WalletPaymentModel)) == 1
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(JournalEntryModel)
+                .where(JournalEntryModel.operation_code == "ORDER_WALLET_CAPTURE")
+            )
+            == 1
+        )
+        projection = db.scalar(select(WalletBalanceProjectionModel))
+        assert projection is not None
+        assert projection.posted_balance_rial == balance_after_first

@@ -14,6 +14,7 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .catalog import QuoteRequest, _localized, _price_preview, create_quote
@@ -45,7 +46,7 @@ from .notification_preferences import (
     get_preferences,
     patch_preferences,
 )
-from .order_models import OrderModel
+from .order_models import OrderModel, TelegramPurchaseIdempotencyModel
 from .orders import CheckoutRequest, confirm_checkout, create_checkout, order_detail
 from .services import (
     CustomerServiceSummary,
@@ -280,6 +281,55 @@ def _native_order_result(order: OrderModel) -> dict[str, object]:
     }
 
 
+def _purchase_anchor(
+    db: Session, customer_id: str, idempotency_key: str
+) -> TelegramPurchaseIdempotencyModel:
+    key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
+    anchor = db.scalar(
+        select(TelegramPurchaseIdempotencyModel)
+        .where(
+            TelegramPurchaseIdempotencyModel.customer_id == customer_id,
+            TelegramPurchaseIdempotencyModel.key_hash == key_hash,
+        )
+        .with_for_update()
+    )
+    if anchor is not None:
+        return anchor
+    candidate = TelegramPurchaseIdempotencyModel(
+        customer_id=customer_id, key_hash=key_hash, status="REVIEWING"
+    )
+    try:
+        # The unique customer/key constraint is the race arbiter. On PostgreSQL a concurrent insert
+        # waits here; the loser rolls back only this savepoint and then locks the winner's row.
+        with db.begin_nested():
+            db.add(candidate)
+            db.flush()
+        return candidate
+    except IntegrityError:
+        anchor = db.scalar(
+            select(TelegramPurchaseIdempotencyModel)
+            .where(
+                TelegramPurchaseIdempotencyModel.customer_id == customer_id,
+                TelegramPurchaseIdempotencyModel.key_hash == key_hash,
+            )
+            .with_for_update()
+        )
+        if anchor is None:
+            raise
+        return anchor
+
+
+def _committed_anchor_order(
+    db: Session, anchor: TelegramPurchaseIdempotencyModel
+) -> OrderModel | None:
+    if anchor.status != "COMMITTED" or not anchor.order_id:
+        return None
+    order = db.get(OrderModel, anchor.order_id)
+    if order is None:
+        raise HTTPException(status_code=409, detail="purchase_reconciliation_unavailable")
+    return order
+
+
 def _native_plan(db: Session, product: ProductModel, request: Request) -> dict[str, object]:
     version = db.get(ProductVersionModel, product.current_version_id)
     if not version or version.status != "PUBLISHED":
@@ -391,6 +441,11 @@ def confirm_native_purchase(
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=120)],
 ) -> dict[str, object]:
     customer_id = _customer_id(db, x_telegram_subject)
+    anchor = _purchase_anchor(db, customer_id, idempotency_key)
+    committed_order = _committed_anchor_order(db, anchor)
+    if committed_order is not None:
+        _no_store(response)
+        return _native_order_result(committed_order)
     existing_quote_key = _purchase_idempotency_key(idempotency_key, "quote", _review_revision(body))
     existing_idem = db.scalar(
         select(QuoteIdempotencyRecordModel).where(
@@ -404,6 +459,9 @@ def confirm_native_purchase(
             select(OrderModel).where(OrderModel.quote_id == existing_idem.quote_id)
         )
         if existing_order is not None:
+            anchor.status = "COMMITTED"
+            anchor.order_id = existing_order.id
+            anchor.committed_at = datetime.now(UTC)
             _no_store(response)
             return _native_order_result(existing_order)
 
@@ -493,6 +551,9 @@ def confirm_native_purchase(
                 "selection": plan["selection"],
             },
         }
+        anchor.status = "COMMITTED"
+        anchor.order_id = order_row.id
+        anchor.committed_at = datetime.now(UTC)
     _no_store(response)
     return {
         "outcome": "ACCEPTED",

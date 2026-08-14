@@ -259,6 +259,36 @@ class CheckoutIdempotencyRecordModel(IdentityBase):
     )
 
 
+class TelegramPurchaseIdempotencyModel(IdentityBase):
+    """One durable economic purchase identity per Telegram customer mutation key."""
+
+    __tablename__ = "telegram_purchase_idempotency"
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    customer_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("identity_users.id", ondelete="RESTRICT"), nullable=False
+    )
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="REVIEWING")
+    order_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("orders.id", ondelete="RESTRICT")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint("customer_id", "key_hash", name="uq_tg_purchase_idem_customer_key"),
+        CheckConstraint("status in ('REVIEWING','COMMITTED')", name="ck_tg_purchase_idem_status"),
+        CheckConstraint(
+            "status != 'COMMITTED' or order_id is not null",
+            name="ck_tg_purchase_idem_committed_order",
+        ),
+        Index("ix_tg_purchase_idem_order", "order_id"),
+    )
+
+
 class OrderCancellationModel(IdentityBase):
     __tablename__ = "order_cancellations"
     id: Mapped[str] = mapped_column(
