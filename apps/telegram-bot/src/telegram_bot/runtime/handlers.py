@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, replace
 
 from telegram_bot.application.identity import (
@@ -14,6 +15,7 @@ from telegram_bot.config import BotSettings
 from telegram_bot.conversation import ConversationStoreV2, DurableMemoryConversationStore
 from telegram_bot.formatting import format_date, format_toman
 from telegram_bot.idempotency import InMemoryUpdateIdempotency
+from telegram_bot.internal_api import PurchaseOutcomeUnknown
 from telegram_bot.localization import t
 from telegram_bot.menu import MenuRegistry, default_menu_registry
 from telegram_bot.mini_app import MiniAppUrlBuilder
@@ -22,6 +24,7 @@ from telegram_bot.portal import (
     CustomerContext,
     CustomerPortalPort,
     InMemoryCustomerPortal,
+    PurchasePlan,
 )
 from telegram_bot.rate_limit import (
     InFlightCallbackDeduplicator,
@@ -623,7 +626,23 @@ class BotCommandHandler:
             if plan is None:
                 return self._stale(locale)
             balance = self.portal.wallet_balance(self._portal_context(user, locale))[0]
-            state = state.start_purchase(plan.reference, "default", f"tg-buy:{update_id}")
+            reviewed = json.dumps(
+                {
+                    "reference": plan.reference,
+                    "title": plan.title,
+                    "traffic_gb": plan.traffic_gb,
+                    "duration_days": plan.duration_days,
+                    "device_limit": plan.device_limit,
+                    "location_code": plan.location_code,
+                    "location_label": plan.location_label,
+                    "quality_code": plan.quality_code,
+                    "price_toman": plan.price_toman,
+                    "selection": plan.selection,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            state = state.start_purchase(plan.reference, reviewed, f"tg-buy:{update_id}")
             self.conversations.save(key, state)
             details = (
                 f"🛒 بررسی سفارش\n\nپلن: {plan.title}\nموقعیت: {plan.location_label}\n"
@@ -711,18 +730,45 @@ class BotCommandHandler:
                 state.conversation_kind != "purchase"
                 or state.expected_input != "purchase_confirmation"
                 or not state.selected_plan_reference
+                or not state.selected_options
                 or not state.idempotency_key
             ):
                 return self._stale(locale)
             try:
+                reviewed_data = json.loads(state.selected_options)
+                reviewed_plan = PurchasePlan(**reviewed_data)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return self._stale(locale)
+            try:
                 result = self.portal.confirm_purchase(
                     self._portal_context(user, locale),
-                    state.selected_plan_reference,
+                    reviewed_plan,
                     state.idempotency_key,
+                )
+            except PurchaseOutcomeUnknown:
+                return self._callback_message(
+                    "نتیجه خرید هنوز مشخص نیست. ممکن است پرداخت ثبت شده باشد؛ "
+                    "برای تطبیق امن، دوباره بررسی کنید.",
+                    [
+                        [
+                            {
+                                "text": "🔄 بررسی امن خرید",
+                                "callback_data": BotCallback(
+                                    CallbackAction.CONFIRM_PURCHASE
+                                ).pack(),
+                            }
+                        ],
+                        [
+                            {
+                                "text": "🏠 منوی اصلی",
+                                "callback_data": BotCallback(CallbackAction.HOME).pack(),
+                            }
+                        ],
+                    ],
                 )
             except Exception:  # noqa: BLE001 - sanitized commerce boundary
                 return self._callback_message(
-                    "خرید انجام نشد. موجودی کیف پول شما بدون تغییر باقی مانده است.",
+                    "خرید تکمیل نشد. پیش از تلاش دوباره، موجودی و سفارش‌ها را بررسی کنید.",
                     [
                         [
                             {
@@ -734,6 +780,45 @@ class BotCommandHandler:
                             {
                                 "text": "🏠 منوی اصلی",
                                 "callback_data": BotCallback(CallbackAction.HOME).pack(),
+                            }
+                        ],
+                    ],
+                )
+            if result.outcome == "RECONFIRM_REQUIRED":
+                refreshed = json.dumps(
+                    {
+                        "reference": result.plan.reference,
+                        "title": result.plan.title,
+                        "traffic_gb": result.plan.traffic_gb,
+                        "duration_days": result.plan.duration_days,
+                        "device_limit": result.plan.device_limit,
+                        "location_code": result.plan.location_code,
+                        "location_label": result.plan.location_label,
+                        "quality_code": result.plan.quality_code,
+                        "price_toman": result.plan.price_toman,
+                        "selection": result.plan.selection,
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                self.conversations.save(key, replace(state, selected_options=refreshed))
+                return self._callback_message(
+                    "⚠️ قیمت یا مشخصات پلن تغییر کرده است. سفارش انجام نشد.\n\n"
+                    f"قیمت جدید: {format_toman(result.plan.price_toman)}\n"
+                    "لطفاً مشخصات جدید را بررسی و دوباره تأیید کنید.",
+                    [
+                        [
+                            {
+                                "text": "✅ تأیید مشخصات جدید و خرید",
+                                "callback_data": BotCallback(
+                                    CallbackAction.CONFIRM_PURCHASE
+                                ).pack(),
+                            }
+                        ],
+                        [
+                            {
+                                "text": "◀️ بازگشت به پلن‌ها",
+                                "callback_data": BotCallback(CallbackAction.BUY_SERVICE).pack(),
                             }
                         ],
                     ],

@@ -44,6 +44,7 @@ from .notification_preferences import (
     get_preferences,
     patch_preferences,
 )
+from .order_models import OrderModel
 from .orders import CheckoutRequest, confirm_checkout, create_checkout, order_detail
 from .services import (
     CustomerServiceSummary,
@@ -70,6 +71,8 @@ class ResolveRequest(BaseModel):
 class NativePurchaseRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     plan_reference: str = Field(pattern=r"^[a-z][a-z0-9_]{1,78}$")
+    reviewed_price_toman: int = Field(gt=0)
+    reviewed_selection: dict[str, int | str]
 
 
 def _authenticate(
@@ -226,17 +229,27 @@ def _option_label(option: dict[str, Any]) -> str:
     return str(option.get("code", "—"))
 
 
+def _purchase_idempotency_key(key: str, phase: str) -> str:
+    """Bounded deterministic child keys preserve one Telegram mutation identity per phase."""
+    return f"tg-purchase:{phase}:{hashlib.sha256(key.encode()).hexdigest()}"
+
+
 def _native_plan(db: Session, product: ProductModel, request: Request) -> dict[str, object]:
     version = db.get(ProductVersionModel, product.current_version_id)
     if not version or version.status != "PUBLISHED":
         raise HTTPException(status_code=404, detail="plan_unavailable")
+    if version.product_type != "FIXED_PLAN":
+        raise HTTPException(status_code=409, detail="selectable_plan_not_supported")
     options = cast(dict[str, Any], version.options_snapshot)
     locations = cast(list[dict[str, Any]], options.get("location_options", []))
     qualities = cast(list[dict[str, Any]], options.get("quality_options", []))
-    location = next((x for x in locations if x.get("enabled", True)), None)
-    quality = next((x for x in qualities if x.get("enabled", True)), None)
-    if not location or not quality:
+    enabled_locations = [x for x in locations if x.get("enabled", True)]
+    enabled_qualities = [x for x in qualities if x.get("enabled", True)]
+    # Until the native option picker ships, expose only genuinely fixed products. Choosing the
+    # first option would silently buy a customer selection they never made.
+    if len(enabled_locations) != 1 or len(enabled_qualities) != 1:
         raise HTTPException(status_code=409, detail="plan_options_unavailable")
+    location, quality = enabled_locations[0], enabled_qualities[0]
     traffic = int(
         options.get("fixed_traffic_bytes") or cast(dict[str, Any], options["traffic"])["minimum"]
     )
@@ -271,6 +284,7 @@ def _native_plan(db: Session, product: ProductModel, request: Request) -> dict[s
         "location_label": _option_label(location),
         "quality_code": str(quality["code"]),
         "price_toman": amount // 10,
+        "selection": selection.model_dump(mode="json", exclude={"product_id", "operation"}),
     }
 
 
@@ -337,6 +351,22 @@ def confirm_native_purchase(
     if not product or product.status != "ACTIVE" or not product.customer_visible:
         raise HTTPException(status_code=409, detail="plan_unavailable")
     plan = _native_plan(db, product, request)
+    current_selection = cast(dict[str, int | str], plan["selection"])
+    if (
+        body.reviewed_price_toman != plan["price_toman"]
+        or body.reviewed_selection != current_selection
+    ):
+        _no_store(response)
+        return {
+            "outcome": "RECONFIRM_REQUIRED",
+            "order_reference": None,
+            "status": "REVIEW_REQUIRED",
+            "fulfillment_status": "NOT_STARTED",
+            "plan": plan,
+            "service_reference": None,
+            "expires_at": None,
+            "refunded": False,
+        }
     quote_body = QuoteRequest(
         product_id=product.id,
         traffic_bytes=int(str(plan["traffic_bytes"])),
@@ -346,13 +376,34 @@ def confirm_native_purchase(
         quality_code=str(plan["quality_code"]),
     )
     session = cast(Any, SimpleNamespace(user_id=customer_id))
-    quote = create_quote(quote_body, request, db, settings, session, f"{idempotency_key}:quote")
+    quote = create_quote(
+        quote_body,
+        request,
+        db,
+        settings,
+        session,
+        _purchase_idempotency_key(idempotency_key, "quote"),
+    )
+    quoted_rial = int(str(quote["final_amount_minor"]))
+    if quoted_rial % 10 or quoted_rial // 10 != body.reviewed_price_toman:
+        plan = {**plan, "price_toman": quoted_rial // 10}
+        _no_store(response)
+        return {
+            "outcome": "RECONFIRM_REQUIRED",
+            "order_reference": None,
+            "status": "REVIEW_REQUIRED",
+            "fulfillment_status": "NOT_STARTED",
+            "plan": plan,
+            "service_reference": None,
+            "expires_at": None,
+            "refunded": False,
+        }
     checkout = create_checkout(
         CheckoutRequest(quote_reference=str(quote["quote_reference"]), payment_method="WALLET"),
         customer_id,
         db,
         request,
-        f"{idempotency_key}:checkout",
+        _purchase_idempotency_key(idempotency_key, "checkout"),
     )
     confirmed = confirm_checkout(
         str(cast(dict[str, Any], checkout["checkout"])["checkout_reference"]),
@@ -361,8 +412,29 @@ def confirm_native_purchase(
         request,
     )
     order = cast(dict[str, Any], confirmed["order"])
+    # This immutable customer-display projection keeps historical orders independent of later
+    # catalog edits or retirement. It intentionally contains no provider identifiers.
+    order_row = db.scalar(
+        select(OrderModel).where(OrderModel.reference == order["order_reference"])
+    )
+    if order_row is not None:
+        order_row.snapshot = {
+            **order_row.snapshot,
+            "telegram_purchase_display": {
+                "title": plan["title"],
+                "traffic_gb": plan["traffic_gb"],
+                "duration_days": plan["duration_days"],
+                "device_limit": plan["device_limit"],
+                "location_label": plan["location_label"],
+                "location_code": plan["location_code"],
+                "quality_code": plan["quality_code"],
+                "price_toman": plan["price_toman"],
+                "selection": plan["selection"],
+            },
+        }
     _no_store(response)
     return {
+        "outcome": "ACCEPTED",
         "order_reference": order["order_reference"],
         "status": "ACCEPTED",
         "fulfillment_status": "PROVISIONING",
@@ -385,15 +457,17 @@ def native_purchase_order(
     customer_id = _customer_id(db, x_telegram_subject)
     order = order_detail(order_reference, customer_id, db, request)
     snapshot = cast(dict[str, Any], order["snapshot"])
-    product = db.scalar(
-        select(ProductModel).where(ProductModel.machine_code == snapshot["product_machine_code"])
-    )
-    if not product:
-        raise HTTPException(status_code=404, detail="order_not_found")
-    plan = _native_plan(db, product, request)
+    display = snapshot.get("telegram_purchase_display")
+    if not isinstance(display, dict):
+        raise HTTPException(status_code=409, detail="historical_display_unavailable")
+    plan = {
+        "reference": str(snapshot["product_machine_code"]),
+        **cast(dict[str, object], display),
+    }
     status_value = str(order["status"])
     _no_store(response)
     return {
+        "outcome": "FINAL" if status_value in {"REFUNDED", "CANCELLED"} else "ACCEPTED",
         "order_reference": order_reference,
         "status": status_value,
         "fulfillment_status": str(order["fulfillment_status"]),

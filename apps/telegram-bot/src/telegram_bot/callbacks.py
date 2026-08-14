@@ -33,7 +33,6 @@ class CallbackAction(StrEnum):
     SELECT_PLAN = "plan"
     CONFIRM_PURCHASE = "buy_ok"
     PURCHASE_STATUS = "order"
-    CHANGE_PURCHASE = "buy_change"
     WALLET = "wallet"
     SUPPORT = "support"
     STATUS = "status"

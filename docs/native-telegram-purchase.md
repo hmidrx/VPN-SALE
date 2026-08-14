@@ -19,9 +19,19 @@ service. The bot does not invent credentials or report success before a service 
 Repeated Telegram updates, rapid confirmation clicks and process restarts reuse the same purchase
 idempotency key and therefore the existing durable quote/checkout.
 
+Only fixed plans with exactly one enabled location and quality option are exposed. Custom plans and
+plans with selectable options stay hidden rather than silently applying defaults. At confirmation,
+the API compares the reviewed selection and price with a newly calculated authoritative quote. A
+change returns `RECONFIRM_REQUIRED` without reserving funds, and Telegram requires a second explicit
+confirmation. Ambiguous transport results are replayed with the identical mutation key; if the
+result remains unknown the bot says so and never claims that the wallet was unchanged.
+
 Order cancellation uses the existing compensating wallet refund journal for captured payments.
 Provider failures must be classified by the fulfillment processor and drive that cancellation path;
 the bot renders refunded orders without exposing provider diagnostics.
+
+Historical order screens use `telegram_purchase_display` stored in the immutable order snapshot at
+checkout time. They never re-render an old order from the current catalog.
 
 ## Security and operations
 

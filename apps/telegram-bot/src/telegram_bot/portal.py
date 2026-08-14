@@ -133,6 +133,7 @@ class PurchasePlan:
     location_label: str
     quality_code: str
     price_toman: int
+    selection: dict[str, int | str] = field(default_factory=lambda: dict[str, int | str]())
 
 
 @dataclass(frozen=True)
@@ -144,6 +145,7 @@ class PurchaseResult:
     service_reference: str | None = None
     expires_at: datetime | None = None
     refunded: bool = False
+    outcome: str = "ACCEPTED"
 
 
 @dataclass(frozen=True)
@@ -199,7 +201,7 @@ class CustomerPortalPort(Protocol):
     def purchase_catalog(self, context: CustomerContext) -> list[PurchasePlan]: ...
     def purchase_plan(self, context: CustomerContext, reference: str) -> PurchasePlan | None: ...
     def confirm_purchase(
-        self, context: CustomerContext, reference: str, idempotency_key: str
+        self, context: CustomerContext, plan: PurchasePlan, idempotency_key: str
     ) -> PurchaseResult: ...
     def purchase_order(self, context: CustomerContext, reference: str) -> PurchaseResult | None: ...
     def profile(self, context: CustomerContext) -> CustomerProfile: ...
@@ -280,7 +282,24 @@ class InMemoryCustomerPortal(CustomerPortalPort):
         self._manual_topups: dict[str, ManualTopup] = {}
         self._manual_topup_cancellations: dict[str, ManualTopup] = {}
         self._purchase_plans = [
-            PurchasePlan("basic", "پلن استاندارد", 50, 30, 1, "de", "آلمان", "standard", 120_000)
+            PurchasePlan(
+                "basic",
+                "پلن استاندارد",
+                50,
+                30,
+                1,
+                "de",
+                "آلمان",
+                "standard",
+                120_000,
+                {
+                    "traffic_bytes": 50 * 1024**3,
+                    "duration_days": 30,
+                    "device_count": 1,
+                    "location_code": "de",
+                    "quality_code": "standard",
+                },
+            )
         ]
         self._purchases: dict[str, PurchaseResult] = {}
 
@@ -291,14 +310,18 @@ class InMemoryCustomerPortal(CustomerPortalPort):
         return next((plan for plan in self._purchase_plans if plan.reference == reference), None)
 
     def confirm_purchase(
-        self, context: CustomerContext, reference: str, idempotency_key: str
+        self, context: CustomerContext, plan: PurchasePlan, idempotency_key: str
     ) -> PurchaseResult:
         if idempotency_key in self._purchases:
             return self._purchases[idempotency_key]
-        plan = self.purchase_plan(context, reference)
-        if plan is None:
+        current = self.purchase_plan(context, plan.reference)
+        if current is None:
             raise ValueError("plan unavailable")
-        result = PurchaseResult(f"ord_{idempotency_key[-8:]}", "ACCEPTED", "PROVISIONING", plan)
+        if current.price_toman != plan.price_toman or current.selection != plan.selection:
+            return PurchaseResult(
+                "", "REVIEW_REQUIRED", "NOT_STARTED", current, outcome="RECONFIRM_REQUIRED"
+            )
+        result = PurchaseResult(f"ord_{idempotency_key[-8:]}", "ACCEPTED", "PROVISIONING", current)
         self._purchases[idempotency_key] = result
         return result
 

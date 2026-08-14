@@ -32,6 +32,10 @@ class PrivateApiUnavailable(RuntimeError):
     """Customer-safe boundary: response bodies and credentials never escape."""
 
 
+class PurchaseOutcomeUnknown(PrivateApiUnavailable):
+    """The mutation may have committed; callers must retry with the identical idempotency key."""
+
+
 class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
     def __init__(self, base_url: str, token_file: str, *, timeout: float = 5.0) -> None:
         if not base_url.startswith("http://") and not base_url.startswith("https://"):
@@ -166,6 +170,7 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
             str(data["location_label"]),
             str(data["quality_code"]),
             int(data["price_toman"]),
+            dict(cast(dict[str, int | str], data["selection"])),
         )
 
     def purchase_catalog(self, context: CustomerContext) -> list[PurchasePlan]:
@@ -182,27 +187,44 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
 
     def _purchase_result(self, data: dict[str, Any]) -> PurchaseResult:
         return PurchaseResult(
-            str(data["order_reference"]),
+            str(data.get("order_reference") or ""),
             str(data["status"]),
             str(data["fulfillment_status"]),
             self._purchase_plan(cast(dict[str, Any], data["plan"])),
             str(data["service_reference"]) if data.get("service_reference") else None,
             datetime.fromisoformat(str(data["expires_at"])) if data.get("expires_at") else None,
             bool(data.get("refunded", False)),
+            str(data.get("outcome", "ACCEPTED")),
         )
 
     def confirm_purchase(
-        self, context: CustomerContext, reference: str, idempotency_key: str
+        self, context: CustomerContext, plan: PurchasePlan, idempotency_key: str
     ) -> PurchaseResult:
-        return self._purchase_result(
-            self._request(
+        body = {
+            "plan_reference": plan.reference,
+            "reviewed_price_toman": plan.price_toman,
+            "reviewed_selection": plan.selection,
+        }
+        try:
+            data = self._request(
                 "POST",
                 "/purchase/confirm",
                 context.telegram_user_id,
-                {"plan_reference": reference},
+                body,
                 idempotency_key,
             )
-        )
+        except PrivateApiUnavailable:
+            # A timeout can happen after commit. Replaying the exact request/key is the only safe
+            # reconciliation: durable quote/checkout idempotency returns the original result.
+            try:
+                data = self._request(
+                    "POST", "/purchase/confirm", context.telegram_user_id, body, idempotency_key
+                )
+            except PrivateApiUnavailable as exc:
+                raise PurchaseOutcomeUnknown(
+                    "نتیجه خرید هنوز مشخص نیست؛ با همان درخواست دوباره بررسی کنید."
+                ) from exc
+        return self._purchase_result(data)
 
     def purchase_order(self, context: CustomerContext, reference: str) -> PurchaseResult | None:
         try:
