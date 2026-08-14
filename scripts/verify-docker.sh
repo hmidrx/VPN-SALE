@@ -46,12 +46,9 @@ log "Test-server Compose port isolation"
 "$repo_root/scripts/verify-test-server-compose.sh"
 log "Build core images"
 docker compose --profile telegram build api telegram-bot
-api_image="$(docker compose images -q api)"
-bot_image="$(docker compose --profile telegram images -q telegram-bot)"
-[[ -n "$api_image" && -n "$bot_image" ]]
-api_identity="$(docker run --rm --network none --entrypoint sh "$api_image" -c \
+api_identity="$(docker compose run --rm --no-deps --entrypoint sh api -c \
   'printf "%s:%s" "$(id -u vpnsale)" "$(id -g vpnsale)"')"
-bot_identity="$(docker run --rm --network none --entrypoint sh "$bot_image" -c \
+bot_identity="$(docker compose --profile telegram run --rm --no-deps --entrypoint sh telegram-bot -c \
   'printf "%s:%s" "$(id -u vpnsale)" "$(id -g vpnsale)"')"
 IFS=: read -r api_uid api_gid <<<"$api_identity"
 IFS=: read -r bot_uid bot_gid <<<"$bot_identity"
@@ -60,8 +57,8 @@ IFS=: read -r bot_uid bot_gid <<<"$bot_identity"
 [[ "$api_gid" == "$bot_gid" ]]
 printf 'API runtime identity: uid=%s gid=%s\n' "$api_uid" "$api_gid"
 printf 'Telegram bot runtime identity: uid=%s gid=%s\n' "$bot_uid" "$bot_gid"
-docker run --rm --network none --user 0:0 \
-  --mount "type=bind,src=$secret_dir,dst=/fixture" --entrypoint sh "$api_image" \
+docker compose run --rm --no-deps --user 0:0 \
+  --volume "$secret_dir:/fixture" --entrypoint sh api \
   -c 'chown 0:"$1" /fixture/telegram-internal-token && chmod 0640 /fixture/telegram-internal-token' \
   helper "$api_gid"
 [[ "$(stat -c %u:%g:%a "$secret_file")" == "0:$api_gid:640" ]]
@@ -77,9 +74,7 @@ assert len(value) >= 43
 print("TELEGRAM_INTERNAL_SECRET_READABLE_BY_API")
 PY
 log "Verify Telegram bot runtime credential mount"
-docker run --rm --network none --user "$bot_uid:$bot_gid" \
-  --mount "type=bind,src=$secret_file,dst=/run/secrets/telegram-internal-token,readonly" \
-  --entrypoint python "$bot_image" - <<'PY'
+docker compose --profile telegram run --rm --no-deps --entrypoint python telegram-bot - <<'PY'
 from pathlib import Path
 import os
 
