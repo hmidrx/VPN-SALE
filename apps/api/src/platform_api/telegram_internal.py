@@ -6,9 +6,9 @@ import hashlib
 import hmac
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,6 +16,24 @@ from sqlalchemy.orm import Session
 from .config import Settings, get_settings
 from .database import get_db_session
 from .identity.models import CustomerProfileModel, TelegramAccountModel, UserModel
+from .manual_topups import (
+    CreateRequest as ManualTopupCreateRequest,
+)
+from .manual_topups import (
+    cancel_manual_topup_for_customer,
+    create_manual_topup_for_customer,
+    list_manual_topups_for_customer,
+    store_receipt_for_customer,
+)
+from .manual_topups import (
+    customer_manual_topup_destination_settings as manual_topup_destination_settings,
+)
+from .manual_topups import (
+    customer_manual_topup_dto as manual_topup_dto,
+)
+from .manual_topups import (
+    customer_manual_topup_request as manual_topup_request,
+)
 from .notification_preferences import (
     NotificationPreferencePatch,
     NotificationPreferencesOut,
@@ -329,3 +347,149 @@ def update_notification_preference(
         db,
         idempotency_key,
     ).model_dump()
+
+
+class TelegramManualTopupCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    amount_rial: int = Field(ge=1_000_000)
+
+
+def _safe_topup(dto: dict[str, object]) -> dict[str, object]:
+    requested = dto["requested_amount_rial"]
+    if not isinstance(requested, int):
+        raise HTTPException(status_code=503, detail="amount_unavailable")
+    amount = requested
+    if amount % 10:
+        raise HTTPException(status_code=503, detail="amount_precision_unavailable")
+    safe = {
+        "reference": dto["reference"],
+        "amount_toman": amount // 10,
+        "status": dto["status"],
+        "created_at": dto["created_at"],
+        "submitted_at": dto["submitted_at"],
+        "version": dto["version"],
+    }
+    for source, target in (
+        ("verified_amount_rial", "verified_amount_toman"),
+        ("bonus_amount_rial", "bonus_amount_toman"),
+        ("total_credited_rial", "total_credited_toman"),
+    ):
+        value = dto[source]
+        safe[target] = value // 10 if isinstance(value, int) and value % 10 == 0 else None
+    return safe
+
+
+@router.post("/manual-topups")
+def create_manual_topup(
+    body: TelegramManualTopupCreate,
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)],
+) -> dict[str, object]:
+    dto = create_manual_topup_for_customer(
+        ManualTopupCreateRequest(amount_rial=body.amount_rial, source_channel="TELEGRAM_MINI_APP"),
+        _customer_id(db, x_telegram_subject),
+        db,
+        settings,
+        idempotency_key,
+    )
+    _no_store(response)
+    return _safe_topup(dto)
+
+
+@router.get("/manual-topups")
+def list_manual_topups(
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+    limit: int = 20,
+) -> dict[str, object]:
+    page = list_manual_topups_for_customer(db, _customer_id(db, x_telegram_subject), limit=limit)
+    _no_store(response)
+    items_value = page["items"]
+    if not isinstance(items_value, list):
+        raise HTTPException(status_code=503, detail="topup_list_unavailable")
+    raw_items = cast(list[object], items_value)
+    items = [cast(dict[str, object], item) for item in raw_items if isinstance(item, dict)]
+    return {"items": [_safe_topup(item) for item in items]}
+
+
+@router.get("/manual-topups/{reference}")
+def manual_topup_detail(
+    reference: str,
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+) -> dict[str, object]:
+    dto = manual_topup_dto(
+        db, manual_topup_request(db, reference, _customer_id(db, x_telegram_subject))
+    )
+    _no_store(response)
+    return _safe_topup(dto)
+
+
+@router.post("/manual-topups/{reference}/cancel")
+def cancel_manual_topup(
+    reference: str,
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)],
+) -> dict[str, object]:
+    dto = cancel_manual_topup_for_customer(
+        db, _customer_id(db, x_telegram_subject), reference, idempotency_key
+    )
+    _no_store(response)
+    return _safe_topup(dto)
+
+
+@router.get("/manual-topups/{reference}/destination-mode")
+def manual_topup_destination_mode(
+    reference: str,
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+) -> dict[str, object]:
+    row = manual_topup_request(db, reference, _customer_id(db, x_telegram_subject))
+    configured = manual_topup_destination_settings(db)
+    _no_store(response)
+    return {
+        "mode": "DIRECT_CARD"
+        if configured.customer_display_enabled and row.destination_version_id
+        else "SUPPORT_ONLY"
+    }
+
+
+@router.post("/manual-topups/{reference}/receipt")
+async def upload_manual_topup_receipt(
+    reference: str,
+    request: Request,
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)],
+) -> dict[str, object]:
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+    if content_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise HTTPException(status_code=422, detail="invalid_receipt")
+    raw = await request.body()
+    dto = store_receipt_for_customer(
+        db,
+        settings,
+        _customer_id(db, x_telegram_subject),
+        reference,
+        raw,
+        content_type,
+        idempotency_key,
+    )
+    _no_store(response)
+    return _safe_topup(dto)

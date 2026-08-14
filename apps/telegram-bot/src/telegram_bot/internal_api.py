@@ -19,6 +19,7 @@ from telegram_bot.portal import (
     CustomerContext,
     CustomerPortalPort,
     CustomerProfile,
+    ManualTopup,
     NotificationPreferences,
     ServiceSummary,
     WalletTransaction,
@@ -47,6 +48,7 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
         telegram_id: int,
         body: object = None,
         idempotency_key: str | None = None,
+        content_type: str | None = None,
     ) -> dict[str, Any]:
         headers = {
             "Authorization": f"Bearer {self._token}",
@@ -54,7 +56,10 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
             "Accept": "application/json",
         }
         data = None
-        if body is not None:
+        if isinstance(body, bytes):
+            data = body
+            headers["Content-Type"] = content_type or "application/octet-stream"
+        elif body is not None:
             data = json.dumps(body).encode()
             headers["Content-Type"] = "application/json"
         if idempotency_key:
@@ -176,6 +181,73 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
                 context.telegram_user_id,
                 {"enabled": enabled},
                 idempotency_key,
+            )
+        )
+
+    @staticmethod
+    def _manual_topup(data: dict[str, Any]) -> ManualTopup:
+        return ManualTopup(
+            str(data["reference"]),
+            int(data["amount_toman"]),
+            str(data["status"]),
+            datetime.fromisoformat(str(data["created_at"])),
+            datetime.fromisoformat(str(data["submitted_at"])) if data.get("submitted_at") else None,
+            int(data["verified_amount_toman"])
+            if data.get("verified_amount_toman") is not None
+            else None,
+            int(data["bonus_amount_toman"]) if data.get("bonus_amount_toman") is not None else None,
+            int(data["total_credited_toman"])
+            if data.get("total_credited_toman") is not None
+            else None,
+        )
+
+    def create_manual_topup(
+        self, context: CustomerContext, amount_rial: int, idempotency_key: str
+    ) -> ManualTopup:
+        return self._manual_topup(
+            self._request(
+                "POST",
+                "/manual-topups",
+                context.telegram_user_id,
+                {"amount_rial": amount_rial},
+                idempotency_key,
+            )
+        )
+
+    def manual_topups(self, context: CustomerContext) -> list[ManualTopup]:
+        data = self._request("GET", "/manual-topups", context.telegram_user_id)
+        return [self._manual_topup(item) for item in cast(list[dict[str, Any]], data["items"])]
+
+    def manual_topup(self, context: CustomerContext, reference: str) -> ManualTopup | None:
+        try:
+            return self._manual_topup(
+                self._request("GET", f"/manual-topups/{reference}", context.telegram_user_id)
+            )
+        except PrivateApiUnavailable:
+            return None
+
+    def manual_topup_destination_mode(self, context: CustomerContext, reference: str) -> str:
+        data = self._request(
+            "GET", f"/manual-topups/{reference}/destination-mode", context.telegram_user_id
+        )
+        return str(data["mode"])
+
+    def upload_manual_topup_receipt(
+        self,
+        context: CustomerContext,
+        reference: str,
+        content: bytes,
+        content_type: str,
+        idempotency_key: str,
+    ) -> ManualTopup:
+        return self._manual_topup(
+            self._request(
+                "POST",
+                f"/manual-topups/{reference}/receipt",
+                context.telegram_user_id,
+                content,
+                idempotency_key,
+                content_type,
             )
         )
 

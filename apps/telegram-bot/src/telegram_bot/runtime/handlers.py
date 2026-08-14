@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from telegram_bot.application.identity import (
     AccountStatus,
@@ -66,6 +66,15 @@ class IncomingText:
     chat_type: str
     user: IncomingUser | None
     text: str
+
+
+@dataclass(frozen=True)
+class IncomingReceipt:
+    update_id: int
+    chat_type: str
+    user: IncomingUser | None
+    content: bytes
+    content_type: str
 
 
 @dataclass(frozen=True)
@@ -193,8 +202,84 @@ class BotCommandHandler:
                         "text": "تغییر مبلغ",
                         "callback_data": BotCallback(CallbackAction.TOP_UP).pack(),
                     },
+                    {
+                        "text": "✅ تأیید و ادامه",
+                        "callback_data": BotCallback(CallbackAction.CONFIRM_TOP_UP).pack(),
+                    },
                     {"text": "لغو", "callback_data": BotCallback(CallbackAction.CANCEL).pack()},
                 ]
+            ],
+        )
+
+    def expected_receipt_reference(self, user: IncomingUser) -> str | None:
+        state = self.conversations.get(self._conversation_key(user), now_utc())
+        if state.expected_input == "receipt" and state.active_manual_topup_reference:
+            return state.active_manual_topup_reference
+        context = self._portal_context(user, "fa")
+        for request in self.portal.manual_topups(context):
+            if request.status in {"AWAITING_RECEIPT", "NEEDS_RESUBMISSION"}:
+                self.conversations.save(
+                    self._conversation_key(user),
+                    replace(
+                        state,
+                        conversation_kind="manual_topup",
+                        expected_input="receipt",
+                        active_manual_topup_reference=request.reference,
+                    ),
+                )
+                return request.reference
+        return None
+
+    def handle_receipt(self, message: IncomingReceipt) -> HandlerResult:
+        if not self.idempotency.claim(
+            message.update_id, self.settings.update_idempotency_ttl_seconds
+        ):
+            return HandlerResult(True, True, ())
+        if message.chat_type != "private" or message.user is None:
+            return self._single(t("fa", "group_ignored"), [])
+        reference = self.expected_receipt_reference(message.user)
+        if reference is None:
+            return self._single("ابتدا یک درخواست کارت‌به‌کارت را انتخاب کنید.", [])
+        request = self.portal.upload_manual_topup_receipt(
+            self._portal_context(message.user, "fa"),
+            reference,
+            message.content,
+            message.content_type,
+            f"tg-receipt:{message.update_id}:{reference}",
+        )
+        state = self.conversations.get(self._conversation_key(message.user), now_utc())
+        self.conversations.save(
+            self._conversation_key(message.user),
+            replace(
+                state,
+                expected_input=None,
+                conversation_kind=None,
+                active_manual_topup_reference=None,
+            ),
+        )
+        return self._single(
+            "فیش شما دریافت شد و در انتظار بررسی است.",
+            [
+                [
+                    {
+                        "text": "🔄 وضعیت درخواست",
+                        "callback_data": BotCallback(
+                            CallbackAction.SEND_RECEIPT, request.reference
+                        ).pack(),
+                    }
+                ],
+                [
+                    {
+                        "text": "🌐 مشاهده در مینی‌اپ",
+                        "web_app_url": self.url_builder.manual_topup(request.reference),
+                    }
+                ],
+                [
+                    {
+                        "text": "🏠 منوی اصلی",
+                        "callback_data": BotCallback(CallbackAction.HOME).pack(),
+                    }
+                ],
             ],
         )
 
@@ -357,6 +442,10 @@ class BotCommandHandler:
                     [
                         [
                             {
+                                "text": "✅ تأیید و ادامه",
+                                "callback_data": BotCallback(CallbackAction.CONFIRM_TOP_UP).pack(),
+                            },
+                            {
                                 "text": "تغییر مبلغ",
                                 "callback_data": BotCallback(CallbackAction.TOP_UP).pack(),
                             },
@@ -368,6 +457,83 @@ class BotCommandHandler:
                     ],
                 )
             return result
+        if callback.action == CallbackAction.CONFIRM_TOP_UP:
+            state = self.conversations.get(key, now_utc())
+            if (
+                state.conversation_kind != "manual_topup"
+                or state.expected_input != "confirmation"
+                or state.amount_toman is None
+                or not state.idempotency_key
+            ):
+                return self._stale(locale)
+            context = self._portal_context(user, locale)
+            request = self.portal.create_manual_topup(
+                context, state.amount_toman * 10, state.idempotency_key
+            )
+            mode = self.portal.manual_topup_destination_mode(context, request.reference)
+            next_state = replace(
+                state,
+                expected_input="receipt",
+                active_manual_topup_reference=request.reference,
+            )
+            self.conversations.save(key, next_state)
+            status_label = {
+                "AWAITING_SUPPORT": "در انتظار دریافت اطلاعات کارت",
+                "AWAITING_RECEIPT": "در انتظار ارسال فیش",
+            }.get(request.status, request.status)
+            if mode == "DIRECT_CARD":
+                guidance = "اطلاعات واریز برای درخواست شما آماده است."
+                action_rows = [
+                    [
+                        {
+                            "text": "💳 مشاهده اطلاعات واریز",
+                            "web_app_url": self.url_builder.manual_topup(request.reference),
+                        }
+                    ]
+                ]
+            else:
+                guidance = "برای دریافت شماره کارت، با پشتیبانی در ارتباط باشید."
+                action_rows = [
+                    [
+                        {
+                            "text": "🎫 پشتیبانی",
+                            "callback_data": BotCallback(CallbackAction.SUPPORT).pack(),
+                        },
+                        {
+                            "text": "📎 ارسال فیش",
+                            "callback_data": BotCallback(
+                                CallbackAction.SEND_RECEIPT, request.reference
+                            ).pack(),
+                        },
+                    ]
+                ]
+            return self._callback_message(
+                f"مبلغ: {request.amount_toman:,} تومان\n"
+                f"وضعیت: {status_label}\nشناسه: {request.reference[-8:]}\n\n{guidance}",
+                [
+                    *action_rows,
+                    [
+                        {
+                            "text": "❌ لغو درخواست",
+                            "callback_data": BotCallback(CallbackAction.CANCEL).pack(),
+                        }
+                    ],
+                ],
+            )
+        if callback.action == CallbackAction.SEND_RECEIPT:
+            state = self.conversations.get(key, now_utc())
+            self.conversations.save(
+                key,
+                replace(
+                    state,
+                    conversation_kind="manual_topup",
+                    expected_input="receipt",
+                    active_manual_topup_reference=callback.value,
+                ),
+            )
+            return self._callback_message(
+                "تصویر فیش را ارسال کنید.", self.renderer.nav_rows(locale)
+            )
         if callback.action == CallbackAction.NAVIGATE:
             try:
                 return self._render(user, ScreenId(callback.value), locale)

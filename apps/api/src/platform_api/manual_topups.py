@@ -294,6 +294,10 @@ def _customer_dto(db: Session, row: ManualTopupRequestModel) -> dict[str, object
     }
 
 
+customer_manual_topup_dto = _customer_dto
+customer_manual_topup_request = _request
+
+
 def _destination_settings(
     db: Session, *, lock: bool = False
 ) -> ManualTopupDestinationSettingsModel:
@@ -308,6 +312,9 @@ def _destination_settings(
         db.add(settings)
         db.flush()
     return settings
+
+
+customer_manual_topup_destination_settings = _destination_settings
 
 
 def _encryptor(settings: Settings) -> FernetSecretEncryptor:
@@ -388,25 +395,20 @@ def _audit(
     )
 
 
-@customer_router.post("")
-async def create_manual_topup(
+def create_manual_topup_for_customer(
     body: CreateRequest,
-    request: Request,
-    session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
-    db: Annotated[Session, Depends(get_db_session)],
-    settings: Annotated[Settings, Depends(get_settings)],
-    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-    csrf: Annotated[str | None, Header(alias="X-CSRF-Token")] = None,
+    customer_id: str,
+    db: Session,
+    settings: Settings,
+    idempotency_key: str | None,
 ) -> dict[str, object]:
+    """Application operation shared by authenticated web and private Telegram transports."""
     _enabled(settings)
-    _customer_csrf(db, settings, session, csrf)
-    await _rate(limiter, "manual-topup-create", session.user_id, 10)
     policy = wallet_policy(db)
     validate_requested_amount(body.amount_rial, policy.maximum_topup_amount_rial)
     wallet = db.scalar(
         select(WalletModel).where(
-            WalletModel.customer_id == session.user_id, WalletModel.currency == "IRR"
+            WalletModel.customer_id == customer_id, WalletModel.currency == "IRR"
         )
     )
     if wallet is None or wallet.status != "ACTIVE":
@@ -420,19 +422,19 @@ async def create_manual_topup(
     prior = _idem(
         db,
         scope="CUSTOMER",
-        scope_id=session.user_id,
+        scope_id=customer_id,
         operation="CREATE",
         key=idempotency_key,
         fingerprint=fp,
     )
     if prior:
-        return _customer_dto(db, _request(db, prior, session.user_id))
-    active = (
+        return _customer_dto(db, _request(db, prior, customer_id))
+    active = int(
         db.scalar(
             select(func.count())
             .select_from(ManualTopupRequestModel)
             .where(
-                ManualTopupRequestModel.customer_id == session.user_id,
+                ManualTopupRequestModel.customer_id == customer_id,
                 ManualTopupRequestModel.status.in_(NONTERMINAL),
             )
         )
@@ -449,7 +451,7 @@ async def create_manual_topup(
     )
     row = ManualTopupRequestModel(
         reference=reference,
-        customer_id=session.user_id,
+        customer_id=customer_id,
         wallet_id=wallet.id,
         requested_amount_rial=body.amount_rial,
         currency="IRR",
@@ -465,13 +467,168 @@ async def create_manual_topup(
     _idem(
         db,
         scope="CUSTOMER",
-        scope_id=session.user_id,
+        scope_id=customer_id,
         operation="CREATE",
         key=idempotency_key,
         fingerprint=fp,
         result=reference,
     )
     return _customer_dto(db, row)
+
+
+def list_manual_topups_for_customer(
+    db: Session, customer_id: str, *, limit: int = 20, offset: int = 0
+) -> dict[str, object]:
+    rows = db.scalars(
+        select(ManualTopupRequestModel)
+        .where(ManualTopupRequestModel.customer_id == customer_id)
+        .order_by(ManualTopupRequestModel.created_at.desc(), ManualTopupRequestModel.id.desc())
+        .limit(min(max(limit, 1), MAX_READ_PAGE))
+        .offset(max(offset, 0))
+    ).all()
+    return {"items": [_customer_dto(db, row) for row in rows], "limit": limit, "offset": offset}
+
+
+def cancel_manual_topup_for_customer(
+    db: Session, customer_id: str, reference: str, idempotency_key: str | None
+) -> dict[str, object]:
+    fp = _fingerprint({"reference": reference})
+    prior = _idem(
+        db,
+        scope="REQUEST",
+        scope_id=reference,
+        operation="CANCEL",
+        key=idempotency_key,
+        fingerprint=fp,
+    )
+    row = _request(db, reference, customer_id, lock=not bool(prior))
+    if prior:
+        return _customer_dto(db, row)
+    try:
+        require_transition(ManualTopupStatus(row.status), ManualTopupStatus.CANCELLED)
+    except ValueError as exc:
+        raise _error(409, "INVALID_TRANSITION") from exc
+    row.status = "CANCELLED"
+    row.decided_at = _now()
+    row.version += 1
+    _idem(
+        db,
+        scope="REQUEST",
+        scope_id=reference,
+        operation="CANCEL",
+        key=idempotency_key,
+        fingerprint=fp,
+        result=reference,
+    )
+    return _customer_dto(db, row)
+
+
+def store_receipt_for_customer(
+    db: Session,
+    settings: Settings,
+    customer_id: str,
+    reference: str,
+    raw: bytes,
+    content_type: str,
+    idempotency_key: str | None,
+) -> dict[str, object]:
+    _enabled(settings)
+    if len(raw) > settings.manual_topup_max_receipt_bytes:
+        raise _error(413, "RECEIPT_TOO_LARGE")
+    fp = _fingerprint({"content_type": content_type, "sha256": hashlib.sha256(raw).hexdigest()})
+    prior = _idem(
+        db,
+        scope="REQUEST",
+        scope_id=reference,
+        operation="RECEIPT",
+        key=idempotency_key,
+        fingerprint=fp,
+    )
+    if prior:
+        return _customer_dto(db, _request(db, reference, customer_id))
+    row = _request(db, reference, customer_id, lock=True)
+    try:
+        require_transition(ManualTopupStatus(row.status), ManualTopupStatus.UNDER_REVIEW)
+    except ValueError as exc:
+        raise _error(409, "INVALID_TRANSITION") from exc
+    count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(ManualTopupReceiptModel)
+            .where(ManualTopupReceiptModel.request_id == row.id)
+        )
+        or 0
+    )
+    if count >= settings.manual_topup_max_receipt_versions:
+        raise _error(409, "RECEIPT_VERSION_LIMIT")
+    storage = LocalPrivateReceiptStorage(
+        Path(settings.manual_topup_private_upload_root),
+        maximum_bytes=settings.manual_topup_max_receipt_bytes,
+        dimension_limit=settings.manual_topup_image_dimension_limit,
+    )
+    try:
+        stored = storage.store(io.BytesIO(raw), content_type)
+    except InvalidReceipt as exc:
+        raise _error(422, "INVALID_RECEIPT") from exc
+    try:
+        old = (
+            db.get(ManualTopupReceiptModel, row.current_receipt_id)
+            if row.current_receipt_id
+            else None
+        )
+        if old:
+            old.superseded_at = _now()
+        receipt = ManualTopupReceiptModel(
+            reference=_ref("mtr"),
+            request_id=row.id,
+            receipt_version=count + 1,
+            storage_key=stored.storage_key,
+            sanitized_sha256=stored.sanitized_sha256,
+            byte_size=stored.byte_size,
+            media_type=stored.media_type,
+            width=stored.width,
+            height=stored.height,
+            source_channel=row.source_channel,
+            security_state="SANITIZED",
+        )
+        db.add(receipt)
+        db.flush()
+        row.current_receipt_id = receipt.id
+        row.status = "UNDER_REVIEW"
+        row.submitted_at = _now()
+        row.version += 1
+        _outbox(db, row, "RECEIPT_SUBMITTED", receipt.reference)
+        _idem(
+            db,
+            scope="REQUEST",
+            scope_id=reference,
+            operation="RECEIPT",
+            key=idempotency_key,
+            fingerprint=fp,
+            result=receipt.reference,
+        )
+        db.flush()
+    except Exception:
+        storage.delete(stored.storage_key)
+        raise
+    return _customer_dto(db, row)
+
+
+@customer_router.post("")
+async def create_manual_topup(
+    body: CreateRequest,
+    request: Request,
+    session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    csrf: Annotated[str | None, Header(alias="X-CSRF-Token")] = None,
+) -> dict[str, object]:
+    _enabled(settings)
+    _customer_csrf(db, settings, session, csrf)
+    await _rate(limiter, "manual-topup-create", session.user_id, 10)
+    return create_manual_topup_for_customer(body, session.user_id, db, settings, idempotency_key)
 
 
 @customer_router.get("")
@@ -732,87 +889,9 @@ async def upload_receipt(
     _customer_csrf(db, settings, session, csrf)
     await _rate(limiter, "manual-topup-receipt", session.user_id, 20)
     raw = await image.read(settings.manual_topup_max_receipt_bytes + 1)
-    if len(raw) > settings.manual_topup_max_receipt_bytes:
-        raise _error(413, "RECEIPT_TOO_LARGE")
-    fp = _fingerprint(
-        {"content_type": image.content_type, "sha256": hashlib.sha256(raw).hexdigest()}
+    return store_receipt_for_customer(
+        db, settings, session.user_id, reference, raw, image.content_type or "", idempotency_key
     )
-    prior = _idem(
-        db,
-        scope="REQUEST",
-        scope_id=reference,
-        operation="RECEIPT",
-        key=idempotency_key,
-        fingerprint=fp,
-    )
-    if prior:
-        return _customer_dto(db, _request(db, reference, session.user_id))
-    row = _request(db, reference, session.user_id, lock=True)
-    try:
-        require_transition(ManualTopupStatus(row.status), ManualTopupStatus.UNDER_REVIEW)
-    except ValueError as exc:
-        raise _error(409, "INVALID_TRANSITION") from exc
-    count = (
-        db.scalar(
-            select(func.count())
-            .select_from(ManualTopupReceiptModel)
-            .where(ManualTopupReceiptModel.request_id == row.id)
-        )
-        or 0
-    )
-    if count >= settings.manual_topup_max_receipt_versions:
-        raise _error(409, "RECEIPT_VERSION_LIMIT")
-    storage = LocalPrivateReceiptStorage(
-        Path(settings.manual_topup_private_upload_root),
-        maximum_bytes=settings.manual_topup_max_receipt_bytes,
-        dimension_limit=settings.manual_topup_image_dimension_limit,
-    )
-    try:
-        stored = storage.store(io.BytesIO(raw), image.content_type or "")
-    except InvalidReceipt as exc:
-        raise _error(422, "INVALID_RECEIPT") from exc
-    try:
-        old = (
-            db.get(ManualTopupReceiptModel, row.current_receipt_id)
-            if row.current_receipt_id
-            else None
-        )
-        if old:
-            old.superseded_at = _now()
-        receipt = ManualTopupReceiptModel(
-            reference=_ref("mtr"),
-            request_id=row.id,
-            receipt_version=count + 1,
-            storage_key=stored.storage_key,
-            sanitized_sha256=stored.sanitized_sha256,
-            byte_size=stored.byte_size,
-            media_type=stored.media_type,
-            width=stored.width,
-            height=stored.height,
-            source_channel=row.source_channel,
-            security_state="SANITIZED",
-        )
-        db.add(receipt)
-        db.flush()
-        row.current_receipt_id = receipt.id
-        row.status = "UNDER_REVIEW"
-        row.submitted_at = _now()
-        row.version += 1
-        _outbox(db, row, "RECEIPT_SUBMITTED", receipt.reference)
-        _idem(
-            db,
-            scope="REQUEST",
-            scope_id=reference,
-            operation="RECEIPT",
-            key=idempotency_key,
-            fingerprint=fp,
-            result=receipt.reference,
-        )
-        db.flush()
-    except Exception:
-        storage.delete(stored.storage_key)
-        raise
-    return _customer_dto(db, row)
 
 
 def _stream(db: Session, row: ManualTopupRequestModel, settings: Settings) -> StreamingResponse:

@@ -1,12 +1,16 @@
+import re
 from datetime import UTC, datetime
 from hashlib import sha256
 
 import pytest
 
 from telegram_bot.application.identity import InMemoryTelegramIdentityService
+from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.config import BotMode, BotSettings
+from telegram_bot.portal import CustomerContext
 from telegram_bot.runtime.handlers import (
     BotCommandHandler,
+    IncomingCallback,
     IncomingCommand,
     IncomingText,
     IncomingUser,
@@ -74,3 +78,21 @@ def test_ordinary_text_outside_conversation_is_not_ignored() -> None:
     handler = BotCommandHandler(_settings(), InMemoryTelegramIdentityService())
     result = handler.handle_text(IncomingText(20, "private", _user(), "سلام"))
     assert result.messages[0].text == "برای ادامه از منوی ربات استفاده کنید."
+
+
+def test_confirm_creates_one_request_and_never_discloses_card_number() -> None:
+    identity = InMemoryTelegramIdentityService()
+    handler = BotCommandHandler(_settings(), identity)
+    handler.handle_command(IncomingCommand(30, "private", _user(), "/topup"))
+    handler.handle_text(IncomingText(31, "private", _user(), "۱۰۰٬۰۰۰"))
+    confirm = BotCallback(CallbackAction.CONFIRM_TOP_UP).pack()
+    result = handler.handle_callback(IncomingCallback(32, "confirm", "private", _user(), confirm))
+    assert "در انتظار دریافت اطلاعات کارت" in result.messages[0].text
+    assert re.search(r"\d{16}", result.messages[0].text.replace(",", "")) is None
+    context = CustomerContext("user-42", 42, "fa")
+    assert len(handler.portal.manual_topups(context)) == 1
+    duplicate = handler.handle_callback(
+        IncomingCallback(33, "confirm-again", "private", _user(), confirm)
+    )
+    assert len(handler.portal.manual_topups(context)) == 1
+    assert duplicate.messages

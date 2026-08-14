@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -14,8 +15,10 @@ from telegram_bot.conversation import ConversationStoreV2
 from telegram_bot.portal import CustomerPortalPort
 from telegram_bot.runtime.handlers import (
     BotCommandHandler,
+    HandlerResult,
     IncomingCallback,
     IncomingCommand,
+    IncomingReceipt,
     IncomingText,
     IncomingUser,
     OutgoingMessage,
@@ -30,6 +33,8 @@ class TelegramTransport(Protocol):
         self, method: str, payload: dict[str, object] | None = None
     ) -> dict[str, Any]: ...
 
+    async def download_file(self, file_path: str, maximum_bytes: int) -> bytes: ...
+
 
 @dataclass(frozen=True)
 class PollingStats:
@@ -41,6 +46,7 @@ class PollingStats:
 class UrlLibTelegramTransport:
     def __init__(self, token: str, *, timeout: float = 35.0) -> None:
         self._base = f"https://api.telegram.org/bot{token}/"
+        self._file_base = f"https://api.telegram.org/file/bot{token}/"
         self._timeout = timeout
 
     async def call(self, method: str, payload: dict[str, object] | None = None) -> dict[str, Any]:
@@ -63,6 +69,31 @@ class UrlLibTelegramTransport:
         if not parsed.get("ok"):
             raise RuntimeError(f"Telegram API rejected {method}")
         return parsed
+
+    async def download_file(self, file_path: str, maximum_bytes: int) -> bytes:
+        if not re.fullmatch(r"[A-Za-z0-9_./-]{1,256}", file_path) or file_path.startswith("/"):
+            raise RuntimeError("Telegram download failed")
+        return await asyncio.to_thread(self._download_blocking, file_path, maximum_bytes)
+
+    def _download_blocking(self, file_path: str, maximum_bytes: int) -> bytes:
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(
+                self, req: object, fp: object, code: int, msg: str, headers: object, newurl: str
+            ) -> None:
+                return None
+
+        opener = urllib.request.build_opener(NoRedirect)
+        request = urllib.request.Request(  # noqa: S310 - fixed Telegram HTTPS host
+            self._file_base + file_path, method="GET"
+        )
+        try:
+            with opener.open(request, timeout=min(self._timeout, 10.0)) as response:
+                content = response.read(maximum_bytes + 1)
+        except urllib.error.URLError as exc:
+            raise RuntimeError("Telegram download failed") from exc
+        if len(content) > maximum_bytes:
+            raise RuntimeError("Telegram file is too large")
+        return content
 
 
 def validate_polling(settings: BotSettings) -> None:
@@ -176,6 +207,10 @@ class TelegramPollingRuntime:
         if command is not None:
             result = self.handler.handle_command(command)
         else:
+            receipt = _receipt_from_update(update)
+            if receipt is not None:
+                await self._dispatch_receipt(update, receipt)
+                return
             text_message = _text_from_update(update)
             if text_message is None:
                 return
@@ -187,6 +222,44 @@ class TelegramPollingRuntime:
         chat_id = chat.get("id")
         if not isinstance(chat_id, int):
             return
+        for message in result.messages:
+            await self.transport.call("sendMessage", _send_message_payload(chat_id, message))
+
+    async def _dispatch_receipt(
+        self, update: dict[str, Any], receipt: tuple[IncomingUser, str, str, int | None]
+    ) -> None:
+        user, file_id, content_type, file_size = receipt
+        chat_id, chat_type = _message_chat(update)
+        if chat_id is None:
+            return
+        if file_size is not None and file_size > 5 * 1024 * 1024:
+            result = HandlerResult(
+                True, False, (OutgoingMessage("حجم تصویر باید حداکثر ۵ مگابایت باشد.", []),)
+            )
+        elif self.handler.expected_receipt_reference(user) is None:
+            result = HandlerResult(
+                True, False, (OutgoingMessage("ابتدا یک درخواست کارت‌به‌کارت را انتخاب کنید.", []),)
+            )
+        else:
+            try:
+                metadata = await self.transport.call("getFile", {"file_id": file_id})
+                file_result = metadata.get("result")
+                if not isinstance(file_result, dict):
+                    raise RuntimeError("Telegram download failed")
+                file_data = cast(dict[str, Any], file_result)
+                file_path = file_data.get("file_path")
+                if not isinstance(file_path, str):
+                    raise RuntimeError("Telegram download failed")
+                content = await self.transport.download_file(file_path, 5 * 1024 * 1024)
+                result = self.handler.handle_receipt(
+                    IncomingReceipt(
+                        int(cast(int, update["update_id"])), chat_type, user, content, content_type
+                    )
+                )
+            except Exception:  # noqa: BLE001 - no Telegram file metadata is exposed
+                result = HandlerResult(
+                    True, False, (OutgoingMessage("دریافت تصویر انجام نشد؛ دوباره تلاش کنید.", []),)
+                )
         for message in result.messages:
             await self.transport.call("sendMessage", _send_message_payload(chat_id, message))
 
@@ -264,6 +337,73 @@ def _text_from_update(update: dict[str, Any]) -> IncomingText | None:
         user,
         str(message["text"]),
     )
+
+
+def _message_chat(update: dict[str, Any]) -> tuple[int | None, str]:
+    message = (
+        cast(dict[str, Any], update.get("message"))
+        if isinstance(update.get("message"), dict)
+        else {}
+    )
+    chat = (
+        cast(dict[str, Any], message.get("chat")) if isinstance(message.get("chat"), dict) else {}
+    )
+    chat_id = chat.get("id")
+    return (chat_id if isinstance(chat_id, int) else None, _optional_str(chat, "type") or "private")
+
+
+def _receipt_from_update(
+    update: dict[str, Any],
+) -> tuple[IncomingUser, str, str, int | None] | None:
+    message = (
+        cast(dict[str, Any], update.get("message"))
+        if isinstance(update.get("message"), dict)
+        else {}
+    )
+    user_data = (
+        cast(dict[str, Any], message.get("from")) if isinstance(message.get("from"), dict) else {}
+    )
+    if not isinstance(user_data.get("id"), int):
+        return None
+    user = IncomingUser(
+        int(user_data["id"]),
+        _optional_str(user_data, "username"),
+        _optional_str(user_data, "first_name"),
+        _optional_str(user_data, "last_name"),
+        _optional_str(user_data, "language_code"),
+    )
+    photos = message.get("photo")
+    if isinstance(photos, list):
+        suitable: list[dict[str, Any]] = []
+        for photo_value in cast(list[object], photos):
+            if not isinstance(photo_value, dict):
+                continue
+            photo = cast(dict[str, Any], photo_value)
+            file_id = photo.get("file_id")
+            file_size = photo.get("file_size")
+            if isinstance(file_id, str) and (
+                not isinstance(file_size, int) or file_size <= 5 * 1024 * 1024
+            ):
+                suitable.append(photo)
+        if suitable:
+            selected = max(suitable, key=lambda item: int(item.get("file_size", 0)))
+            size = selected.get("file_size")
+            return (
+                user,
+                str(selected["file_id"]),
+                "image/jpeg",
+                size if isinstance(size, int) else None,
+            )
+    document = message.get("document")
+    if isinstance(document, dict):
+        doc = cast(dict[str, Any], document)
+        mime = _optional_str(doc, "mime_type")
+        if mime in {"image/jpeg", "image/png", "image/webp"} and isinstance(
+            doc.get("file_id"), str
+        ):
+            size = doc.get("file_size")
+            return user, str(doc["file_id"]), mime, size if isinstance(size, int) else None
+    return None
 
 
 def _send_message_payload(chat_id: int, message: OutgoingMessage) -> dict[str, object]:

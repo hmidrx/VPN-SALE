@@ -36,6 +36,8 @@ class CallbackAction(StrEnum):
     ANNOUNCEMENTS = "announcements"
     SETTINGS = "settings"
     TOP_UP = "topup"
+    CONFIRM_TOP_UP = "topup_ok"
+    SEND_RECEIPT = "receipt"
     RENEW = "renew"
     UPGRADE = "upgrade"
     EXTRA_TRAFFIC = "extra"

@@ -26,20 +26,8 @@ The polling process uses the private `http://api:8000/api/v1/internal/telegram` 
 
 Production and staging startup require the bridge URL, token file, and Redis URL and never fall back to the in-memory identity, portal, or conversation fixtures. Those implementations remain test-only. Rollback consists of stopping the bot before rolling back the API; no schema migration is introduced by this bridge.
 
-The bridge reuses the customer service summary/detail projection, wallet balance/transaction
-projection, and durable notification-preference application functions. Bot responses expose
-opaque service references and token-scoped transaction references; wallet amounts are converted
-exactly to Toman and fail closed when a Rial projection is not exactly representable. Native
-top-up amount entry is Redis-backed and accepts Persian, Arabic, and Latin digits. Request
-creation, lifecycle screens, and receipt photo/document upload remain incomplete and the bot must
-not be described as BOT-1 complete until those operations are wired and tested.
+The bridge reuses the customer service, wallet, notification-preference, and manual-topup application operations. Native top-up amount entry and confirmation are Redis-backed; confirmation creates one idempotent customer-owned request. Receipt photos and JPEG/PNG/WebP documents are size checked before Telegram `getFile`, downloaded only from Telegram's fixed HTTPS file host without redirects, and uploaded immediately for authoritative backend sanitization. Redis stores only the request reference and expected input, never card data or receipt bytes.
 
-The bridge reuses the customer service summary/detail projection, wallet balance/transaction
-projection, and durable notification-preference application functions. Bot responses expose
-opaque service references and token-scoped transaction references; wallet amounts are converted
-exactly to Toman and fail closed when a Rial projection is not exactly representable. Native
-top-up amount entry is Redis-backed and accepts Persian, Arabic, and Latin digits. Request
-creation, lifecycle screens, and receipt photo/document upload remain incomplete and the bot must
-not be described as BOT-1 complete until those operations are wired and tested.
+Request-list/detail presentation and explicit lifecycle-aware cancellation controls still require further bot UI coverage before BOT-1 should be described as complete.
 
 The bot image exposes the `vpn-sale-telegram-bot-v2-foundation` marker so test-server verification can confirm the deployed image contains the Bot V2 foundation.

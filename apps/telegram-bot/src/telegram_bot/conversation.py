@@ -24,6 +24,7 @@ class ConversationStateV2:
     expected_input: str | None = None
     amount_toman: int | None = None
     idempotency_key: str | None = None
+    active_manual_topup_reference: str | None = None
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = field(
         default_factory=lambda: datetime.now(UTC) + timedelta(seconds=STATE_TTL_SECONDS)
@@ -167,6 +168,11 @@ class RedisConversationStore(ConversationStoreV2):
                 idempotency_key=(
                     str(value["idempotency_key"]) if value.get("idempotency_key") else None
                 ),
+                active_manual_topup_reference=(
+                    str(value["active_manual_topup_reference"])
+                    if value.get("active_manual_topup_reference")
+                    else None
+                ),
                 updated_at=datetime.fromisoformat(str(value["updated_at"])),
                 expires_at=datetime.fromisoformat(str(value["expires_at"])),
             )
@@ -189,6 +195,7 @@ class RedisConversationStore(ConversationStoreV2):
                 "expected_input": state.expected_input,
                 "amount_toman": state.amount_toman,
                 "idempotency_key": state.idempotency_key,
+                "active_manual_topup_reference": state.active_manual_topup_reference,
                 "updated_at": state.updated_at.isoformat(),
                 "expires_at": state.expires_at.isoformat(),
             }
