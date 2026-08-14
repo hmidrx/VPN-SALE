@@ -68,9 +68,9 @@ class SeedPortal(InMemoryCustomerPortal):
 def test_private_client_cancellation_calls_owned_internal_endpoint(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    token = tmp_path / "internal-token"
-    token.write_text("x" * 48, encoding="utf-8")
-    client = PrivatePlatformClient("http://api:8000", str(token))
+    token_file = tmp_path / "internal-token"
+    token_file.write_text("x" * 48, encoding="utf-8")
+    client = PrivatePlatformClient("http://api:8000", str(token_file))
     observed: dict[str, object] = {}
 
     def fake_request(
