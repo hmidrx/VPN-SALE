@@ -44,6 +44,9 @@ class BotSettings:
     help_url: str = ""
     privacy_url: str = ""
     allow_polling_in_production: bool = False
+    internal_api_url: str = ""
+    internal_token_file: str = ""
+    redis_url: str = ""
 
     @property
     def production_like(self) -> bool:
@@ -60,6 +63,10 @@ class BotSettings:
             raise ValueError(
                 "VPN_SALE_TELEGRAM_BOT_TOKEN is required when VPN_SALE_BOT_ENABLED=true"
             )
+        if self.production_like and (not self.internal_api_url or not self.internal_token_file):
+            raise ValueError("the private Telegram platform bridge is required")
+        if self.production_like and not self.redis_url:
+            raise ValueError("Redis is required for durable Telegram state")
         if (
             self.mode == BotMode.POLLING
             and self.production_like

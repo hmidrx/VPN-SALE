@@ -83,6 +83,7 @@ class CustomerProfile:
     account_state: AccountStatus
     created_at: datetime
     language: str
+    username: str | None = None
 
 
 @dataclass(frozen=True)
@@ -92,9 +93,9 @@ class ServiceSummary:
     plan_name: str
     status: str
     expires_at: datetime | None
-    remaining_gb: int
-    total_gb: int
-    location: str
+    remaining_gb: int | None
+    total_gb: int | None
+    location: str | None
     renewable: bool
     sensitive_preview: str = "برای نمایش اطلاعات حساس، دکمه نمایش اشتراک را بزنید."
 

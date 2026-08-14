@@ -10,10 +10,13 @@ from typing import Any, Protocol, cast
 
 from telegram_bot.application.identity import TelegramIdentityPort
 from telegram_bot.config import BotMode, BotSettings
+from telegram_bot.conversation import ConversationStoreV2
+from telegram_bot.portal import CustomerPortalPort
 from telegram_bot.runtime.handlers import (
     BotCommandHandler,
     IncomingCallback,
     IncomingCommand,
+    IncomingText,
     IncomingUser,
     OutgoingMessage,
 )
@@ -75,13 +78,19 @@ class TelegramPollingRuntime:
         identity: TelegramIdentityPort,
         transport: TelegramTransport | None = None,
         *,
+        portal: CustomerPortalPort | None = None,
+        conversations: ConversationStoreV2 | None = None,
         retry_base_seconds: float = 0.2,
         retry_max_seconds: float = 5.0,
     ) -> None:
         validate_polling(settings)
         self.settings = settings
         self.transport = transport or UrlLibTelegramTransport(settings.token)
-        self.handler = BotCommandHandler(settings, identity)
+        if settings.production_like and (portal is None or conversations is None):
+            raise ValueError("production polling requires real portal and durable state")
+        self.handler = BotCommandHandler(
+            settings, identity, portal=portal, conversations=conversations
+        )
         self.retry_base_seconds = retry_base_seconds
         self.retry_max_seconds = retry_max_seconds
         self.offset = 0
@@ -164,9 +173,13 @@ class TelegramPollingRuntime:
                     await self.transport.call("sendMessage", payload)
             return
         command = _command_from_update(update)
-        if command is None:
-            return
-        result = self.handler.handle_command(command)
+        if command is not None:
+            result = self.handler.handle_command(command)
+        else:
+            text_message = _text_from_update(update)
+            if text_message is None:
+                return
+            result = self.handler.handle_text(text_message)
         message_obj = update.get("message")
         message_data = cast(dict[str, Any], message_obj) if isinstance(message_obj, dict) else {}
         chat_obj = message_data.get("chat")
@@ -220,6 +233,36 @@ def _command_from_update(update: dict[str, Any]) -> IncomingCommand | None:
         user=user,
         command=command,
         argument=argument or None,
+    )
+
+
+def _text_from_update(update: dict[str, Any]) -> IncomingText | None:
+    message_obj = update.get("message")
+    if not isinstance(message_obj, dict):
+        return None
+    message = cast(dict[str, Any], message_obj)
+    if not isinstance(message.get("text"), str):
+        return None
+    chat = (
+        cast(dict[str, Any], message.get("chat")) if isinstance(message.get("chat"), dict) else {}
+    )
+    user_data = (
+        cast(dict[str, Any], message.get("from")) if isinstance(message.get("from"), dict) else {}
+    )
+    if not isinstance(user_data.get("id"), int):
+        return None
+    user = IncomingUser(
+        telegram_user_id=int(user_data["id"]),
+        username=_optional_str(user_data, "username"),
+        first_name=_optional_str(user_data, "first_name"),
+        last_name=_optional_str(user_data, "last_name"),
+        language_code=_optional_str(user_data, "language_code"),
+    )
+    return IncomingText(
+        int(cast(int, update["update_id"])),
+        _optional_str(chat, "type") or "private",
+        user,
+        str(message["text"]),
     )
 
 

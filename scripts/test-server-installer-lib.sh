@@ -113,6 +113,29 @@ ensure_secret_file(){
   generate_secret | atomic_write_file "$file" 0600
 }
 
+ensure_container_secret_source(){
+  local file="$1" owner mode
+  umask 077
+  if [[ ! -e "$file" ]]; then generate_secret | atomic_write_file "$file" 0600; return; fi
+  [[ -f "$file" && ! -L "$file" && -s "$file" ]] || return 1
+  owner="$(stat -c %u "$file")"; mode="$(stat -c %a "$file")"
+  [[ "$owner" == 0 && ( "$mode" == 600 || "$mode" == 640 ) ]]
+}
+
+container_runtime_identity(){
+  local image="$1"
+  docker run --rm --network none --entrypoint sh "$image" -c \
+    'printf "%s:%s" "$(id -u vpnsale)" "$(id -g vpnsale)"'
+}
+
+prepare_container_secret_file(){
+  local file="$1" gid="$2"
+  [[ "$gid" =~ ^[0-9]+$ && "$gid" -ne 0 ]] || return 1
+  chown "0:$gid" "$file"
+  chmod 0640 "$file"
+  [[ "$(stat -c %u:%g:%a "$file")" == "0:$gid:640" && -s "$file" ]]
+}
+
 write_state(){
   local file="$1" phase="$2" environment="$3" root_domain="$4" repo="$5" ref="$6" commit="$7" project="$8"
   python3 - "$phase" "$environment" "$root_domain" "$repo" "$ref" "$commit" "$project" <<'PY' | atomic_write_file "$file" 0600
@@ -269,6 +292,8 @@ app.$domain {
 }
 api.$domain {
   import app_headers
+  @telegram_internal path /api/v1/internal/telegram /api/v1/internal/telegram/*
+  respond @telegram_internal 404
   reverse_proxy 127.0.0.1:8000 {
     header_up X-Forwarded-Proto {scheme}
     header_up X-Forwarded-Host {host}

@@ -20,6 +20,26 @@ Telegram update IDs retain their 24-hour idempotency claim, while identical call
 
 The limits are configurable with the `VPN_SALE_TELEGRAM_NAVIGATION_*`, `VPN_SALE_TELEGRAM_MUTATION_*`, `VPN_SALE_TELEGRAM_SENSITIVE_*`, and `VPN_SALE_TELEGRAM_THROTTLE_NOTICE_COOLDOWN_SECONDS` environment variables. Restart the bot after a configuration change. Rollback is configuration-only for burst tuning; code rollback does not require a database or Redis migration and preserves existing PostgreSQL/Redis data. For local verification, populate the safe Telegram placeholders, select polling mode, then start the existing `telegram-bot` Compose service.
 
-Conversation state uses the `ConversationStoreV2` abstraction, currently backed by a restart-friendly durable-memory implementation suitable for replacing with Redis. It stores only current screen, bounded navigation stack, active menu message id, version, update timestamp, and expiration timestamp. It does not store private customer message contents or sensitive callback payloads.
+Production conversation state uses `RedisConversationStore` with a 24-hour TTL. It stores only the current screen, an eight-entry navigation stack, active menu message id, version, and timestamps. Receipt bytes, card data, customer text, bot credentials, and database identifiers are never stored. A Redis outage therefore fails closed instead of silently switching to process memory.
+
+The polling process uses the private `http://api:8000/api/v1/internal/telegram` bridge. Both services read a dedicated, root-owned `0600` token file mounted read-only at `/run/secrets/telegram-internal-token`; the bot token is never reused. The API compares the bearer credential in constant time, derives ownership from the authenticated Telegram subject, returns `private, no-store` responses, and exposes no database IDs. Caddy must not route `/api/v1/internal/telegram`. Rotate the credential by atomically replacing the file and restarting API and bot together.
+
+Production and staging startup require the bridge URL, token file, and Redis URL and never fall back to the in-memory identity, portal, or conversation fixtures. Those implementations remain test-only. Rollback consists of stopping the bot before rolling back the API; no schema migration is introduced by this bridge.
+
+The bridge reuses the customer service summary/detail projection, wallet balance/transaction
+projection, and durable notification-preference application functions. Bot responses expose
+opaque service references and token-scoped transaction references; wallet amounts are converted
+exactly to Toman and fail closed when a Rial projection is not exactly representable. Native
+top-up amount entry is Redis-backed and accepts Persian, Arabic, and Latin digits. Request
+creation, lifecycle screens, and receipt photo/document upload remain incomplete and the bot must
+not be described as BOT-1 complete until those operations are wired and tested.
+
+The bridge reuses the customer service summary/detail projection, wallet balance/transaction
+projection, and durable notification-preference application functions. Bot responses expose
+opaque service references and token-scoped transaction references; wallet amounts are converted
+exactly to Toman and fail closed when a Rial projection is not exactly representable. Native
+top-up amount entry is Redis-backed and accepts Persian, Arabic, and Latin digits. Request
+creation, lifecycle screens, and receipt photo/document upload remain incomplete and the bot must
+not be described as BOT-1 complete until those operations are wired and tested.
 
 The bot image exposes the `vpn-sale-telegram-bot-v2-foundation` marker so test-server verification can confirm the deployed image contains the Bot V2 foundation.

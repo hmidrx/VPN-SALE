@@ -208,6 +208,55 @@ def _customer_summary(row: ServiceModel, verified: int) -> CustomerServiceSummar
     )
 
 
+def customer_service_summaries(
+    db: Session, customer_id: str, limit: int = 50
+) -> list[CustomerServiceSummary]:
+    """Authoritative customer-safe projection shared by web and private bot APIs."""
+    rows = db.scalars(
+        select(ServiceModel)
+        .where(ServiceModel.beneficiary_customer_id == customer_id)
+        .order_by(ServiceModel.created_at.desc())
+        .limit(min(max(limit, 1), 100))
+    )
+    return [_customer_summary(row, _verified_attachment_count(db, row.id)) for row in rows]
+
+
+def _verified_attachment_count(db: Session, service_id: str) -> int:
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(ServiceAttachmentModel)
+            .where(
+                ServiceAttachmentModel.service_id == service_id,
+                ServiceAttachmentModel.required.is_(True),
+                ServiceAttachmentModel.verification_status == "VERIFIED",
+            )
+        )
+        or 0
+    )
+
+
+def customer_service_projection(
+    db: Session, customer_id: str, service_reference: str
+) -> CustomerServiceDetail | None:
+    row = db.scalar(
+        select(ServiceModel).where(
+            ServiceModel.public_reference == service_reference,
+            ServiceModel.beneficiary_customer_id == customer_id,
+        )
+    )
+    if row is None:
+        return None
+    summary = _customer_summary(row, _verified_attachment_count(db, row.id))
+    return CustomerServiceDetail(
+        summary=summary,
+        service_health=summary.lifecycle_label,
+        eligible_operations=[],
+        delivery={"ready": summary.delivery_ready, "formats": []},
+        latest_activity=[],
+    )
+
+
 @admin_router.get("", response_model=list[SafeServiceStatus])
 def list_services(
     _: Annotated[object, Depends(require_perm("services.read"))],
@@ -263,30 +312,7 @@ def customer_services(
     db: Annotated[Session, Depends(get_db_session)],
     limit: int = 50,
 ) -> list[CustomerServiceSummary]:
-    rows = db.scalars(
-        select(ServiceModel)
-        .where(ServiceModel.beneficiary_customer_id == customer_session.user_id)
-        .order_by(ServiceModel.created_at.desc())
-        .limit(min(limit, 100))
-    )
-    return [
-        _customer_summary(
-            row,
-            int(
-                db.scalar(
-                    select(func.count())
-                    .select_from(ServiceAttachmentModel)
-                    .where(
-                        ServiceAttachmentModel.service_id == row.id,
-                        ServiceAttachmentModel.required.is_(True),
-                        ServiceAttachmentModel.verification_status == "VERIFIED",
-                    )
-                )
-                or 0
-            ),
-        )
-        for row in rows
-    ]
+    return customer_service_summaries(db, customer_session.user_id, limit)
 
 
 @customer_router.get("/{service_reference}", response_model=CustomerServiceDetail)
@@ -295,34 +321,10 @@ def customer_service_detail(
     customer_session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
     db: Annotated[Session, Depends(get_db_session)],
 ) -> CustomerServiceDetail:
-    row = db.scalar(
-        select(ServiceModel).where(
-            ServiceModel.public_reference == service_reference,
-            ServiceModel.beneficiary_customer_id == customer_session.user_id,
-        )
-    )
-    if row is None:
+    detail = customer_service_projection(db, customer_session.user_id, service_reference)
+    if detail is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "SERVICE_NOT_FOUND"})
-    verified = int(
-        db.scalar(
-            select(func.count())
-            .select_from(ServiceAttachmentModel)
-            .where(
-                ServiceAttachmentModel.service_id == row.id,
-                ServiceAttachmentModel.required.is_(True),
-                ServiceAttachmentModel.verification_status == "VERIFIED",
-            )
-        )
-        or 0
-    )
-    summary = _customer_summary(row, verified)
-    return CustomerServiceDetail(
-        summary=summary,
-        service_health=summary.lifecycle_label,
-        eligible_operations=[],
-        delivery={"ready": summary.delivery_ready, "formats": []},
-        latest_activity=[],
-    )
+    return detail
 
 
 @allocation_router.post("/simulate", response_model=AllocationSimulationResponse)

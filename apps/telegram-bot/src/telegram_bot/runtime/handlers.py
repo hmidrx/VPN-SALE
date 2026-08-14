@@ -28,6 +28,7 @@ from telegram_bot.rate_limit import (
     RateLimitExceeded,
     RateLimitUnavailable,
 )
+from telegram_bot.topup import TOPUP_PRESETS, parse_toman_amount
 
 ButtonRows = list[list[dict[str, str]]]
 
@@ -57,6 +58,14 @@ class IncomingCallback:
     chat_type: str
     user: IncomingUser | None
     data: str | None
+
+
+@dataclass(frozen=True)
+class IncomingText:
+    update_id: int
+    chat_type: str
+    user: IncomingUser | None
+    text: str
 
 
 @dataclass(frozen=True)
@@ -129,6 +138,8 @@ class BotCommandHandler:
             return self._start(command)
         if command.command == "/menu":
             return self._render(user, self._screen_id.HOME, locale, push=False)
+        if command.command == "/topup":
+            return self._start_topup(user, locale, command.update_id)
         command_screens = {
             "/help": self._screen_id.HELP,
             "/profile": self._screen_id.PROFILE,
@@ -144,6 +155,65 @@ class BotCommandHandler:
         if command.command == "/cancel":
             return self.cancel_for(user, locale)
         return self._render(user, self._screen_id.HELP, locale)
+
+    def handle_text(self, message: IncomingText) -> HandlerResult:
+        if not self.idempotency.claim(
+            message.update_id, self.settings.update_idempotency_ttl_seconds
+        ):
+            return HandlerResult(True, True, ())
+        if message.chat_type != "private" or message.user is None:
+            return self._single(t("fa", "group_ignored"), [])
+        state = self.conversations.get(self._conversation_key(message.user), now_utc())
+        if state.conversation_kind != "manual_topup":
+            return self._single(
+                "برای ادامه از منوی ربات استفاده کنید.",
+                [
+                    [
+                        {
+                            "text": "🏠 منوی اصلی",
+                            "callback_data": BotCallback(CallbackAction.HOME).pack(),
+                        }
+                    ]
+                ],
+            )
+        if state.expected_input != "amount":
+            return self._single("برای ادامه از دکمه‌های همین پیام استفاده کنید.", [])
+        try:
+            amount = parse_toman_amount(message.text)
+        except ValueError:
+            return self._single(
+                "مبلغ معتبر و حداقل ۱۰۰٬۰۰۰ تومان ارسال کنید.", self._topup_presets()
+            )
+        self.conversations.save(self._conversation_key(message.user), state.review_topup(amount))
+        return self._single(
+            f"مبلغ: {amount:,} تومان\nروش: کارت‌به‌کارت\n\nمبلغ را تأیید می‌کنید؟",
+            [
+                [
+                    {
+                        "text": "تغییر مبلغ",
+                        "callback_data": BotCallback(CallbackAction.TOP_UP).pack(),
+                    },
+                    {"text": "لغو", "callback_data": BotCallback(CallbackAction.CANCEL).pack()},
+                ]
+            ],
+        )
+
+    def _topup_presets(self) -> ButtonRows:
+        buttons = [
+            {
+                "text": f"{amount:,}",
+                "callback_data": BotCallback(CallbackAction.TOP_UP, str(amount)).pack(),
+            }
+            for amount in TOPUP_PRESETS
+        ]
+        return [buttons[:2], buttons[2:4], buttons[4:]]
+
+    def _start_topup(self, user: IncomingUser, locale: str, update_id: int) -> HandlerResult:
+        _ = locale
+        key = self._conversation_key(user)
+        state = self.conversations.get(key, now_utc()).start_topup(f"tg-topup:{update_id}")
+        self.conversations.save(key, state)
+        return self._single("مبلغ افزایش موجودی را به تومان ارسال کنید.", self._topup_presets())
 
     def handle_callback(self, callback: IncomingCallback) -> HandlerResult:
         self.metrics.inc("callbacks_received")
@@ -273,6 +343,31 @@ class BotCommandHandler:
                 else:
                     rendered = self.renderer.notifications(locale, prefs, mutation_error=True)
             return self._callback_message(rendered.text, rendered.rows)
+        if callback.action == CallbackAction.TOP_UP:
+            result = self._start_topup(user, locale, update_id)
+            if callback.value:
+                try:
+                    amount = parse_toman_amount(callback.value)
+                except ValueError:
+                    return self._stale(locale)
+                state = self.conversations.get(key, now_utc()).review_topup(amount)
+                self.conversations.save(key, state)
+                return self._callback_message(
+                    f"مبلغ: {amount:,} تومان\nروش: کارت‌به‌کارت\n\nمبلغ را تأیید می‌کنید؟",
+                    [
+                        [
+                            {
+                                "text": "تغییر مبلغ",
+                                "callback_data": BotCallback(CallbackAction.TOP_UP).pack(),
+                            },
+                            {
+                                "text": "لغو",
+                                "callback_data": BotCallback(CallbackAction.CANCEL).pack(),
+                            },
+                        ]
+                    ],
+                )
+            return result
         if callback.action == CallbackAction.NAVIGATE:
             try:
                 return self._render(user, ScreenId(callback.value), locale)
@@ -309,10 +404,9 @@ class BotCommandHandler:
             CallbackAction.RENEW,
             CallbackAction.UPGRADE,
             CallbackAction.EXTRA_TRAFFIC,
-            CallbackAction.TOP_UP,
         }:
             return self._callback_message(
-                "محیط TEST: عملیات نوشتن/پرداخت یا تحویل کانفیگ واقعی پیکربندی نشده است.",
+                "برای انجام این عملیات، سرویس را در مینی‌اپ مدیریت کنید.",
                 self.renderer.nav_rows(locale),
             )
         screen = routes.get(callback.action)
@@ -375,6 +469,13 @@ class BotCommandHandler:
                 )
             except Exception:  # noqa: BLE001 - customer-safe API failure
                 rendered = self.renderer.notification_error(locale)
+        elif screen_id == ScreenId.WALLET:
+            rendered = self.renderer.info(
+                screen_id,
+                locale,
+                wallet_balance=self.portal.wallet_balance(context)[0],
+                transactions=self.portal.transactions(context),
+            )
         else:
             rendered = self.renderer.info(screen_id, locale)
         return self._callback_message(rendered.text, rendered.rows)

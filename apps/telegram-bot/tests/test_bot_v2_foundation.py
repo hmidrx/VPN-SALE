@@ -41,7 +41,8 @@ def test_start_is_persian_first_and_two_column_dashboard() -> None:
         IncomingCommand(1, "private", user(), "/start")
     )
     message = result.messages[0]
-    assert "🚀 فروشگاه VPN" in message.text
+    assert "💳 موجودی:" in message.text
+    assert "📦 سرویس فعال:" in message.text
     assert "Ali &lt;Store&gt;" in message.text
     assert "Wallet:" not in message.text
     assert len(message.rows[0]) == 2
