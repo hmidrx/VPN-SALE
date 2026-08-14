@@ -63,18 +63,17 @@ class ScreenRenderer:
             ],
         ]
 
-    def nav_rows(self, locale: str) -> list[list[dict[str, str]]]:
+    def nav_rows(self, locale: str, *, refresh: bool = False) -> list[list[dict[str, str]]]:
         _ = locale
-        return [
+        rows = [
             [
                 {"text": "◀️ بازگشت", "callback_data": cb(CallbackAction.BACK)},
                 {"text": "🏠 منوی اصلی", "callback_data": cb(CallbackAction.HOME)},
             ],
-            [
-                {"text": "🔄 بروزرسانی", "callback_data": cb(CallbackAction.REFRESH)},
-                {"text": "❌ لغو", "callback_data": cb(CallbackAction.CANCEL)},
-            ],
         ]
+        if refresh:
+            rows.insert(0, [{"text": "🔄 بروزرسانی", "callback_data": cb(CallbackAction.REFRESH)}])
+        return rows
 
     def notifications(
         self,
@@ -151,13 +150,13 @@ class ScreenRenderer:
         transactions: list[WalletTransaction] | None = None,
     ) -> RenderedScreen:
         fa: dict[ScreenId, str] = {
-            ScreenId.BUY: "🛒 خرید سرویس\n\nبرای انتخاب و خرید سرویس، مینی‌اپ را باز کنید.",
+            ScreenId.BUY: "🛒 خرید سرویس",
             ScreenId.SERVICES: "📦 سرویس‌های من\n\n"
             + (
                 "در حال حاضر سرویسی برای این حساب ثبت نشده است."
                 if not services
                 else "\n".join(
-                    f"• {safe_text(s.plan_name)} — {safe_text(s.status)} — انقضا: {safe_date(s.expires_at, 'fa')}"  # noqa: E501
+                    f"• {safe_text(s.plan_name)} — {safe_text({'active': 'فعال', 'expired': 'پایان‌یافته', 'pending': 'در حال آماده‌سازی', 'failed': 'ناموفق'}.get(s.status.lower(), 'در حال بررسی'))} — انقضا: {safe_date(s.expires_at, 'fa')}"  # noqa: E501
                     for s in services
                 )
             ),
@@ -171,10 +170,15 @@ class ScreenRenderer:
             ScreenId.HELP: "ℹ️ راهنما\n\nاز دکمه‌های همین ربات برای کار با فروشگاه استفاده کنید.",
         }
         if screen == ScreenId.PROFILE and profile is not None:
+            account_label = {
+                "ACTIVE": "فعال",
+                "PENDING": "در حال تکمیل",
+                "SUSPENDED": "محدود",
+            }.get(profile.account_state.value, "در حال بررسی")
             fa[screen] = (
                 f"👤 حساب کاربری\n\n- نام نمایشی: {safe_text(profile.display_name)}\n"
                 f"- وضعیت اتصال تلگرام: {'فعال' if profile.telegram_linked else 'غیرفعال'}\n"
-                f"- وضعیت حساب: {safe_text(profile.account_state.value)}\n"
+                f"- وضعیت حساب: {safe_text(account_label)}\n"
                 f"- تاریخ عضویت: {safe_date(profile.created_at)}"
                 + (
                     f"\n- نام کاربری تلگرام: @{safe_text(profile.username)}"

@@ -21,6 +21,8 @@ from telegram_bot.portal import (
     CustomerProfile,
     ManualTopup,
     NotificationPreferences,
+    PurchasePlan,
+    PurchaseResult,
     ServiceSummary,
     WalletTransaction,
 )
@@ -28,6 +30,18 @@ from telegram_bot.portal import (
 
 class PrivateApiUnavailable(RuntimeError):
     """Customer-safe boundary: response bodies and credentials never escape."""
+
+
+class PurchaseOutcomeUnknown(PrivateApiUnavailable):
+    """The mutation may have committed; callers must retry with the identical idempotency key."""
+
+
+class AuthoritativePrivateApiError(PrivateApiUnavailable):
+    """Sanitized HTTP rejection proving that the server returned a response."""
+
+    def __init__(self, status_code: int) -> None:
+        super().__init__("درخواست خرید از طرف سرور رد شد.")
+        self.status_code = status_code
 
 
 class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
@@ -70,6 +84,12 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as response:  # noqa: S310
                 return cast(dict[str, Any], json.loads(response.read(1_048_576).decode()))
+        except urllib.error.HTTPError as exc:
+            # HTTPError subclasses URLError, but it proves the server authoritatively rejected the
+            # request. Never mislabel a deterministic 4xx as a possibly committed mutation.
+            if 400 <= exc.code < 500:
+                raise AuthoritativePrivateApiError(exc.code) from exc
+            raise PrivateApiUnavailable("سرویس موقتاً در دسترس نیست.") from exc
         except (urllib.error.URLError, ValueError, OSError) as exc:
             raise PrivateApiUnavailable("سرویس موقتاً در دسترس نیست.") from exc
 
@@ -151,6 +171,86 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
     def wallet_balance(self, context: CustomerContext) -> tuple[int, str]:
         data = self._request("GET", "/wallet", context.telegram_user_id)
         return int(data["balance_minor"]), str(data["currency"])
+
+    @staticmethod
+    def _purchase_plan(data: dict[str, Any]) -> PurchasePlan:
+        return PurchasePlan(
+            str(data["reference"]),
+            str(data["title"]),
+            int(data["traffic_gb"]),
+            int(data["duration_days"]),
+            int(data["device_limit"]),
+            str(data["location_code"]),
+            str(data["location_label"]),
+            str(data["quality_code"]),
+            int(data["price_toman"]),
+            dict(cast(dict[str, int | str], data["selection"])),
+        )
+
+    def purchase_catalog(self, context: CustomerContext) -> list[PurchasePlan]:
+        data = self._request("GET", "/purchase/catalog", context.telegram_user_id)
+        return [self._purchase_plan(item) for item in cast(list[dict[str, Any]], data["items"])]
+
+    def purchase_plan(self, context: CustomerContext, reference: str) -> PurchasePlan | None:
+        try:
+            return self._purchase_plan(
+                self._request("GET", f"/purchase/plans/{reference}", context.telegram_user_id)
+            )
+        except PrivateApiUnavailable:
+            return None
+
+    def _purchase_result(self, data: dict[str, Any]) -> PurchaseResult:
+        return PurchaseResult(
+            str(data.get("order_reference") or ""),
+            str(data["status"]),
+            str(data["fulfillment_status"]),
+            self._purchase_plan(cast(dict[str, Any], data["plan"])),
+            str(data["service_reference"]) if data.get("service_reference") else None,
+            datetime.fromisoformat(str(data["expires_at"])) if data.get("expires_at") else None,
+            bool(data.get("refunded", False)),
+            str(data.get("outcome", "ACCEPTED")),
+        )
+
+    def confirm_purchase(
+        self, context: CustomerContext, plan: PurchasePlan, idempotency_key: str
+    ) -> PurchaseResult:
+        body = {
+            "plan_reference": plan.reference,
+            "reviewed_price_toman": plan.price_toman,
+            "reviewed_selection": plan.selection,
+        }
+        try:
+            data = self._request(
+                "POST",
+                "/purchase/confirm",
+                context.telegram_user_id,
+                body,
+                idempotency_key,
+            )
+        except AuthoritativePrivateApiError:
+            raise
+        except PrivateApiUnavailable:
+            # A timeout can happen after commit. Replaying the exact request/key is the only safe
+            # reconciliation: durable quote/checkout idempotency returns the original result.
+            try:
+                data = self._request(
+                    "POST", "/purchase/confirm", context.telegram_user_id, body, idempotency_key
+                )
+            except AuthoritativePrivateApiError:
+                raise
+            except PrivateApiUnavailable as exc:
+                raise PurchaseOutcomeUnknown(
+                    "نتیجه خرید هنوز مشخص نیست؛ با همان درخواست دوباره بررسی کنید."
+                ) from exc
+        return self._purchase_result(data)
+
+    def purchase_order(self, context: CustomerContext, reference: str) -> PurchaseResult | None:
+        try:
+            return self._purchase_result(
+                self._request("GET", f"/purchase/orders/{reference}", context.telegram_user_id)
+            )
+        except PrivateApiUnavailable:
+            return None
 
     def transactions(self, context: CustomerContext) -> list[WalletTransaction]:
         data = self._request("GET", "/wallet/transactions", context.telegram_user_id)
