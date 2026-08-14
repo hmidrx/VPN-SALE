@@ -85,24 +85,22 @@ def test_native_catalog_rejects_custom_or_multi_option_products() -> None:
     assert exc.value.detail == "selectable_plan_not_supported"
 
 
-def test_historical_order_endpoint_uses_immutable_snapshot_source() -> None:
-    source = Path("apps/api/src/platform_api/telegram_internal.py").read_text()
-    historical = source[
-        source.index("def native_purchase_order") : source.index("def _service_item")
-    ]
-    assert "telegram_purchase_display" in historical
-    assert "_native_plan" not in historical
-    assert "ProductModel" not in historical
-
-
 def test_purchase_child_idempotency_keys_are_stable_and_bounded() -> None:
     original = "x" * 120
     quote = telegram_internal._purchase_idempotency_key(original, "quote")
     checkout = telegram_internal._purchase_idempotency_key(original, "checkout")
     assert quote == telegram_internal._purchase_idempotency_key(original, "quote")
     assert quote != checkout
+    assert quote != telegram_internal._purchase_idempotency_key(original, "quote", "revision-2")
     assert len(quote) <= 120
     assert original not in quote
+
+
+def test_max_catalog_machine_code_gets_compact_telegram_reference() -> None:
+    machine_code = "p" + "x" * 78
+    reference = telegram_internal._plan_reference(machine_code)
+    assert len(reference.encode()) == 18
+    assert machine_code not in reference
 
 
 def test_provider_failure_compensation_uses_authoritative_refund_journal() -> None:

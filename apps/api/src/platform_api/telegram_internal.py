@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .catalog import QuoteRequest, _localized, _price_preview, create_quote
-from .catalog_models import ProductModel, ProductVersionModel
+from .catalog_models import ProductModel, ProductVersionModel, QuoteIdempotencyRecordModel
 from .config import Settings, get_settings
 from .database import get_db_session
 from .identity.models import CustomerProfileModel, TelegramAccountModel, UserModel
@@ -229,9 +230,54 @@ def _option_label(option: dict[str, Any]) -> str:
     return str(option.get("code", "—"))
 
 
-def _purchase_idempotency_key(key: str, phase: str) -> str:
+def _purchase_idempotency_key(key: str, phase: str, revision: str = "") -> str:
     """Bounded deterministic child keys preserve one Telegram mutation identity per phase."""
-    return f"tg-purchase:{phase}:{hashlib.sha256(key.encode()).hexdigest()}"
+    digest = hashlib.sha256(f"{key}|{revision}".encode()).hexdigest()
+    return f"tg-purchase:{phase}:{digest}"
+
+
+def _plan_reference(machine_code: str) -> str:
+    """Telegram-safe opaque catalog reference (19 bytes including prefix)."""
+    return f"p_{hashlib.sha256(machine_code.encode()).hexdigest()[:16]}"
+
+
+def _product_for_plan_reference(db: Session, reference: str) -> ProductModel | None:
+    matches = [
+        product
+        for product in db.scalars(select(ProductModel)).all()
+        if hmac.compare_digest(_plan_reference(product.machine_code), reference)
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _review_revision(body: NativePurchaseRequest) -> str:
+    canonical = json.dumps(
+        {
+            "plan": body.plan_reference,
+            "price": body.reviewed_price_toman,
+            "selection": body.reviewed_selection,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _native_order_result(order: OrderModel) -> dict[str, object]:
+    display = order.snapshot.get("telegram_purchase_display")
+    if not isinstance(display, dict):
+        raise HTTPException(status_code=409, detail="historical_display_unavailable")
+    status_value = order.status
+    return {
+        "outcome": "FINAL" if status_value in {"REFUNDED", "CANCELLED"} else "ACCEPTED",
+        "order_reference": order.reference,
+        "status": status_value,
+        "fulfillment_status": order.fulfillment_status,
+        "plan": cast(dict[str, object], display),
+        "service_reference": None,
+        "expires_at": None,
+        "refunded": status_value == "REFUNDED",
+    }
 
 
 def _native_plan(db: Session, product: ProductModel, request: Request) -> dict[str, object]:
@@ -274,7 +320,7 @@ def _native_plan(db: Session, product: ProductModel, request: Request) -> dict[s
     if amount % 10:
         raise HTTPException(status_code=503, detail="price_precision_unavailable")
     return {
-        "reference": product.machine_code,
+        "reference": _plan_reference(product.machine_code),
         "title": str(localized.get("title") or localized.get("name") or "سرویس"),
         "traffic_gb": traffic // (1024**3),
         "traffic_bytes": traffic,
@@ -326,7 +372,7 @@ def purchase_plan(
     x_telegram_subject: Annotated[int, Header(gt=0)],
 ) -> dict[str, object]:
     _customer_id(db, x_telegram_subject)
-    product = db.scalar(select(ProductModel).where(ProductModel.machine_code == plan_reference))
+    product = _product_for_plan_reference(db, plan_reference)
     if not product or product.status != "ACTIVE" or not product.customer_visible:
         raise HTTPException(status_code=404, detail="plan_unavailable")
     _no_store(response)
@@ -345,9 +391,23 @@ def confirm_native_purchase(
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=120)],
 ) -> dict[str, object]:
     customer_id = _customer_id(db, x_telegram_subject)
-    product = db.scalar(
-        select(ProductModel).where(ProductModel.machine_code == body.plan_reference)
+    existing_quote_key = _purchase_idempotency_key(idempotency_key, "quote", _review_revision(body))
+    existing_idem = db.scalar(
+        select(QuoteIdempotencyRecordModel).where(
+            QuoteIdempotencyRecordModel.customer_id == customer_id,
+            QuoteIdempotencyRecordModel.key_hash
+            == hashlib.sha256(f"{customer_id}:{existing_quote_key}".encode()).hexdigest(),
+        )
     )
+    if existing_idem and existing_idem.quote_id:
+        existing_order = db.scalar(
+            select(OrderModel).where(OrderModel.quote_id == existing_idem.quote_id)
+        )
+        if existing_order is not None:
+            _no_store(response)
+            return _native_order_result(existing_order)
+
+    product = _product_for_plan_reference(db, body.plan_reference)
     if not product or product.status != "ACTIVE" or not product.customer_visible:
         raise HTTPException(status_code=409, detail="plan_unavailable")
     plan = _native_plan(db, product, request)
@@ -382,7 +442,7 @@ def confirm_native_purchase(
         db,
         settings,
         session,
-        _purchase_idempotency_key(idempotency_key, "quote"),
+        existing_quote_key,
     )
     quoted_rial = int(str(quote["final_amount_minor"]))
     if quoted_rial % 10 or quoted_rial // 10 != body.reviewed_price_toman:
@@ -421,6 +481,7 @@ def confirm_native_purchase(
         order_row.snapshot = {
             **order_row.snapshot,
             "telegram_purchase_display": {
+                "reference": plan["reference"],
                 "title": plan["title"],
                 "traffic_gb": plan["traffic_gb"],
                 "duration_days": plan["duration_days"],
@@ -455,27 +516,12 @@ def native_purchase_order(
     x_telegram_subject: Annotated[int, Header(gt=0)],
 ) -> dict[str, object]:
     customer_id = _customer_id(db, x_telegram_subject)
-    order = order_detail(order_reference, customer_id, db, request)
-    snapshot = cast(dict[str, Any], order["snapshot"])
-    display = snapshot.get("telegram_purchase_display")
-    if not isinstance(display, dict):
-        raise HTTPException(status_code=409, detail="historical_display_unavailable")
-    plan = {
-        "reference": str(snapshot["product_machine_code"]),
-        **cast(dict[str, object], display),
-    }
-    status_value = str(order["status"])
+    order_detail(order_reference, customer_id, db, request)
+    order_row = db.scalar(select(OrderModel).where(OrderModel.reference == order_reference))
+    if order_row is None:
+        raise HTTPException(status_code=404, detail="order_not_found")
     _no_store(response)
-    return {
-        "outcome": "FINAL" if status_value in {"REFUNDED", "CANCELLED"} else "ACCEPTED",
-        "order_reference": order_reference,
-        "status": status_value,
-        "fulfillment_status": str(order["fulfillment_status"]),
-        "plan": plan,
-        "service_reference": None,
-        "expires_at": None,
-        "refunded": status_value == "REFUNDED",
-    }
+    return _native_order_result(order_row)
 
 
 def _service_item(summary: CustomerServiceSummary) -> dict[str, object]:

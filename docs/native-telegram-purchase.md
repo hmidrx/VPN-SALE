@@ -26,6 +26,16 @@ change returns `RECONFIRM_REQUIRED` without reserving funds, and Telegram requir
 confirmation. Ambiguous transport results are replayed with the identical mutation key; if the
 result remains unknown the bot says so and never claims that the wallet was unchanged.
 
+HTTP 4xx responses are authoritative pre-mutation rejections and are never described as ambiguous.
+Transport failures and 5xx responses use same-key reconciliation. Before consulting the live
+catalog, confirmation looks up a durable order associated with the customer, external purchase key,
+and reviewed revision; a committed purchase therefore wins over later catalog changes. Known review
+revisions receive distinct quote child keys, while all retries of one revision resolve to the same
+quote and order.
+
+Catalog machine codes are converted to compact opaque Telegram plan references, keeping callback
+payloads below Telegram's 64-byte limit even for the longest valid machine code.
+
 Order cancellation uses the existing compensating wallet refund journal for captured payments.
 Provider failures must be classified by the fulfillment processor and drive that cancellation path;
 the bot renders refunded orders without exposing provider diagnostics.

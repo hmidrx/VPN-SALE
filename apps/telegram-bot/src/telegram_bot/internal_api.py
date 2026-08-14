@@ -36,6 +36,14 @@ class PurchaseOutcomeUnknown(PrivateApiUnavailable):
     """The mutation may have committed; callers must retry with the identical idempotency key."""
 
 
+class AuthoritativePrivateApiError(PrivateApiUnavailable):
+    """Sanitized HTTP rejection proving that the server returned a response."""
+
+    def __init__(self, status_code: int) -> None:
+        super().__init__("درخواست خرید از طرف سرور رد شد.")
+        self.status_code = status_code
+
+
 class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
     def __init__(self, base_url: str, token_file: str, *, timeout: float = 5.0) -> None:
         if not base_url.startswith("http://") and not base_url.startswith("https://"):
@@ -76,6 +84,12 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as response:  # noqa: S310
                 return cast(dict[str, Any], json.loads(response.read(1_048_576).decode()))
+        except urllib.error.HTTPError as exc:
+            # HTTPError subclasses URLError, but it proves the server authoritatively rejected the
+            # request. Never mislabel a deterministic 4xx as a possibly committed mutation.
+            if 400 <= exc.code < 500:
+                raise AuthoritativePrivateApiError(exc.code) from exc
+            raise PrivateApiUnavailable("سرویس موقتاً در دسترس نیست.") from exc
         except (urllib.error.URLError, ValueError, OSError) as exc:
             raise PrivateApiUnavailable("سرویس موقتاً در دسترس نیست.") from exc
 
@@ -213,6 +227,8 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
                 body,
                 idempotency_key,
             )
+        except AuthoritativePrivateApiError:
+            raise
         except PrivateApiUnavailable:
             # A timeout can happen after commit. Replaying the exact request/key is the only safe
             # reconciliation: durable quote/checkout idempotency returns the original result.
@@ -220,6 +236,8 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
                 data = self._request(
                     "POST", "/purchase/confirm", context.telegram_user_id, body, idempotency_key
                 )
+            except AuthoritativePrivateApiError:
+                raise
             except PrivateApiUnavailable as exc:
                 raise PurchaseOutcomeUnknown(
                     "نتیجه خرید هنوز مشخص نیست؛ با همان درخواست دوباره بررسی کنید."

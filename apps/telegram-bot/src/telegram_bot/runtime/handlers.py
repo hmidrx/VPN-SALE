@@ -15,7 +15,7 @@ from telegram_bot.config import BotSettings
 from telegram_bot.conversation import ConversationStoreV2, DurableMemoryConversationStore
 from telegram_bot.formatting import format_date, format_toman
 from telegram_bot.idempotency import InMemoryUpdateIdempotency
-from telegram_bot.internal_api import PurchaseOutcomeUnknown
+from telegram_bot.internal_api import AuthoritativePrivateApiError, PurchaseOutcomeUnknown
 from telegram_bot.localization import t
 from telegram_bot.menu import MenuRegistry, default_menu_registry
 from telegram_bot.mini_app import MiniAppUrlBuilder
@@ -766,6 +766,24 @@ class BotCommandHandler:
                         ],
                     ],
                 )
+            except AuthoritativePrivateApiError:
+                return self._callback_message(
+                    "خرید انجام نشد و پرداختی ثبت نشد. موجودی یا مشخصات پلن را بررسی کنید.",
+                    [
+                        [
+                            {
+                                "text": "💳 مشاهده کیف پول",
+                                "callback_data": BotCallback(CallbackAction.WALLET).pack(),
+                            }
+                        ],
+                        [
+                            {
+                                "text": "◀️ بازگشت به پلن‌ها",
+                                "callback_data": BotCallback(CallbackAction.BUY_SERVICE).pack(),
+                            }
+                        ],
+                    ],
+                )
             except Exception:  # noqa: BLE001 - sanitized commerce boundary
                 return self._callback_message(
                     "خرید تکمیل نشد. پیش از تلاش دوباره، موجودی و سفارش‌ها را بررسی کنید.",
@@ -1019,8 +1037,15 @@ class BotCommandHandler:
                 return self._callback_message(
                     "این سرویس پیدا نشد یا متعلق به شما نیست.", self.renderer.nav_rows(locale)
                 )
+            status_label = {
+                "active": "فعال",
+                "pending": "در حال آماده‌سازی",
+                "expired": "پایان‌یافته",
+                "failed": "ناموفق",
+                "suspended": "محدود",
+            }.get(service.status.casefold(), "در حال بررسی")
             return self._callback_message(
-                f"{service.plan_name}\nوضعیت: {service.status}", self.renderer.nav_rows(locale)
+                f"{service.plan_name}\nوضعیت: {status_label}", self.renderer.nav_rows(locale)
             )
         if callback.action in {
             CallbackAction.OPEN_SUBSCRIPTION,
@@ -1071,7 +1096,7 @@ class BotCommandHandler:
         if screen_id == ScreenId.HOME:
             profile = self.portal.profile(context)
             services = self.portal.services(context)
-            active = [s for s in services if s.status == "active"]
+            active = [s for s in services if s.status.casefold() == "active"]
             nearest = min((s.expires_at for s in active if s.expires_at is not None), default=None)
             data = DashboardData(
                 user.first_name or profile.display_name,

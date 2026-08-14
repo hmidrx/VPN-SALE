@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from hashlib import sha256
+from io import BytesIO
+from urllib.error import HTTPError
+
+import pytest
 
 from telegram_bot.application.identity import InMemoryTelegramIdentityService
 from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.config import BotSettings
 from telegram_bot.conversation import DurableMemoryConversationStore
 from telegram_bot.internal_api import (
+    AuthoritativePrivateApiError,
     PrivateApiUnavailable,
     PrivatePlatformClient,
     PurchaseOutcomeUnknown,
@@ -240,3 +246,38 @@ def test_transport_reconciliation_replays_exact_request_and_key() -> None:
 
 class SimpleContext:
     telegram_user_id = 42
+
+
+def test_http_409_is_authoritative_and_never_retried_as_ambiguous(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,  # type: ignore[no-untyped-def]
+) -> None:
+    token_file = tmp_path / "token"
+    token_file.write_text("x" * 64)
+    calls = 0
+
+    def reject(request, timeout):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        _ = request, timeout
+        calls += 1
+        raise HTTPError("http://private", 409, "Conflict", {}, BytesIO(b"sensitive-body"))
+
+    monkeypatch.setattr("urllib.request.urlopen", reject)
+    client = PrivatePlatformClient("http://api:8000", str(token_file))
+    plan = InMemoryCustomerPortal()._purchase_plans[0]
+    with pytest.raises(AuthoritativePrivateApiError) as exc:
+        client.confirm_purchase(SimpleContext, plan, "stable-key")  # type: ignore[arg-type]
+    assert exc.value.status_code == 409
+    assert calls == 1
+    assert "sensitive-body" not in str(exc.value)
+
+
+def test_uppercase_active_counts_on_home_and_renders_persian_detail() -> None:
+    portal = InMemoryCustomerPortal()
+    portal._services[0] = replace(portal._services[0], status="ACTIVE")
+    handler = BotCommandHandler(settings(), InMemoryTelegramIdentityService(), portal=portal)
+    home = handler.handle_callback(callback(300, CallbackAction.HOME))
+    assert "📦 سرویس فعال: ۱" in home.messages[0].text
+    detail = handler.handle_callback(callback(301, CallbackAction.OPEN_SERVICE, "svc-a"))
+    assert "وضعیت: فعال" in detail.messages[0].text
+    assert "ACTIVE" not in detail.messages[0].text
