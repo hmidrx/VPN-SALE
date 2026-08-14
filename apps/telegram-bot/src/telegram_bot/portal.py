@@ -123,6 +123,30 @@ class ManualTopup:
 
 
 @dataclass(frozen=True)
+class PurchasePlan:
+    reference: str
+    title: str
+    traffic_gb: int
+    duration_days: int
+    device_limit: int
+    location_code: str
+    location_label: str
+    quality_code: str
+    price_toman: int
+
+
+@dataclass(frozen=True)
+class PurchaseResult:
+    order_reference: str
+    status: str
+    fulfillment_status: str
+    plan: PurchasePlan
+    service_reference: str | None = None
+    expires_at: datetime | None = None
+    refunded: bool = False
+
+
+@dataclass(frozen=True)
 class SessionSummary:
     ref: str
     label: str
@@ -172,6 +196,12 @@ class InMemoryConversationStore:
 
 
 class CustomerPortalPort(Protocol):
+    def purchase_catalog(self, context: CustomerContext) -> list[PurchasePlan]: ...
+    def purchase_plan(self, context: CustomerContext, reference: str) -> PurchasePlan | None: ...
+    def confirm_purchase(
+        self, context: CustomerContext, reference: str, idempotency_key: str
+    ) -> PurchaseResult: ...
+    def purchase_order(self, context: CustomerContext, reference: str) -> PurchaseResult | None: ...
     def profile(self, context: CustomerContext) -> CustomerProfile: ...
     def services(self, context: CustomerContext) -> list[ServiceSummary]: ...
     def service(self, context: CustomerContext, service_ref: str) -> ServiceSummary | None: ...
@@ -249,6 +279,33 @@ class InMemoryCustomerPortal(CustomerPortalPort):
         self._notification_idempotency: dict[tuple[str, str], NotificationPreferences] = {}
         self._manual_topups: dict[str, ManualTopup] = {}
         self._manual_topup_cancellations: dict[str, ManualTopup] = {}
+        self._purchase_plans = [
+            PurchasePlan("basic", "پلن استاندارد", 50, 30, 1, "de", "آلمان", "standard", 120_000)
+        ]
+        self._purchases: dict[str, PurchaseResult] = {}
+
+    def purchase_catalog(self, context: CustomerContext) -> list[PurchasePlan]:
+        return list(self._purchase_plans)
+
+    def purchase_plan(self, context: CustomerContext, reference: str) -> PurchasePlan | None:
+        return next((plan for plan in self._purchase_plans if plan.reference == reference), None)
+
+    def confirm_purchase(
+        self, context: CustomerContext, reference: str, idempotency_key: str
+    ) -> PurchaseResult:
+        if idempotency_key in self._purchases:
+            return self._purchases[idempotency_key]
+        plan = self.purchase_plan(context, reference)
+        if plan is None:
+            raise ValueError("plan unavailable")
+        result = PurchaseResult(f"ord_{idempotency_key[-8:]}", "ACCEPTED", "PROVISIONING", plan)
+        self._purchases[idempotency_key] = result
+        return result
+
+    def purchase_order(self, context: CustomerContext, reference: str) -> PurchaseResult | None:
+        return next(
+            (item for item in self._purchases.values() if item.order_reference == reference), None
+        )
 
     def profile(self, context: CustomerContext) -> CustomerProfile:
         return CustomerProfile(

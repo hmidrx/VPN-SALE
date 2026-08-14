@@ -12,7 +12,7 @@ from telegram_bot.application.payloads import parse_start_payload
 from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.config import BotSettings
 from telegram_bot.conversation import ConversationStoreV2, DurableMemoryConversationStore
-from telegram_bot.formatting import format_date
+from telegram_bot.formatting import format_date, format_toman
 from telegram_bot.idempotency import InMemoryUpdateIdempotency
 from telegram_bot.localization import t
 from telegram_bot.menu import MenuRegistry, default_menu_registry
@@ -618,6 +618,193 @@ class BotCommandHandler:
                     ],
                 )
             return result
+        if callback.action == CallbackAction.SELECT_PLAN:
+            plan = self.portal.purchase_plan(self._portal_context(user, locale), callback.value)
+            if plan is None:
+                return self._stale(locale)
+            balance = self.portal.wallet_balance(self._portal_context(user, locale))[0]
+            state = state.start_purchase(plan.reference, "default", f"tg-buy:{update_id}")
+            self.conversations.save(key, state)
+            details = (
+                f"🛒 بررسی سفارش\n\nپلن: {plan.title}\nموقعیت: {plan.location_label}\n"
+                f"حجم: {plan.traffic_gb:,} گیگابایت\nمدت: {plan.duration_days} روز\n"
+                f"تعداد دستگاه: {plan.device_limit}\nقیمت: {format_toman(plan.price_toman)}\n"
+                f"موجودی کیف پول: {format_toman(balance)}"
+            )
+            if balance < plan.price_toman:
+                return self._callback_message(
+                    details + f"\n\nمبلغ کسری: {format_toman(plan.price_toman - balance)}",
+                    [
+                        [
+                            {
+                                "text": "➕ افزایش موجودی",
+                                "callback_data": BotCallback(CallbackAction.TOP_UP).pack(),
+                            }
+                        ],
+                        [
+                            {
+                                "text": "◀️ بازگشت به پلن‌ها",
+                                "callback_data": BotCallback(CallbackAction.BUY_SERVICE).pack(),
+                            }
+                        ],
+                    ],
+                )
+            return self._callback_message(
+                details,
+                [
+                    [
+                        {
+                            "text": "✅ تأیید و خرید",
+                            "callback_data": BotCallback(CallbackAction.CONFIRM_PURCHASE).pack(),
+                        }
+                    ],
+                    [
+                        {
+                            "text": "✏️ تغییر انتخاب",
+                            "callback_data": BotCallback(CallbackAction.BUY_SERVICE).pack(),
+                        },
+                        {
+                            "text": "◀️ بازگشت",
+                            "callback_data": BotCallback(CallbackAction.BACK).pack(),
+                        },
+                    ],
+                    [
+                        {
+                            "text": "❌ لغو خرید",
+                            "callback_data": BotCallback(CallbackAction.CANCEL_CONVERSATION).pack(),
+                        }
+                    ],
+                ],
+            )
+        if callback.action == CallbackAction.CONFIRM_PURCHASE:
+            state = self.conversations.get(key, now_utc())
+            if state.conversation_kind == "purchase" and state.active_order_reference:
+                result = self.portal.purchase_order(
+                    self._portal_context(user, locale), state.active_order_reference
+                )
+                if result is None:
+                    return self._stale(locale)
+                text = (
+                    "✅ سفارش پذیرفته شد\n\nساخت سرویس در حال انجام است.\n"
+                    f"شناسه سفارش: {result.order_reference[-8:]}"
+                )
+                return self._callback_message(
+                    text,
+                    [
+                        [
+                            {
+                                "text": "🔄 بررسی وضعیت",
+                                "callback_data": BotCallback(
+                                    CallbackAction.PURCHASE_STATUS, result.order_reference
+                                ).pack(),
+                            }
+                        ],
+                        [
+                            {
+                                "text": "🏠 منوی اصلی",
+                                "callback_data": BotCallback(CallbackAction.HOME).pack(),
+                            }
+                        ],
+                    ],
+                )
+            if (
+                state.conversation_kind != "purchase"
+                or state.expected_input != "purchase_confirmation"
+                or not state.selected_plan_reference
+                or not state.idempotency_key
+            ):
+                return self._stale(locale)
+            try:
+                result = self.portal.confirm_purchase(
+                    self._portal_context(user, locale),
+                    state.selected_plan_reference,
+                    state.idempotency_key,
+                )
+            except Exception:  # noqa: BLE001 - sanitized commerce boundary
+                return self._callback_message(
+                    "خرید انجام نشد. موجودی کیف پول شما بدون تغییر باقی مانده است.",
+                    [
+                        [
+                            {
+                                "text": "◀️ بازگشت به پلن‌ها",
+                                "callback_data": BotCallback(CallbackAction.BUY_SERVICE).pack(),
+                            }
+                        ],
+                        [
+                            {
+                                "text": "🏠 منوی اصلی",
+                                "callback_data": BotCallback(CallbackAction.HOME).pack(),
+                            }
+                        ],
+                    ],
+                )
+            self.conversations.save(
+                key,
+                replace(state, expected_input=None, active_order_reference=result.order_reference),
+            )
+            if result.refunded:
+                text = "ساخت سرویس کامل نشد و مبلغ سفارش به کیف پول شما بازگردانده شد."
+            elif result.service_reference:
+                text = (
+                    f"✅ سرویس شما فعال شد\n\nنام سرویس: {result.plan.title}\n"
+                    f"موقعیت: {result.plan.location_label}\n"
+                    f"اعتبار تا: {format_date(result.expires_at)}\n"
+                    f"حجم: {result.plan.traffic_gb:,} گیگابایت\n"
+                    f"شناسه: {result.service_reference[-8:]}"
+                )
+            else:
+                text = (
+                    "✅ سفارش پذیرفته شد\n\nساخت سرویس در حال انجام است.\n"
+                    f"شناسه سفارش: {result.order_reference[-8:]}"
+                )
+            return self._callback_message(
+                text,
+                [
+                    [
+                        {
+                            "text": "🔄 بررسی وضعیت",
+                            "callback_data": BotCallback(
+                                CallbackAction.PURCHASE_STATUS, result.order_reference
+                            ).pack(),
+                        }
+                    ],
+                    [
+                        {
+                            "text": "🏠 منوی اصلی",
+                            "callback_data": BotCallback(CallbackAction.HOME).pack(),
+                        }
+                    ],
+                ],
+            )
+        if callback.action == CallbackAction.PURCHASE_STATUS:
+            result = self.portal.purchase_order(self._portal_context(user, locale), callback.value)
+            if result is None:
+                return self._stale(locale)
+            if result.refunded:
+                text = "ساخت سرویس کامل نشد و مبلغ سفارش به کیف پول شما بازگردانده شد."
+            elif result.service_reference:
+                text = f"✅ سرویس شما فعال شد\nشناسه: {result.service_reference[-8:]}"
+            else:
+                text = f"⏳ سفارش در حال آماده‌سازی است.\nشناسه سفارش: {result.order_reference[-8:]}"
+            return self._callback_message(
+                text,
+                [
+                    [
+                        {
+                            "text": "🔄 بررسی وضعیت",
+                            "callback_data": BotCallback(
+                                CallbackAction.PURCHASE_STATUS, result.order_reference
+                            ).pack(),
+                        }
+                    ],
+                    [
+                        {
+                            "text": "🏠 منوی اصلی",
+                            "callback_data": BotCallback(CallbackAction.HOME).pack(),
+                        }
+                    ],
+                ],
+            )
         if callback.action == CallbackAction.CONFIRM_TOP_UP:
             state = self.conversations.get(key, now_utc())
             if (
@@ -738,7 +925,7 @@ class BotCommandHandler:
             return self._stale(locale)
         if callback.action == CallbackAction.OPEN_WEB_APP:
             return self._callback_message(
-                "🌐 نسخه وب اختیاری است و ربات بدون وب‌سایت قابل استفاده است.",
+                "🌐 نسخه وب برای دسترسی به امکانات تکمیلی حساب در دسترس است.",
                 self.renderer.nav_rows(locale),
             )
         if callback.action == CallbackAction.OPEN_SERVICE:
@@ -827,6 +1014,30 @@ class BotCommandHandler:
                 wallet_balance=self.portal.wallet_balance(context)[0],
                 transactions=self.portal.transactions(context),
             )
+        elif screen_id == ScreenId.BUY:
+            plans = self.portal.purchase_catalog(context)
+            if not plans:
+                return self._callback_message(
+                    "در حال حاضر پلن قابل خریدی وجود ندارد.", self.renderer.nav_rows(locale)
+                )
+            lines = [
+                f"• {p.title} — {p.traffic_gb:,} گیگابایت — "
+                f"{p.duration_days} روز — {format_toman(p.price_toman)}"
+                for p in plans
+            ]
+            rows = [
+                [
+                    {
+                        "text": f"🛒 {p.title} — {format_toman(p.price_toman)}",
+                        "callback_data": BotCallback(
+                            CallbackAction.SELECT_PLAN, p.reference
+                        ).pack(),
+                    }
+                ]
+                for p in plans[:8]
+            ]
+            rows.extend(self.renderer.nav_rows(locale))
+            return self._callback_message("🛒 خرید سرویس\n\n" + "\n".join(lines), rows)
         else:
             rendered = self.renderer.info(screen_id, locale)
         return self._callback_message(rendered.text, rendered.rows)

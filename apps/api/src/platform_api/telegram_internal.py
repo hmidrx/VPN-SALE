@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
 """Private, service-authenticated Telegram bridge (never routed by Caddy)."""
 
 from __future__ import annotations
@@ -6,13 +7,16 @@ import hashlib
 import hmac
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, cast
+from types import SimpleNamespace
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .catalog import QuoteRequest, _localized, _price_preview, create_quote
+from .catalog_models import ProductModel, ProductVersionModel
 from .config import Settings, get_settings
 from .database import get_db_session
 from .identity.models import CustomerProfileModel, TelegramAccountModel, UserModel
@@ -40,6 +44,7 @@ from .notification_preferences import (
     get_preferences,
     patch_preferences,
 )
+from .orders import CheckoutRequest, confirm_checkout, create_checkout, order_detail
 from .services import (
     CustomerServiceSummary,
     customer_service_projection,
@@ -60,6 +65,11 @@ class ResolveRequest(BaseModel):
     last_name: str | None = Field(default=None, max_length=128)
     language_code: str | None = Field(default=None, max_length=16)
     bot_started: bool = True
+
+
+class NativePurchaseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plan_reference: str = Field(pattern=r"^[a-z][a-z0-9_]{1,78}$")
 
 
 def _authenticate(
@@ -203,6 +213,195 @@ def _customer_id(db: Session, telegram_id: int) -> str:
     if user.status not in {"ACTIVE", "PENDING"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="account_restricted")
     return user.id
+
+
+def _option_label(option: dict[str, Any]) -> str:
+    labels = option.get("labels", [])
+    if isinstance(labels, dict):
+        return str(labels.get("fa") or labels.get("en") or option.get("code", "—"))
+    if isinstance(labels, list):
+        for label in labels:
+            if isinstance(label, dict) and label.get("locale") == "fa":
+                return str(label.get("value") or option.get("code"))
+    return str(option.get("code", "—"))
+
+
+def _native_plan(db: Session, product: ProductModel, request: Request) -> dict[str, object]:
+    version = db.get(ProductVersionModel, product.current_version_id)
+    if not version or version.status != "PUBLISHED":
+        raise HTTPException(status_code=404, detail="plan_unavailable")
+    options = cast(dict[str, Any], version.options_snapshot)
+    locations = cast(list[dict[str, Any]], options.get("location_options", []))
+    qualities = cast(list[dict[str, Any]], options.get("quality_options", []))
+    location = next((x for x in locations if x.get("enabled", True)), None)
+    quality = next((x for x in qualities if x.get("enabled", True)), None)
+    if not location or not quality:
+        raise HTTPException(status_code=409, detail="plan_options_unavailable")
+    traffic = int(
+        options.get("fixed_traffic_bytes") or cast(dict[str, Any], options["traffic"])["minimum"]
+    )
+    duration = int(
+        options.get("fixed_duration_days")
+        or cast(dict[str, Any], options["duration_days"])["minimum"]
+    )
+    devices = int(
+        options.get("fixed_device_count") or cast(dict[str, Any], options["devices"])["minimum"]
+    )
+    selection = QuoteRequest(
+        product_id=product.id,
+        traffic_bytes=traffic,
+        duration_days=duration,
+        device_count=devices,
+        location_code=str(location["code"]),
+        quality_code=str(quality["code"]),
+    )
+    preview = _price_preview(selection, request, db, datetime.now(UTC))
+    localized = _localized(product.localizations, "fa")
+    amount = int(str(preview["final_amount_minor"]))
+    if amount % 10:
+        raise HTTPException(status_code=503, detail="price_precision_unavailable")
+    return {
+        "reference": product.machine_code,
+        "title": str(localized.get("title") or localized.get("name") or "سرویس"),
+        "traffic_gb": traffic // (1024**3),
+        "traffic_bytes": traffic,
+        "duration_days": duration,
+        "device_limit": devices,
+        "location_code": str(location["code"]),
+        "location_label": _option_label(location),
+        "quality_code": str(quality["code"]),
+        "price_toman": amount // 10,
+    }
+
+
+@router.get("/purchase/catalog")
+def purchase_catalog(
+    request: Request,
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+) -> dict[str, object]:
+    _customer_id(db, x_telegram_subject)
+    products = db.scalars(
+        select(ProductModel)
+        .where(
+            ProductModel.status == "ACTIVE",
+            ProductModel.customer_visible.is_(True),
+            ProductModel.current_version_id.is_not(None),
+        )
+        .order_by(ProductModel.display_order)
+    ).all()
+    items: list[dict[str, object]] = []
+    for product in products:
+        try:
+            items.append(_native_plan(db, product, request))
+        except HTTPException:
+            continue
+    _no_store(response)
+    return {"items": items}
+
+
+@router.get("/purchase/plans/{plan_reference}")
+def purchase_plan(
+    plan_reference: str,
+    request: Request,
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+) -> dict[str, object]:
+    _customer_id(db, x_telegram_subject)
+    product = db.scalar(select(ProductModel).where(ProductModel.machine_code == plan_reference))
+    if not product or product.status != "ACTIVE" or not product.customer_visible:
+        raise HTTPException(status_code=404, detail="plan_unavailable")
+    _no_store(response)
+    return _native_plan(db, product, request)
+
+
+@router.post("/purchase/confirm")
+def confirm_native_purchase(
+    body: NativePurchaseRequest,
+    request: Request,
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    settings: Annotated[Settings, Depends(get_settings)],
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=120)],
+) -> dict[str, object]:
+    customer_id = _customer_id(db, x_telegram_subject)
+    product = db.scalar(
+        select(ProductModel).where(ProductModel.machine_code == body.plan_reference)
+    )
+    if not product or product.status != "ACTIVE" or not product.customer_visible:
+        raise HTTPException(status_code=409, detail="plan_unavailable")
+    plan = _native_plan(db, product, request)
+    quote_body = QuoteRequest(
+        product_id=product.id,
+        traffic_bytes=int(str(plan["traffic_bytes"])),
+        duration_days=int(str(plan["duration_days"])),
+        device_count=int(str(plan["device_limit"])),
+        location_code=str(plan["location_code"]),
+        quality_code=str(plan["quality_code"]),
+    )
+    session = cast(Any, SimpleNamespace(user_id=customer_id))
+    quote = create_quote(quote_body, request, db, settings, session, f"{idempotency_key}:quote")
+    checkout = create_checkout(
+        CheckoutRequest(quote_reference=str(quote["quote_reference"]), payment_method="WALLET"),
+        customer_id,
+        db,
+        request,
+        f"{idempotency_key}:checkout",
+    )
+    confirmed = confirm_checkout(
+        str(cast(dict[str, Any], checkout["checkout"])["checkout_reference"]),
+        customer_id,
+        db,
+        request,
+    )
+    order = cast(dict[str, Any], confirmed["order"])
+    _no_store(response)
+    return {
+        "order_reference": order["order_reference"],
+        "status": "ACCEPTED",
+        "fulfillment_status": "PROVISIONING",
+        "plan": plan,
+        "service_reference": None,
+        "expires_at": None,
+        "refunded": False,
+    }
+
+
+@router.get("/purchase/orders/{order_reference}")
+def native_purchase_order(
+    order_reference: str,
+    request: Request,
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+) -> dict[str, object]:
+    customer_id = _customer_id(db, x_telegram_subject)
+    order = order_detail(order_reference, customer_id, db, request)
+    snapshot = cast(dict[str, Any], order["snapshot"])
+    product = db.scalar(
+        select(ProductModel).where(ProductModel.machine_code == snapshot["product_machine_code"])
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail="order_not_found")
+    plan = _native_plan(db, product, request)
+    status_value = str(order["status"])
+    _no_store(response)
+    return {
+        "order_reference": order_reference,
+        "status": status_value,
+        "fulfillment_status": str(order["fulfillment_status"]),
+        "plan": plan,
+        "service_reference": None,
+        "expires_at": None,
+        "refunded": status_value == "REFUNDED",
+    }
 
 
 def _service_item(summary: CustomerServiceSummary) -> dict[str, object]:

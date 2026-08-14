@@ -25,6 +25,9 @@ class ConversationStateV2:
     amount_toman: int | None = None
     idempotency_key: str | None = None
     active_manual_topup_reference: str | None = None
+    selected_plan_reference: str | None = None
+    selected_options: str | None = None
+    active_order_reference: str | None = None
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = field(
         default_factory=lambda: datetime.now(UTC) + timedelta(seconds=STATE_TTL_SECONDS)
@@ -75,6 +78,23 @@ class ConversationStateV2:
 
     def review_topup(self, amount_toman: int) -> ConversationStateV2:
         return replace(self, expected_input="confirmation", amount_toman=amount_toman)
+
+    def start_purchase(
+        self, plan_reference: str, options: str, idempotency_key: str
+    ) -> ConversationStateV2:
+        now = datetime.now(UTC)
+        return replace(
+            self,
+            conversation_kind="purchase",
+            expected_input="purchase_confirmation",
+            selected_plan_reference=plan_reference,
+            selected_options=options,
+            idempotency_key=idempotency_key,
+            active_order_reference=None,
+            state_version=self.state_version + 1,
+            updated_at=now,
+            expires_at=now + timedelta(seconds=STATE_TTL_SECONDS),
+        )
 
 
 class ConversationStoreV2(Protocol):
@@ -173,6 +193,19 @@ class RedisConversationStore(ConversationStoreV2):
                     if value.get("active_manual_topup_reference")
                     else None
                 ),
+                selected_plan_reference=(
+                    str(value["selected_plan_reference"])
+                    if value.get("selected_plan_reference")
+                    else None
+                ),
+                selected_options=(
+                    str(value["selected_options"]) if value.get("selected_options") else None
+                ),
+                active_order_reference=(
+                    str(value["active_order_reference"])
+                    if value.get("active_order_reference")
+                    else None
+                ),
                 updated_at=datetime.fromisoformat(str(value["updated_at"])),
                 expires_at=datetime.fromisoformat(str(value["expires_at"])),
             )
@@ -196,6 +229,9 @@ class RedisConversationStore(ConversationStoreV2):
                 "amount_toman": state.amount_toman,
                 "idempotency_key": state.idempotency_key,
                 "active_manual_topup_reference": state.active_manual_topup_reference,
+                "selected_plan_reference": state.selected_plan_reference,
+                "selected_options": state.selected_options,
+                "active_order_reference": state.active_order_reference,
                 "updated_at": state.updated_at.isoformat(),
                 "expires_at": state.expires_at.isoformat(),
             }

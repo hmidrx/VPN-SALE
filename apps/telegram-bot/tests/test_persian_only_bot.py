@@ -82,11 +82,7 @@ def test_navigation_labels_are_exact_persian_vocabulary() -> None:
         [
             {"text": "◀️ بازگشت", "callback_data": "b:v1:back:"},
             {"text": "🏠 منوی اصلی", "callback_data": "b:v1:home:"},
-        ],
-        [
-            {"text": "🔄 بروزرسانی", "callback_data": "b:v1:ref:"},
-            {"text": "❌ لغو", "callback_data": "b:v1:cancel:"},
-        ],
+        ]
     ]
 
 

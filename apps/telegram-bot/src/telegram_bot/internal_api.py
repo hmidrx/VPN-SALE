@@ -21,6 +21,8 @@ from telegram_bot.portal import (
     CustomerProfile,
     ManualTopup,
     NotificationPreferences,
+    PurchasePlan,
+    PurchaseResult,
     ServiceSummary,
     WalletTransaction,
 )
@@ -151,6 +153,64 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
     def wallet_balance(self, context: CustomerContext) -> tuple[int, str]:
         data = self._request("GET", "/wallet", context.telegram_user_id)
         return int(data["balance_minor"]), str(data["currency"])
+
+    @staticmethod
+    def _purchase_plan(data: dict[str, Any]) -> PurchasePlan:
+        return PurchasePlan(
+            str(data["reference"]),
+            str(data["title"]),
+            int(data["traffic_gb"]),
+            int(data["duration_days"]),
+            int(data["device_limit"]),
+            str(data["location_code"]),
+            str(data["location_label"]),
+            str(data["quality_code"]),
+            int(data["price_toman"]),
+        )
+
+    def purchase_catalog(self, context: CustomerContext) -> list[PurchasePlan]:
+        data = self._request("GET", "/purchase/catalog", context.telegram_user_id)
+        return [self._purchase_plan(item) for item in cast(list[dict[str, Any]], data["items"])]
+
+    def purchase_plan(self, context: CustomerContext, reference: str) -> PurchasePlan | None:
+        try:
+            return self._purchase_plan(
+                self._request("GET", f"/purchase/plans/{reference}", context.telegram_user_id)
+            )
+        except PrivateApiUnavailable:
+            return None
+
+    def _purchase_result(self, data: dict[str, Any]) -> PurchaseResult:
+        return PurchaseResult(
+            str(data["order_reference"]),
+            str(data["status"]),
+            str(data["fulfillment_status"]),
+            self._purchase_plan(cast(dict[str, Any], data["plan"])),
+            str(data["service_reference"]) if data.get("service_reference") else None,
+            datetime.fromisoformat(str(data["expires_at"])) if data.get("expires_at") else None,
+            bool(data.get("refunded", False)),
+        )
+
+    def confirm_purchase(
+        self, context: CustomerContext, reference: str, idempotency_key: str
+    ) -> PurchaseResult:
+        return self._purchase_result(
+            self._request(
+                "POST",
+                "/purchase/confirm",
+                context.telegram_user_id,
+                {"plan_reference": reference},
+                idempotency_key,
+            )
+        )
+
+    def purchase_order(self, context: CustomerContext, reference: str) -> PurchaseResult | None:
+        try:
+            return self._purchase_result(
+                self._request("GET", f"/purchase/orders/{reference}", context.telegram_user_id)
+            )
+        except PrivateApiUnavailable:
+            return None
 
     def transactions(self, context: CustomerContext) -> list[WalletTransaction]:
         data = self._request("GET", "/wallet/transactions", context.telegram_user_id)
