@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.formatting import format_toman
-from telegram_bot.portal import CustomerProfile, NotificationPreferences, ServiceSummary, Ticket
+from telegram_bot.portal import (
+    CustomerProfile,
+    NotificationPreferences,
+    ServiceSummary,
+    Ticket,
+    WalletTransaction,
+)
 from telegram_bot.screens import (
     DashboardData,
     RenderedScreen,
@@ -22,44 +28,39 @@ class ScreenRenderer:
         _ = locale
         wallet = format_toman(data.wallet_balance_minor)
         active = "نامشخص" if data.active_services is None else fa_number(data.active_services)
-        tickets = "نامشخص" if data.open_tickets is None else fa_number(data.open_tickets)
         notice = (
             f"\n\n🔧 اطلاعیه نگهداری: {safe_text(data.maintenance_notice)}"
             if data.maintenance_notice
             else ""
         )
         text = (
-            f"🚀 فروشگاه VPN\n\nسلام {safe_text(data.display_name)} عزیز 👋\n\n"
-            "حساب شما آماده است. خوش برگشتید.\n\n"
-            "از طریق این ربات می‌توانید سرویس بخرید، سرویس‌های خود را مدیریت کنید،\n"
-            "کیف پولتان را شارژ کنید و با پشتیبانی در ارتباط باشید.\n\n"
-            f"💳 موجودی کیف پول: {wallet}\n"
-            f"📦 سرویس‌های فعال: {active}\n"
-            f"⏳ نزدیک‌ترین انقضا: {safe_date(data.nearest_expiry)}\n"
-            f"🎫 تیکت‌های باز: {tickets}{notice}"
+            f"سلام {safe_text(data.display_name)} عزیز 👋\nخوش برگشتید؛ حساب شما آماده است.\n\n"
+            f"💳 موجودی: {wallet}\n"
+            f"📦 سرویس فعال: {active}\n"
+            f"⏳ نزدیک‌ترین انقضا: {safe_date(data.nearest_expiry)}{notice}"
         )
         return RenderedScreen(text, self.home_rows(locale), ScreenId.HOME)
 
     def home_rows(self, locale: str) -> list[list[dict[str, str]]]:
         _ = locale
-        labels = [
-            ("🛒 خرید سرویس", ScreenId.BUY),
-            ("📦 سرویس‌های من", ScreenId.SERVICES),
-            ("💳 کیف پول", ScreenId.WALLET),
-            ("🎁 کد تخفیف", ScreenId.DISCOUNTS),
-            ("🎫 پشتیبانی", ScreenId.SUPPORT),
-            ("📚 آموزش اتصال", ScreenId.EDUCATION),
-            ("👤 حساب کاربری", ScreenId.PROFILE),
-            ("⚙️ تنظیمات", ScreenId.SETTINGS),
-            ("📊 وضعیت سیستم", ScreenId.STATUS),
-            ("📣 اطلاعیه‌ها", ScreenId.ANNOUNCEMENTS),
-        ]
+
+        def nav(text: str, screen: ScreenId) -> dict[str, str]:
+            return {
+                "text": text,
+                "callback_data": cb(CallbackAction.NAVIGATE, screen.value),
+            }
+
         return [
+            [nav("🛒 خرید سرویس", ScreenId.BUY), nav("📦 سرویس‌های من", ScreenId.SERVICES)],
             [
-                {"text": a[0], "callback_data": cb(CallbackAction.NAVIGATE, a[1].value)},
-                {"text": b[0], "callback_data": cb(CallbackAction.NAVIGATE, b[1].value)},
-            ]
-            for a, b in zip(labels[0::2], labels[1::2], strict=True)
+                nav("💳 کیف پول", ScreenId.WALLET),
+                {"text": "➕ افزایش موجودی", "callback_data": cb(CallbackAction.TOP_UP)},
+            ],
+            [nav("🎫 پشتیبانی", ScreenId.SUPPORT), nav("👤 حساب من", ScreenId.PROFILE)],
+            [
+                nav("🔔 اعلان‌ها", ScreenId.NOTIFICATIONS),
+                {"text": "🌐 باز کردن مینی‌اپ", "callback_data": cb(CallbackAction.OPEN_WEB_APP)},
+            ],
         ]
 
     def nav_rows(self, locale: str) -> list[list[dict[str, str]]]:
@@ -81,6 +82,8 @@ class ScreenRenderer:
         preferences: NotificationPreferences,
         *,
         mutation_error: bool = False,
+        wallet_balance: int | None = None,
+        transactions: list[WalletTransaction] | None = None,
     ) -> RenderedScreen:
         _ = locale
         labels = (
@@ -144,9 +147,11 @@ class ScreenRenderer:
         notification_preferences: NotificationPreferences | None = None,
         notification_error: bool = False,
         mutation_error: bool = False,
+        wallet_balance: int | None = None,
+        transactions: list[WalletTransaction] | None = None,
     ) -> RenderedScreen:
         fa: dict[ScreenId, str] = {
-            ScreenId.BUY: "🛒 خرید سرویس\n\nفروش سرویس در حال آماده‌سازی است.\nدر نسخه آزمایشی هنوز پرداخت و ساخت واقعی سرویس فعال نشده است.\nمحیط TEST: موفقیت ساختگی نمایش داده نمی‌شود.",  # noqa: E501
+            ScreenId.BUY: "🛒 خرید سرویس\n\nبرای انتخاب و خرید سرویس، مینی‌اپ را باز کنید.",
             ScreenId.SERVICES: "📦 سرویس‌های من\n\n"
             + (
                 "در حال حاضر سرویسی برای این حساب ثبت نشده است."
@@ -156,11 +161,11 @@ class ScreenRenderer:
                     for s in services
                 )
             ),
-            ScreenId.WALLET: "💳 کیف پول\n\nموجودی فعلی: ۰ تومان\nدرگاه پرداخت محیط آزمایشی هنوز فعال نشده است.\n\nتراکنش‌های اخیر:\n• فعلاً تراکنشی نمایش داده نمی‌شود.",  # noqa: E501
+            ScreenId.WALLET: "💳 کیف پول",
             ScreenId.DISCOUNTS: "🎁 کد تخفیف\n\nامکان ثبت کد تخفیف به‌زودی داخل ربات فعال می‌شود.",
             ScreenId.SUPPORT: "🎫 پشتیبانی\n\n- ایجاد تیکت جدید\n- تیکت‌های من\n- سوالات متداول",
             ScreenId.EDUCATION: "📚 آموزش اتصال\n\n- اندروید\n- آیفون و آیپد\n- ویندوز\n- مک\n- لینوکس",  # noqa: E501
-            ScreenId.STATUS: "📊 وضعیت سیستم\n\nهمه بخش‌های اصلی در حالت آزمایشی آماده هستند.",
+            ScreenId.STATUS: "📊 وضعیت سرویس\n\nوضعیت عمومی در مینی‌اپ در دسترس است.",
             ScreenId.ANNOUNCEMENTS: "📣 اطلاعیه‌ها\n\nدر حال حاضر اطلاعیه جدیدی وجود ندارد.",
             ScreenId.PRIVACY: "🔒 حریم خصوصی\n\nفقط اطلاعات لازم برای ارائه سرویس پردازش می‌شود.",
             ScreenId.HELP: "ℹ️ راهنما\n\nاز دکمه‌های همین ربات برای کار با فروشگاه استفاده کنید.",
@@ -171,6 +176,11 @@ class ScreenRenderer:
                 f"- وضعیت اتصال تلگرام: {'فعال' if profile.telegram_linked else 'غیرفعال'}\n"
                 f"- وضعیت حساب: {safe_text(profile.account_state.value)}\n"
                 f"- تاریخ عضویت: {safe_date(profile.created_at)}"
+                + (
+                    f"\n- نام کاربری تلگرام: @{safe_text(profile.username)}"
+                    if profile.username
+                    else ""
+                )
             )
         if screen == ScreenId.SERVICES and services:
             rows = [
@@ -185,11 +195,26 @@ class ScreenRenderer:
             rows.extend(self.nav_rows(locale))
             return RenderedScreen(fa[screen], rows, screen)
         if screen == ScreenId.WALLET:
+            recent = transactions or []
+            lines = [
+                f"• {'+' if tx.transaction_type.lower() in {'credit', 'topup'} else '−'}"
+                f"{format_toman(abs(tx.amount_minor))} — {safe_date(tx.created_at)}"
+                for tx in recent[:5]
+            ]
+            text = f"💳 موجودی\n\n{format_toman(wallet_balance)}\n\nتراکنش‌های اخیر:\n" + (
+                "\n".join(lines) if lines else "تراکنشی ثبت نشده است."
+            )
             rows = [
-                [{"text": "افزایش موجودی", "callback_data": cb(CallbackAction.TOP_UP)}],
+                [{"text": "➕ افزایش موجودی", "callback_data": cb(CallbackAction.TOP_UP)}],
+                [
+                    {
+                        "text": "📋 درخواست‌های کارت‌به‌کارت",
+                        "callback_data": cb(CallbackAction.LIST_MANUAL_TOPUPS),
+                    }
+                ],
                 *self.nav_rows(locale),
             ]
-            return RenderedScreen(fa[screen], rows, screen)
+            return RenderedScreen(text, rows, screen)
         if screen == ScreenId.SETTINGS:
             rows = [
                 [

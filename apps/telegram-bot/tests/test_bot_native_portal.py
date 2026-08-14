@@ -101,7 +101,7 @@ def test_service_ownership_stale_and_duplicate_callbacks_are_safe() -> None:
     assert stale.messages and "مشکلی" in stale.messages[0].text
 
 
-def test_provider_and_payment_writes_remain_disabled_in_test() -> None:
+def test_deferred_provider_writes_use_safe_customer_destinations_without_test_copy() -> None:
     handler = BotCommandHandler(_settings(), InMemoryTelegramIdentityService())
     for idx, action in enumerate(
         [
@@ -117,10 +117,9 @@ def test_provider_and_payment_writes_remain_disabled_in_test() -> None:
         result = handler.handle_callback(
             _callback(action, "svc-a" if action != CallbackAction.TOP_UP else "", idx)
         )
-        assert "TEST" in result.messages[0].text
-        assert (
-            "موفقیت ساختگی" in result.messages[0].text or "پیکربندی نشده" in result.messages[0].text
-        )
+        assert result.messages
+        assert "TEST" not in result.messages[0].text
+        assert "ساختگی" not in result.messages[0].text
 
 
 def test_stale_language_callback_stays_persian() -> None:

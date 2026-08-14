@@ -33,6 +33,7 @@ services:
       dockerfile: infra/docker/api.Dockerfile
     env_file: .env.example
     environment:
+      VPN_SALE_TELEGRAM_INTERNAL_TOKEN_FILE: /run/secrets/telegram-internal-token
       VPN_SALE_DATABASE_URL: ${VPN_SALE_DATABASE_URL:-postgresql+asyncpg://vpnsale:vpnsale_dev_password@postgres:5432/vpnsale}
       VPN_SALE_REDIS_URL: redis://redis:6379/0
       VPN_SALE_PUBLIC_ACCOUNT_REGISTRATION_ENABLED: "${VPN_SALE_PUBLIC_ACCOUNT_REGISTRATION_ENABLED:-false}"
@@ -42,6 +43,7 @@ services:
       VPN_SALE_TELEGRAM_ACCOUNT_LINKING_ENABLED: "${VPN_SALE_TELEGRAM_ACCOUNT_LINKING_ENABLED:-false}"
       VPN_SALE_UNIFIED_ADMIN_IDENTITY_ENABLED: "${VPN_SALE_UNIFIED_ADMIN_IDENTITY_ENABLED:-false}"
       VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED: "${VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED:-false}"
+    secrets: [telegram-internal-token]
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -79,8 +81,13 @@ services:
     environment:
       VPN_SALE_BOT_ENABLED: "${VPN_SALE_BOT_ENABLED:-false}"
       VPN_SALE_BOT_MODE: "${VPN_SALE_BOT_MODE:-disabled}"
+      VPN_SALE_TELEGRAM_INTERNAL_API_URL: http://api:8000
+      VPN_SALE_TELEGRAM_INTERNAL_TOKEN_FILE: /run/secrets/telegram-internal-token
+      VPN_SALE_REDIS_URL: redis://redis:6379/0
+    secrets: [telegram-internal-token]
     depends_on:
       api: { condition: service_healthy }
+      redis: { condition: service_healthy }
     restart: "no"
 
   customer-web:
@@ -127,3 +134,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+
+secrets:
+  telegram-internal-token:
+    file: ${VPN_SALE_TELEGRAM_INTERNAL_TOKEN_FILE_HOST:-./secrets/telegram-internal-token}

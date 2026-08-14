@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from urllib.parse import parse_qsl, urljoin, urlparse
@@ -56,3 +57,9 @@ class MiniAppUrlBuilder:
         if route not in ROUTE_PATHS:
             raise ValueError("unsupported Mini App route")
         return urljoin(self.base_url.rstrip("/") + "/", ROUTE_PATHS[route].lstrip("/"))
+
+    def manual_topup(self, reference: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{8,48}", reference):
+            raise ValueError("invalid manual top-up reference")
+        self.build(MiniAppRoute.HOME)
+        return urljoin(self.base_url.rstrip("/") + "/", f"wallet/top-up/manual/{reference}")

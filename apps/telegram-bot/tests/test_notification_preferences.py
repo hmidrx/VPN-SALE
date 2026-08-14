@@ -141,7 +141,7 @@ def test_back_home_and_refresh_navigation_for_notifications() -> None:
     back = handler.handle_callback(incoming(BotCallback(CallbackAction.BACK).pack(), 403))
     assert "⚙️ تنظیمات" in back.messages[0].text
     home = handler.handle_callback(incoming(BotCallback(CallbackAction.HOME).pack(), 404))
-    assert "🚀 فروشگاه VPN" in home.messages[0].text
+    assert "💳 موجودی:" in home.messages[0].text
     portal.update_notification_preference(
         CustomerContext("user-42", 42, "fa"), "payment_enabled", False, "external"
     )

@@ -83,6 +83,7 @@ class CustomerProfile:
     account_state: AccountStatus
     created_at: datetime
     language: str
+    username: str | None = None
 
 
 @dataclass(frozen=True)
@@ -92,9 +93,9 @@ class ServiceSummary:
     plan_name: str
     status: str
     expires_at: datetime | None
-    remaining_gb: int
-    total_gb: int
-    location: str
+    remaining_gb: int | None
+    total_gb: int | None
+    location: str | None
     renewable: bool
     sensitive_preview: str = "برای نمایش اطلاعات حساس، دکمه نمایش اشتراک را بزنید."
 
@@ -107,6 +108,18 @@ class WalletTransaction:
     status: str
     transaction_type: str
     created_at: datetime
+
+
+@dataclass(frozen=True)
+class ManualTopup:
+    reference: str
+    amount_toman: int
+    status: str
+    created_at: datetime
+    submitted_at: datetime | None = None
+    verified_amount_toman: int | None = None
+    bonus_amount_toman: int | None = None
+    total_credited_toman: int | None = None
 
 
 @dataclass(frozen=True)
@@ -174,6 +187,23 @@ class CustomerPortalPort(Protocol):
     def update_notification_preference(
         self, context: CustomerContext, key: str, enabled: bool, idempotency_key: str
     ) -> NotificationPreferences: ...
+    def create_manual_topup(
+        self, context: CustomerContext, amount_rial: int, idempotency_key: str
+    ) -> ManualTopup: ...
+    def manual_topups(self, context: CustomerContext) -> list[ManualTopup]: ...
+    def manual_topup(self, context: CustomerContext, reference: str) -> ManualTopup | None: ...
+    def cancel_manual_topup(
+        self, context: CustomerContext, reference: str, idempotency_key: str
+    ) -> ManualTopup: ...
+    def manual_topup_destination_mode(self, context: CustomerContext, reference: str) -> str: ...
+    def upload_manual_topup_receipt(
+        self,
+        context: CustomerContext,
+        reference: str,
+        content: bytes,
+        content_type: str,
+        idempotency_key: str,
+    ) -> ManualTopup: ...
 
 
 class InMemoryCustomerPortal(CustomerPortalPort):
@@ -217,6 +247,8 @@ class InMemoryCustomerPortal(CustomerPortalPort):
         self._languages: dict[str, str] = {}
         self._notification_preferences: dict[str, NotificationPreferences] = {}
         self._notification_idempotency: dict[tuple[str, str], NotificationPreferences] = {}
+        self._manual_topups: dict[str, ManualTopup] = {}
+        self._manual_topup_cancellations: dict[str, ManualTopup] = {}
 
     def profile(self, context: CustomerContext) -> CustomerProfile:
         return CustomerProfile(
@@ -238,6 +270,62 @@ class InMemoryCustomerPortal(CustomerPortalPort):
 
     def transactions(self, context: CustomerContext) -> list[WalletTransaction]:
         return list(self._transactions)
+
+    def create_manual_topup(
+        self, context: CustomerContext, amount_rial: int, idempotency_key: str
+    ) -> ManualTopup:
+        reference = f"mtp_{idempotency_key.encode().hex()[:12]}"
+        if reference not in self._manual_topups:
+            self._manual_topups[reference] = ManualTopup(
+                reference, amount_rial // 10, "AWAITING_SUPPORT", datetime.now(UTC)
+            )
+        return self._manual_topups[reference]
+
+    def manual_topups(self, context: CustomerContext) -> list[ManualTopup]:
+        return list(self._manual_topups.values())
+
+    def manual_topup(self, context: CustomerContext, reference: str) -> ManualTopup | None:
+        return self._manual_topups.get(reference)
+
+    def cancel_manual_topup(
+        self, context: CustomerContext, reference: str, idempotency_key: str
+    ) -> ManualTopup:
+        if idempotency_key in self._manual_topup_cancellations:
+            return self._manual_topup_cancellations[idempotency_key]
+        request = self._manual_topups[reference]
+        if request.status not in {"AWAITING_SUPPORT", "AWAITING_RECEIPT", "NEEDS_RESUBMISSION"}:
+            raise ValueError("manual top-up cannot be cancelled")
+        cancelled = ManualTopup(
+            request.reference,
+            request.amount_toman,
+            "CANCELLED",
+            request.created_at,
+            request.submitted_at,
+            request.verified_amount_toman,
+            request.bonus_amount_toman,
+            request.total_credited_toman,
+        )
+        self._manual_topups[reference] = cancelled
+        self._manual_topup_cancellations[idempotency_key] = cancelled
+        return cancelled
+
+    def manual_topup_destination_mode(self, context: CustomerContext, reference: str) -> str:
+        return "SUPPORT_ONLY"
+
+    def upload_manual_topup_receipt(
+        self,
+        context: CustomerContext,
+        reference: str,
+        content: bytes,
+        content_type: str,
+        idempotency_key: str,
+    ) -> ManualTopup:
+        request = self._manual_topups[reference]
+        updated = ManualTopup(
+            reference, request.amount_toman, "UNDER_REVIEW", request.created_at, datetime.now(UTC)
+        )
+        self._manual_topups[reference] = updated
+        return updated
 
     def sessions(self, context: CustomerContext) -> list[SessionSummary]:
         return list(self._sessions)

@@ -59,8 +59,8 @@ def test_start_is_persian_for_new_and_legacy_english_customer_without_duplicates
     handler = BotCommandHandler(_settings(), identity)
     first = _start(handler, 1, _user(lang="en-US"))
     second = _start(handler, 2, _user(first_name="Legacy", lang="en"))
-    assert "🚀 فروشگاه VPN" in first.messages[0].text
-    assert "🚀 فروشگاه VPN" in second.messages[0].text
+    assert "💳 موجودی:" in first.messages[0].text
+    assert "💳 موجودی:" in second.messages[0].text
     assert "Wallet:" not in second.messages[0].text
     assert identity.customer_count() == 1
     assert identity.customer_ref_for(42) == "user-42"
@@ -122,7 +122,7 @@ def test_persian_survives_restart_with_shared_conversation_store() -> None:
     )
     restarted = BotCommandHandler(_settings(), identity, conversations=store)
     result = _start(restarted, 200)
-    assert "🚀 فروشگاه VPN" in result.messages[0].text
+    assert "💳 موجودی:" in result.messages[0].text
     assert not any(term in _visible_text(result) for term in FORBIDDEN_UI)
 
 

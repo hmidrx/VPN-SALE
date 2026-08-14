@@ -545,16 +545,58 @@ def _customer_transaction_view(db: Session, row: JournalEntryModel) -> dict[str,
     }
 
 
+def customer_wallet_projection(db: Session, customer_id: str) -> dict[str, Any]:
+    """Authoritative wallet projection shared by customer and private bot APIs."""
+    return _view(db, _ensure_wallet(db, customer_id))
+
+
+def customer_transaction_page(
+    db: Session,
+    customer_id: str,
+    settings: Settings,
+    *,
+    limit: int = 50,
+    cursor: str | None = None,
+) -> dict[str, Any]:
+    wallet = _ensure_wallet(db, customer_id)
+    policy = _policy(db)
+    page_size = min(max(limit, 1), policy.max_transaction_history_page_size)
+    boundary: tuple[datetime, str] | None = None
+    if cursor:
+        boundary = _decode_customer_cursor(cursor, wallet.id, settings)
+    statement = select(JournalEntryModel).where(JournalEntryModel.wallet_id == wallet.id)
+    if boundary:
+        posted_at, entry_id = boundary
+        statement = statement.where(
+            or_(
+                JournalEntryModel.posted_at < posted_at,
+                and_(JournalEntryModel.posted_at == posted_at, JournalEntryModel.id < entry_id),
+            )
+        )
+    rows = db.scalars(
+        statement.order_by(JournalEntryModel.posted_at.desc(), JournalEntryModel.id.desc()).limit(
+            page_size + 1
+        )
+    ).all()
+    has_more = len(rows) > page_size
+    items = rows[:page_size]
+    return {
+        "items": [_customer_transaction_view(db, row) for row in items],
+        "next_cursor": _encode_customer_cursor(items[-1], wallet.id, settings)
+        if has_more and items
+        else None,
+    }
+
+
 @customer_router.get("", response_model=CustomerWalletSummary)
 def customer_wallet(
     customer_id: Annotated[str, Depends(current_wallet_customer_id)],
     db: Annotated[Session, Depends(get_db_session)],
     request: Request,
 ) -> dict[str, Any]:
-    wallet = _ensure_wallet(db, customer_id)
     _audit(db, "customer", customer_id, "wallet.viewed", None, request, {})
     try:
-        return _view(db, wallet)
+        return customer_wallet_projection(db, customer_id)
     except ValueError as exc:
         raise _err(503, request, "PROJECTION_MISMATCH") from exc
 
@@ -589,37 +631,10 @@ def customer_transactions(
     limit: int = 50,
     cursor: str | None = None,
 ) -> dict[str, Any]:
-    wallet = _ensure_wallet(db, customer_id)
-    policy = _policy(db)
-    page_size = min(max(limit, 1), policy.max_transaction_history_page_size)
-    boundary: tuple[datetime, str] | None = None
-    if cursor:
-        try:
-            boundary = _decode_customer_cursor(cursor, wallet.id, settings)
-        except ValueError as exc:
-            raise _err(400, request, "INVALID_CURSOR") from exc
-    statement = select(JournalEntryModel).where(JournalEntryModel.wallet_id == wallet.id)
-    if boundary:
-        posted_at, entry_id = boundary
-        statement = statement.where(
-            or_(
-                JournalEntryModel.posted_at < posted_at,
-                and_(JournalEntryModel.posted_at == posted_at, JournalEntryModel.id < entry_id),
-            )
-        )
-    rows = db.scalars(
-        statement.order_by(JournalEntryModel.posted_at.desc(), JournalEntryModel.id.desc()).limit(
-            page_size + 1
-        )
-    ).all()
-    has_more = len(rows) > page_size
-    items = rows[:page_size]
-    return {
-        "items": [_customer_transaction_view(db, r) for r in items],
-        "next_cursor": _encode_customer_cursor(items[-1], wallet.id, settings)
-        if has_more and items
-        else None,
-    }
+    try:
+        return customer_transaction_page(db, customer_id, settings, limit=limit, cursor=cursor)
+    except ValueError as exc:
+        raise _err(400, request, "INVALID_CURSOR") from exc
 
 
 @customer_router.get("/transactions/{transaction_reference}")

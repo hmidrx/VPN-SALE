@@ -10,7 +10,8 @@ class CallbackAction(StrEnum):
     HOME = "home"
     REFRESH = "ref"
     RETRY = "retry"
-    CANCEL = "cancel"
+    CANCEL_CONVERSATION = "cancel"
+    CANCEL = "cancel"  # compatibility alias for existing menu callbacks
     SET_LANGUAGE = "lang"
     OPEN_WEB_APP = "web"
     MENU = "home"  # compatibility
@@ -36,6 +37,11 @@ class CallbackAction(StrEnum):
     ANNOUNCEMENTS = "announcements"
     SETTINGS = "settings"
     TOP_UP = "topup"
+    CONFIRM_TOP_UP = "topup_ok"
+    SEND_RECEIPT = "receipt"
+    LIST_MANUAL_TOPUPS = "topups"
+    OPEN_MANUAL_TOPUP = "topup_open"
+    CANCEL_MANUAL_TOPUP = "topup_cancel"
     RENEW = "renew"
     UPGRADE = "upgrade"
     EXTRA_TRAFFIC = "extra"

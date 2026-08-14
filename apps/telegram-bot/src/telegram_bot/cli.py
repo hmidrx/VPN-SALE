@@ -74,6 +74,9 @@ def load_settings_from_environment() -> BotSettings:
         rate_limit_secret=os.environ.get("VPN_SALE_TELEGRAM_RATE_LIMIT_KEY", ""),
         help_url=os.environ.get("VPN_SALE_TELEGRAM_HELP_URL", ""),
         privacy_url=os.environ.get("VPN_SALE_TELEGRAM_PRIVACY_URL", ""),
+        internal_api_url=os.environ.get("VPN_SALE_TELEGRAM_INTERNAL_API_URL", ""),
+        internal_token_file=os.environ.get("VPN_SALE_TELEGRAM_INTERNAL_TOKEN_FILE", ""),
+        redis_url=os.environ.get("VPN_SALE_REDIS_URL", ""),
     )
 
 
