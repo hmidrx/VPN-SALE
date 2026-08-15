@@ -54,15 +54,13 @@ def test_delivery_payload_key_rotation_is_version_aware_and_fail_closed() -> Non
         "delivery-v2",
         {"delivery-v1": old_key},
     )
-    assert rotated.decrypt(
-        "service-a", record.key_version, record.ciphertext, record.sha256
-    ) == (link,)
+    assert rotated.decrypt("service-a", record.key_version, record.ciphertext, record.sha256) == (
+        link,
+    )
 
     without_old = DeliveryPayloadCipher(new_key, "delivery-v2")
     with pytest.raises(DeliveryPayloadError):
-        without_old.decrypt(
-            "service-a", record.key_version, record.ciphertext, record.sha256
-        )
+        without_old.decrypt("service-a", record.key_version, record.ciphertext, record.sha256)
 
 
 def test_delivery_link_validation_rejects_non_vpn_and_control_character_payloads() -> None:
