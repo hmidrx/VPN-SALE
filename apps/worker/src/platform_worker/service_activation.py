@@ -167,7 +167,9 @@ class ServiceActivationWorker:
 
             if result.outcome == "SUCCESS":
                 if activation.activation_instant is None or activation.expires_at is None:
-                    raise ValueError("successful provider activation requires durable entitlement clock")
+                    raise ValueError(
+                        "successful provider activation requires durable entitlement clock"
+                    )
                 attachment = db.scalar(
                     select(ServiceAttachmentModel).where(
                         ServiceAttachmentModel.service_id == service.id,
