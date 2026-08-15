@@ -18,7 +18,7 @@ from .manual_topup_delivery import (
 from .order_fulfillment import DisabledProvisioner, OrderFulfillmentWorker
 from .real_activator import DatabaseSanaeiActivator
 from .real_provisioner import DatabaseSanaeiProvisioner
-from .service_activation import DisabledActivator, FernetDeliveryCipher, ServiceActivationWorker
+from .service_activation import DisabledActivator, ServiceActivationWorker
 
 
 def build_order_provisioner(
@@ -38,16 +38,6 @@ def build_service_activator(
         DatabaseSanaeiActivator(factory, True)
         if provider_writes_enabled
         else DisabledActivator()
-    )
-
-
-def build_delivery_cipher() -> FernetDeliveryCipher | None:
-    key = os.getenv("VPN_SALE_IDENTITY_ENCRYPTION_KEY", "")
-    if not key:
-        return None
-    return FernetDeliveryCipher(
-        key,
-        os.getenv("VPN_SALE_IDENTITY_ENCRYPTION_KEY_VERSION", "dev-v1"),
     )
 
 
@@ -99,14 +89,12 @@ def main() -> None:
         factory,
         build_service_activator(factory, provider_writes_enabled),
         worker_id,
-        build_delivery_cipher(),
     )
     while True:
         processed = 0
         try:
             processed += worker.run_once()
         except Exception:
-            # A responsibility is isolated so its next poll remains available. Log only type.
             print("manual_topup_worker_cycle_failed", flush=True)
         try:
             processed += fulfillment.run_once()
