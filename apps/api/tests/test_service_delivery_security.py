@@ -114,9 +114,7 @@ def _target() -> AllocationTargetModel:
 
 def test_customer_uri_uses_published_public_profile_not_panel_host() -> None:
     profile = delivery_profile_from_model(_profile())
-    uri, fingerprint = render_service_connection(
-        _service(), _attachment(), _target(), profile
-    )
+    uri, fingerprint = render_service_connection(_service(), _attachment(), _target(), profile)
 
     assert "edge.example:443" in uri
     assert "panel" not in uri.lower()
@@ -134,7 +132,5 @@ def test_superseded_revision_profile_can_still_render_existing_service() -> None
         _profile(status="SUPERSEDED"),
         require_published=False,
     )
-    uri, _fingerprint = render_service_connection(
-        _service(), _attachment(), _target(), profile
-    )
+    uri, _fingerprint = render_service_connection(_service(), _attachment(), _target(), profile)
     assert "edge.example:443" in uri
