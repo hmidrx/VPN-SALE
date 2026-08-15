@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hmac
-from typing import Annotated, cast
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -173,13 +173,7 @@ def _render_active_delivery(db: Session, service: ServiceModel) -> str:
             status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "DELIVERY_REVISION_MISSING"},
         )
-    snapshot_value = revision.attachment_snapshot
-    if not isinstance(snapshot_value, dict):
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": "DELIVERY_REVISION_INVALID"},
-        )
-    snapshot = cast(dict[str, object], snapshot_value)
+    snapshot = revision.attachment_snapshot
     attachment_id = snapshot.get("attachment_id")
     target_id = snapshot.get("allocation_target_id")
     profile_version_id = snapshot.get("profile_version_id")
