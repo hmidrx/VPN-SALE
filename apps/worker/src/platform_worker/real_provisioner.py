@@ -208,8 +208,8 @@ class DatabaseSanaeiProvisioner:
 
     @staticmethod
     def _panel(row: PanelInstanceModel, credential: PanelCredentialModel) -> PanelInstance:
-        tls = cast(dict[str, object], row.tls_policy)
-        endpoint = cast(dict[str, object], row.endpoint_policy)
+        tls = row.tls_policy
+        endpoint = row.endpoint_policy
         allowed_ports_value = endpoint.get("allowed_ports", [443, 8443])
         if not isinstance(allowed_ports_value, list):
             raise ValueError("invalid endpoint port policy")
