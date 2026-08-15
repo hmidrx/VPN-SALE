@@ -48,10 +48,7 @@ def purchase_status_text(result: PurchaseResult) -> str:
             "⏳ سفارش پرداخت شده و ساخت سرویس در حال انجام است.\n"
             f"شناسه سفارش: {result.order_reference[-8:]}"
         )
-    return (
-        "⏳ سفارش هنوز آماده تحویل نیست.\n"
-        f"شناسه سفارش: {result.order_reference[-8:]}"
-    )
+    return "⏳ سفارش هنوز آماده تحویل نیست.\n" f"شناسه سفارش: {result.order_reference[-8:]}"
 
 
 class TruthfulPurchaseBotCommandHandler(BotCommandHandler):
@@ -64,7 +61,9 @@ class TruthfulPurchaseBotCommandHandler(BotCommandHandler):
         if callback.action not in {CallbackAction.CONFIRM_PURCHASE, CallbackAction.PURCHASE_STATUS}:
             return result
 
-        order_reference = callback.value if callback.action == CallbackAction.PURCHASE_STATUS else ""
+        order_reference = (
+            callback.value if callback.action == CallbackAction.PURCHASE_STATUS else ""
+        )
         if not order_reference:
             state = self.conversations.get(self._conversation_key(user), self._now())
             order_reference = state.active_order_reference or ""
