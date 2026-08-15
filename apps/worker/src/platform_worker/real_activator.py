@@ -72,9 +72,7 @@ class DatabaseSanaeiActivator:
                     ServiceFulfillmentRequestModel, activation.fulfillment_request_id
                 )
                 if service is None or fulfillment is None:
-                    return ActivationProviderResult(
-                        "PERMANENT_FAILURE", "ACTIVATION_STATE_MISSING"
-                    )
+                    return ActivationProviderResult("PERMANENT_FAILURE", "ACTIVATION_STATE_MISSING")
                 attachment = db.scalar(
                     select(ServiceAttachmentModel).where(
                         ServiceAttachmentModel.service_id == service.id,
@@ -84,17 +82,13 @@ class DatabaseSanaeiActivator:
                 item = db.get(OrderItemModel, fulfillment.order_item_id)
                 order = db.get(OrderModel, fulfillment.order_id)
                 if attachment is None or item is None or order is None:
-                    return ActivationProviderResult(
-                        "PERMANENT_FAILURE", "ACTIVATION_INPUT_MISSING"
-                    )
+                    return ActivationProviderResult("PERMANENT_FAILURE", "ACTIVATION_INPUT_MISSING")
                 if not attachment.remote_identity_reference:
                     return ActivationProviderResult(
                         "BLOCKED_BY_CONFIGURATION", "REMOTE_IDENTITY_MISSING"
                     )
                 if attachment.remote_identity_reference != fulfillment.remote_identity_uuid:
-                    return ActivationProviderResult(
-                        "PERMANENT_FAILURE", "REMOTE_IDENTITY_MISMATCH"
-                    )
+                    return ActivationProviderResult("PERMANENT_FAILURE", "REMOTE_IDENTITY_MISMATCH")
                 panel, target, certification, login_name, login_passphrase = self._selector._select(
                     item
                 )
@@ -292,9 +286,7 @@ class DatabaseSanaeiActivator:
                     verify_tls=panel.tls_policy.verify_tls,
                 )
             except PermissionError:
-                return ActivationProviderResult(
-                    "BLOCKED_BY_CONFIGURATION", "PROVIDER_AUTH_FAILED"
-                )
+                return ActivationProviderResult("BLOCKED_BY_CONFIGURATION", "PROVIDER_AUTH_FAILED")
             except ConnectionError:
                 return ActivationProviderResult("TRANSIENT_FAILURE", "PROVIDER_AUTH_UNAVAILABLE")
 
@@ -302,9 +294,7 @@ class DatabaseSanaeiActivator:
             executor = SanaeiUpdateExecutor(transport, panel)
             raw_links = await executor.fetch_links(provider_label)
             if raw_links is None:
-                return ActivationProviderResult(
-                    "TRANSIENT_FAILURE", "DELIVERY_LINKS_UNAVAILABLE"
-                )
+                return ActivationProviderResult("TRANSIENT_FAILURE", "DELIVERY_LINKS_UNAVAILABLE")
             try:
                 activation_instant, expires_at = self._stage_delivery_and_clock(
                     activation_id,
