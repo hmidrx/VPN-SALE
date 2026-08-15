@@ -52,7 +52,7 @@ class FulfillmentTargetBindingModel(IdentityBase):
 
 
 class FulfillmentEntitlementClockModel(IdentityBase):
-    """Persisted customer entitlement clock set immediately before the first provider CREATE."""
+    """Customer entitlement clock persisted only after verified activation and delivery."""
 
     __tablename__ = "fulfillment_entitlement_clocks"
 
