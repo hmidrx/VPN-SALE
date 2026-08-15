@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import cast
 from urllib.parse import quote
 
 import httpx
@@ -39,7 +40,7 @@ class SanaeiActivationExecutor:
     def _path_label(command: ProviderMutationCommand) -> str:
         return command.desired_state.provider_safe_label
 
-    async def _read_client(self, command: ProviderMutationCommand) -> Mapping[str, object] | None:
+    async def _read_client(self, command: ProviderMutationCommand) -> dict[str, object] | None:
         path = f"/panel/api/clients/get/{quote(self._path_label(command), safe='')}"
         response = await self.transport.get(path)
         if response.status_code in {401, 403}:
@@ -48,22 +49,24 @@ class SanaeiActivationExecutor:
             raise ConnectionError("provider read unavailable")
         if response.status_code >= 400:
             return None
-        body = response.json_body
-        if not isinstance(body, Mapping):
+        body_raw = response.json_body
+        if not isinstance(body_raw, dict):
             raise ValueError("provider client envelope invalid")
+        body = cast(dict[str, object], body_raw)
         if body.get("success") is not True:
             return None
-        obj = body.get("obj")
-        if not isinstance(obj, Mapping):
+        obj_raw = body.get("obj")
+        if not isinstance(obj_raw, dict):
             raise ValueError("provider client object invalid")
-        client = obj.get("client")
-        if not isinstance(client, Mapping):
+        obj = cast(dict[str, object], obj_raw)
+        client_raw = obj.get("client")
+        if not isinstance(client_raw, dict):
             raise ValueError("provider client record invalid")
-        return client
+        return cast(dict[str, object], client_raw)
 
     async def _safe_read(
         self, command: ProviderMutationCommand
-    ) -> tuple[Mapping[str, object] | None, str | None]:
+    ) -> tuple[dict[str, object] | None, str | None]:
         try:
             return await self._read_client(command), None
         except PermissionError:
@@ -100,16 +103,19 @@ class SanaeiActivationExecutor:
     @classmethod
     def _matches(cls, client: Mapping[str, object], command: ProviderMutationCommand) -> bool:
         remote_id, traffic, expiry_ms, device_limit = cls._desired_values(command)
+        total = client.get("totalGB")
+        expiry = client.get("expiryTime")
+        limit = client.get("limitIp")
         return (
             str(client.get("id") or "") == remote_id
             and str(client.get("email") or "") == cls._path_label(command)
             and client.get("enable") is True
-            and type(client.get("totalGB")) is int
-            and int(client["totalGB"]) == traffic
-            and type(client.get("expiryTime")) is int
-            and int(client["expiryTime"]) == expiry_ms
-            and type(client.get("limitIp")) is int
-            and int(client["limitIp"]) == device_limit
+            and type(total) is int
+            and total == traffic
+            and type(expiry) is int
+            and expiry == expiry_ms
+            and type(limit) is int
+            and limit == device_limit
         )
 
     async def execute(self, command: ProviderMutationCommand) -> ProviderActivationResult:
@@ -179,7 +185,8 @@ class SanaeiActivationExecutor:
             return ProviderActivationResult(
                 MutationOutcome.TRANSIENT_FAILURE, "PROVIDER_TEMPORARY_FAILURE"
             )
-        envelope = response.json_body if isinstance(response.json_body, Mapping) else None
+        response_body = response.json_body
+        envelope = cast(dict[str, object], response_body) if isinstance(response_body, dict) else None
         accepted = (
             response.status_code < 400 and envelope is not None and envelope.get("success") is True
         )
