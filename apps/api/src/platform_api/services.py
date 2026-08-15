@@ -58,7 +58,7 @@ class CustomerServiceSummary(BaseModel):
     lifecycle: str
     lifecycle_label: str
     created_at: datetime
-    starts_at: datetime
+    starts_at: datetime | None
     activated_at: datetime | None
     expires_at: datetime | None
     delivery_ready: bool
