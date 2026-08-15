@@ -16,7 +16,9 @@ from .manual_topup_delivery import (
     TelegramDeliveryError,
 )
 from .order_fulfillment import DisabledProvisioner, OrderFulfillmentWorker
+from .real_activator import DatabaseSanaeiActivator
 from .real_provisioner import DatabaseSanaeiProvisioner
+from .service_activation import ServiceActivationWorker
 
 
 def build_order_provisioner(
@@ -71,8 +73,12 @@ def main() -> None:
         os.getenv("VPN_SALE_PROVIDER_WRITES_ENABLED", "false").lower() == "true"
     )
     provisioner = build_order_provisioner(factory, provider_writes_enabled)
-    fulfillment = OrderFulfillmentWorker(
-        factory, provisioner, f"{socket.gethostname()}:{os.getpid()}"
+    worker_identity = f"{socket.gethostname()}:{os.getpid()}"
+    fulfillment = OrderFulfillmentWorker(factory, provisioner, worker_identity)
+    activation = ServiceActivationWorker(
+        factory,
+        DatabaseSanaeiActivator(factory, provider_writes_enabled),
+        worker_identity,
     )
     while True:
         processed = 0
@@ -85,6 +91,10 @@ def main() -> None:
             processed += fulfillment.run_once()
         except Exception:
             print("order_fulfillment_worker_cycle_failed", flush=True)
+        try:
+            processed += activation.run_once()
+        except Exception:
+            print("service_activation_worker_cycle_failed", flush=True)
         time.sleep(1 if processed else 5)
 
 
