@@ -81,9 +81,7 @@ def upgrade() -> None:
     )
 
     op.add_column("delivery_revisions", sa.Column("encrypted_payload", sa.Text()))
-    op.add_column(
-        "delivery_revisions", sa.Column("encryption_key_version", sa.String(64))
-    )
+    op.add_column("delivery_revisions", sa.Column("encryption_key_version", sa.String(64)))
     op.add_column("delivery_revisions", sa.Column("payload_sha256", sa.String(80)))
 
 
