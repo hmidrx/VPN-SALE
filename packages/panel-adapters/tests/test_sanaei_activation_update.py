@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from typing import Mapping
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
