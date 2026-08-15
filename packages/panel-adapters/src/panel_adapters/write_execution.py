@@ -269,9 +269,7 @@ class SanaeiUpdateExecutor:
         self.transport = transport
         self.panel = panel
 
-    async def _read_client(
-        self, email: str
-    ) -> tuple[Mapping[str, object] | None, bool]:
+    async def _read_client(self, email: str) -> tuple[Mapping[str, object] | None, bool]:
         try:
             response = await self.transport.get(f"/panel/api/clients/get/{email}")
         except (TimeoutError, httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError):
@@ -322,8 +320,10 @@ class SanaeiUpdateExecutor:
             return None
         envelope = cast(Mapping[str, object], response.json_body)
         obj = envelope.get("obj")
-        if envelope.get("success") is not True or not isinstance(obj, Sequence) or isinstance(
-            obj, str | bytes
+        if (
+            envelope.get("success") is not True
+            or not isinstance(obj, Sequence)
+            or isinstance(obj, str | bytes)
         ):
             return None
         links: list[str] = []
@@ -352,7 +352,9 @@ class SanaeiUpdateExecutor:
                 MutationOutcome.TRANSIENT_FAILURE, "PROVIDER_RECONCILIATION_UNAVAILABLE"
             )
         if current is None:
-            return ProviderMutationResult(MutationOutcome.PERMANENT_FAILURE, "REMOTE_CLIENT_MISSING")
+            return ProviderMutationResult(
+                MutationOutcome.PERMANENT_FAILURE, "REMOTE_CLIENT_MISSING"
+            )
         if str(current.get("id") or "") != str(command.target_remote_identity):
             return ProviderMutationResult(
                 MutationOutcome.PERMANENT_FAILURE, "REMOTE_IDENTITY_MISMATCH"
