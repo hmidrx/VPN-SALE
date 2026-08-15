@@ -38,7 +38,6 @@ from .orders import (
     admin_wallet_reservation_router,
 )
 from .orders import admin_router as admin_order_router
-from .orders import customer_router as order_router
 from .payments import admin_router as admin_payment_router
 from .payments import customer_router as payment_router
 from .payments import webhook_router as payment_webhook_router
@@ -59,6 +58,7 @@ from .services import reconciliation_router as admin_service_reconciliation_rout
 from .support import admin_router as admin_support_router
 from .support import customer_router as customer_support_router
 from .support import reseller_router as reseller_support_router
+from .telegram_delivery_internal import router as telegram_delivery_internal_router
 from .telegram_internal import router as telegram_internal_router
 from .usage import admin_router as admin_usage_router
 from .usage import anomaly_router as admin_usage_anomaly_router
@@ -204,6 +204,7 @@ def create_app(settings: Settings) -> FastAPI:
         reseller_fleet_router,
         system_router,
         telegram_internal_router,
+        telegram_delivery_internal_router,
     ]
     for api_router in routers:
         application.include_router(api_router)
