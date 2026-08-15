@@ -15,11 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from platform_api.activation_models import ServiceActivationRequestModel
 from platform_api.delivery_models import DeliveryRevisionModel
 from platform_api.fulfillment_runtime_models import FulfillmentEntitlementClockModel
-from platform_api.service_models import (
-    ServiceAttachmentModel,
-    ServiceFulfillmentRequestModel,
-    ServiceModel,
-)
+from platform_api.service_models import ServiceAttachmentModel, ServiceModel
 from platform_worker import service_activation
 from platform_worker.service_activation import ActivationResult, ServiceActivationWorker
 
@@ -273,8 +269,6 @@ def _drop_schema(admin_engine: Engine, schema: str) -> None:
 
 def _seed(factory: sessionmaker[Session]) -> None:
     now = datetime.now(UTC)
-    fingerprint = hashlib.sha256(REMOTE_IDENTITY.encode()).hexdigest()
-    del fingerprint
     with factory.begin() as db:
         db.execute(
             text(
