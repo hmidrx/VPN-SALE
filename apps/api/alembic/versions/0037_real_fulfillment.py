@@ -46,7 +46,9 @@ def upgrade() -> None:
     # A provider-created service is not yet customer-usable in this milestone. Its paid
     # entitlement clock therefore has not started. BOT-2B activation will set starts_at,
     # activated_at and expires_at from one activation instant.
-    op.alter_column("services", "starts_at", existing_type=sa.DateTime(timezone=True), nullable=True)
+    op.alter_column(
+        "services", "starts_at", existing_type=sa.DateTime(timezone=True), nullable=True
+    )
 
     op.create_table(
         "fulfillment_target_bindings",
@@ -112,7 +114,9 @@ def downgrade() -> None:
     op.drop_index("ix_fulfillment_target_binding_lookup", table_name="fulfillment_target_bindings")
     op.drop_table("fulfillment_target_bindings")
     op.execute("update services set starts_at = created_at where starts_at is null")
-    op.alter_column("services", "starts_at", existing_type=sa.DateTime(timezone=True), nullable=False)
+    op.alter_column(
+        "services", "starts_at", existing_type=sa.DateTime(timezone=True), nullable=False
+    )
     op.drop_index("ix_service_fulfillment_retry", table_name="service_fulfillment_requests")
     op.drop_column("service_fulfillment_requests", "next_attempt_at")
     op.drop_column("service_fulfillment_requests", "failure_category")
