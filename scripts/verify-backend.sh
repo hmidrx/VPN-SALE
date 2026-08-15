@@ -75,7 +75,7 @@ asyncio.run(main())
 PY
 
 log "Python formatting"
-ruff format --check --diff .
+ruff format --check .
 log "Python linting"
 ruff check .
 log "Python typing"
