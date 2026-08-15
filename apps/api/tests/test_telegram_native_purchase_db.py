@@ -43,6 +43,8 @@ TOKEN = "integration-token-with-at-least-thirty-two-characters"  # noqa: S105
 CUSTOMER_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"
 TELEGRAM_ID = 424242
 PRICE_RIAL = 1_200_000
+PURCHASE_TEST_TARGET_ID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1"
+PURCHASE_TEST_REMOTE_ID = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1"
 PurchaseApp = tuple[FastAPI, sessionmaker[Session], Path]
 
 
@@ -271,7 +273,20 @@ class SuccessfulProvisioner:
 
     def provision(self, attempt, order, item):  # type: ignore[no-untyped-def]
         self.calls += 1
-        return ProvisioningResult("SUCCESS", "VERIFIED", datetime.now(UTC) + timedelta(days=30))
+        starts_at = datetime.now(UTC)
+        return ProvisioningResult(
+            "SUCCESS",
+            "AUTHORITATIVE_RECONCILIATION_MATCH",
+            starts_at + timedelta(days=30),
+            {
+                "allocation_target_id": PURCHASE_TEST_TARGET_ID,
+                "provider_kind": "sanaei_3x_ui",
+                "panel_reference": "panel_test",
+            },
+            False,
+            PURCHASE_TEST_REMOTE_ID,
+            starts_at,
+        )
 
 
 class RejectedProvisioner:
@@ -305,13 +320,19 @@ async def test_fulfillment_is_exactly_once_and_visible_to_bot_and_service_projec
         assert summary.entitlement.device_limit == 1
         assert summary.entitlement.location_label == "آلمان"
         assert summary.entitlement.quality_label == "استاندارد"
+        assert summary.lifecycle == "PENDING_ACTIVATION"
+        assert summary.delivery_ready is False
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://private") as client:
         status_response = await client.get(
             f"/api/v1/internal/telegram/purchase/orders/{order_reference}", headers=headers()
         )
     assert status_response.status_code == 200
-    assert status_response.json()["service_reference"].startswith("svc_")
-    assert status_response.json()["expires_at"] is not None
+    status_payload = status_response.json()
+    assert status_payload["service_reference"].startswith("svc_")
+    assert status_payload["expires_at"] is not None
+    assert status_payload["service_lifecycle"] == "PENDING_ACTIVATION"
+    assert status_payload["delivery_ready"] is False
+    assert status_payload["purchase_state"] == "PENDING_DELIVERY"
 
 
 @pytest.mark.asyncio
