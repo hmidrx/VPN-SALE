@@ -52,7 +52,8 @@ def upgrade() -> None:
         sa.Column("completed_at", sa.DateTime(timezone=True)),
         sa.UniqueConstraint("service_id", name="uq_service_activation_service"),
         sa.CheckConstraint(
-            "status in ('PENDING','CLAIMED','RETRY_PENDING','BLOCKED','OPERATOR_REVIEW','SUCCEEDED')",
+            "status in ('PENDING','CLAIMED','RETRY_PENDING','BLOCKED',"
+            "'OPERATOR_REVIEW','SUCCEEDED')",
             name="ck_service_activation_status",
         ),
         sa.CheckConstraint("attempt_count >= 0", name="ck_service_activation_attempt_count"),
