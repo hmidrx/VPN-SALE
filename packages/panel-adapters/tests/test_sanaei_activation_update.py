@@ -169,9 +169,7 @@ async def test_generated_links_require_success_envelope_and_strings() -> None:
     executor = SanaeiUpdateExecutor(transport, panel())
     assert await executor.fetch_links(EMAIL) == ("vless://safe",)
 
-    async def bad_get(
-        path: str, headers: dict[str, str] | None = None
-    ) -> SanitizedHttpResponse:
+    async def bad_get(path: str, headers: dict[str, str] | None = None) -> SanitizedHttpResponse:
         return SanitizedHttpResponse(200, {"success": True, "obj": [123]}, {}, 1)
 
     transport.get = bad_get  # type: ignore[method-assign]
