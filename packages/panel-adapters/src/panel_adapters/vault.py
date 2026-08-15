@@ -1,16 +1,20 @@
 """Provider credential vault using authenticated AEAD encryption.
 
-New records use AES-256-GCM with authenticated record context. Legacy records from the
-pre-AEAD implementation are read only when an explicit migration-only switch is enabled;
-production provider writes must use an ``aead-*`` key version.
+New records use AES-256-GCM with authenticated record context. The active key version
+encrypts new credentials while an explicit decrypt-only keyring can retain previous AEAD
+versions during rotation. Legacy pre-AEAD records remain migration-only and live provider
+writes require an ``aead-*`` record version.
 """
 
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
+import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from cryptography.exceptions import InvalidTag
@@ -33,10 +37,39 @@ class ProviderCredentialVault:
         key_version: str = "aead-v1",
         *,
         allow_legacy_decrypt: bool = False,
+        decryption_keys_b64: Mapping[str, str] | None = None,
     ) -> None:
+        active_key = self._decode_key(master_key_b64)
+        if not key_version.startswith("aead-"):
+            raise ProviderError(
+                ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
+                "active provider vault key version must use AEAD",
+            )
+        keys: dict[str, bytes] = {}
+        for version, encoded in (decryption_keys_b64 or {}).items():
+            if not isinstance(version, str) or not version:
+                raise ProviderError(
+                    ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
+                    "invalid provider vault key version",
+                )
+            keys[version] = self._decode_key(encoded)
+        existing_active = keys.get(key_version)
+        if existing_active is not None and not hmac.compare_digest(existing_active, active_key):
+            raise ProviderError(
+                ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
+                "provider vault active key conflicts with decrypt keyring",
+            )
+        keys[key_version] = active_key
+        self._active_key = active_key
+        self._key_version = key_version
+        self._keys = keys
+        self._allow_legacy_decrypt = allow_legacy_decrypt
+
+    @staticmethod
+    def _decode_key(value: str) -> bytes:
         try:
-            key = base64.urlsafe_b64decode(master_key_b64)
-        except (ValueError, TypeError) as exc:
+            key = base64.urlsafe_b64decode(value)
+        except (binascii.Error, ValueError, TypeError) as exc:
             raise ProviderError(
                 ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE, "invalid vault key"
             ) from exc
@@ -44,9 +77,7 @@ class ProviderCredentialVault:
             raise ProviderError(
                 ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE, "invalid vault key"
             )
-        self._key = key
-        self._key_version = key_version
-        self._allow_legacy_decrypt = allow_legacy_decrypt
+        return key
 
     @classmethod
     def from_environment(cls) -> ProviderCredentialVault:
@@ -55,12 +86,35 @@ class ProviderCredentialVault:
             raise ProviderError(
                 ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE, "vault key unavailable"
             )
+        keyring_raw = os.environ.get("PROVIDER_VAULT_DECRYPT_KEYS_JSON", "")
+        keyring: dict[str, str] = {}
+        if keyring_raw:
+            try:
+                parsed: object = json.loads(keyring_raw)
+            except json.JSONDecodeError as exc:
+                raise ProviderError(
+                    ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
+                    "provider vault keyring configuration invalid",
+                ) from exc
+            if not isinstance(parsed, dict):
+                raise ProviderError(
+                    ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
+                    "provider vault keyring configuration invalid",
+                )
+            for version, encoded in parsed.items():
+                if not isinstance(version, str) or not isinstance(encoded, str):
+                    raise ProviderError(
+                        ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
+                        "provider vault keyring configuration invalid",
+                    )
+                keyring[version] = encoded
         return cls(
             value,
             os.environ.get("PROVIDER_VAULT_KEY_VERSION", "aead-v1"),
             allow_legacy_decrypt=(
                 os.environ.get("PROVIDER_VAULT_ALLOW_LEGACY_READ", "false").lower() == "true"
             ),
+            decryption_keys_b64=keyring,
         )
 
     @staticmethod
@@ -70,13 +124,8 @@ class ProviderCredentialVault:
     def encrypt(
         self, plaintext: str, credential_kind: str, aad: bytes
     ) -> EncryptedProviderCredential:
-        if not self._key_version.startswith("aead-"):
-            raise ProviderError(
-                ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
-                "new credentials require an AEAD key version",
-            )
         nonce = os.urandom(12)
-        ciphertext = AESGCM(self._key).encrypt(
+        ciphertext = AESGCM(self._active_key).encrypt(
             nonce,
             plaintext.encode(),
             self._record_aad(credential_kind, aad),
@@ -99,18 +148,24 @@ class ProviderCredentialVault:
         return self._decrypt_legacy(record, aad)
 
     def _decrypt_aead(self, record: EncryptedProviderCredential, aad: bytes) -> str:
+        key = self._keys.get(record.key_version)
+        if key is None:
+            raise ProviderError(
+                ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
+                "provider credential key version unavailable",
+            )
         try:
             nonce = base64.urlsafe_b64decode(record.nonce_b64)
             ciphertext = base64.urlsafe_b64decode(record.ciphertext_b64)
             if len(nonce) != 12:
                 raise ValueError("invalid nonce")
-            plaintext = AESGCM(self._key).decrypt(
+            plaintext = AESGCM(key).decrypt(
                 nonce,
                 ciphertext,
                 self._record_aad(record.credential_kind, aad),
             )
             return plaintext.decode()
-        except (InvalidTag, ValueError, UnicodeDecodeError) as exc:
+        except (binascii.Error, InvalidTag, ValueError, UnicodeDecodeError) as exc:
             raise ProviderError(
                 ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
                 "provider credential authentication failed",
@@ -118,10 +173,11 @@ class ProviderCredentialVault:
 
     def _decrypt_legacy(self, record: EncryptedProviderCredential, aad: bytes) -> str:
         """Migration-only reader for the historical XOR+HMAC record format."""
+        key = self._keys.get(record.key_version, self._active_key)
         try:
             nonce = base64.urlsafe_b64decode(record.nonce_b64)
             payload = base64.urlsafe_b64decode(record.ciphertext_b64)
-        except (ValueError, TypeError) as exc:
+        except (binascii.Error, ValueError, TypeError) as exc:
             raise ProviderError(
                 ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE, "legacy credential invalid"
             ) from exc
@@ -130,7 +186,7 @@ class ProviderCredentialVault:
                 ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE, "legacy credential invalid"
             )
         tag, ciphertext = payload[:32], payload[32:]
-        expected = hmac.new(self._key, nonce + aad + ciphertext, hashlib.sha256).digest()
+        expected = hmac.new(key, nonce + aad + ciphertext, hashlib.sha256).digest()
         if not hmac.compare_digest(tag, expected):
             raise ProviderError(
                 ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
@@ -142,7 +198,7 @@ class ProviderCredentialVault:
             counter += 1
             blocks.append(
                 hmac.new(
-                    self._key,
+                    key,
                     nonce + aad + counter.to_bytes(4, "big"),
                     hashlib.sha256,
                 ).digest()
