@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from platform_api.activation_models import ServiceActivationRequestModel
 from platform_api.delivery_models import DeliveryRevisionModel
+from platform_api.fulfillment_runtime_models import FulfillmentEntitlementClockModel
 from platform_api.service_models import (
     ServiceAttachmentModel,
     ServiceFulfillmentRequestModel,
@@ -117,6 +118,31 @@ class ServiceActivationWorker:
                 claimed.append(row.id)
         return claimed
 
+    @staticmethod
+    def _reset_unconsumed_clock(
+        db: Session,
+        activation: ServiceActivationRequestModel,
+        service: ServiceModel,
+    ) -> None:
+        """Restore full paid duration only when the provider definitively did not activate."""
+        if activation.activation_instant is None and activation.expires_at is None:
+            return
+        clock = db.get(FulfillmentEntitlementClockModel, activation.fulfillment_request_id)
+        if clock is not None:
+            db.delete(clock)
+        staged = list(
+            db.scalars(
+                select(DeliveryRevisionModel).where(
+                    DeliveryRevisionModel.service_id == service.id,
+                    DeliveryRevisionModel.status == "STAGED",
+                )
+            )
+        )
+        for revision in staged:
+            db.delete(revision)
+        activation.activation_instant = None
+        activation.expires_at = None
+
     def _finish(self, activation_id: str, result: ActivationProviderResult) -> None:
         now = datetime.now(UTC)
         with self.factory.begin() as db:
@@ -202,6 +228,14 @@ class ServiceActivationWorker:
                     "REQUIRES_RECERTIFICATION",
                     "CONTRACT_MISMATCH",
                 }
+                definitive_non_activation = result.outcome in {
+                    "PERMANENT_FAILURE",
+                    "BLOCKED_BY_CONFIGURATION",
+                    "REQUIRES_RECERTIFICATION",
+                    "CONTRACT_MISMATCH",
+                }
+                if definitive_non_activation:
+                    self._reset_unconsumed_clock(db, activation, service)
                 if blocked:
                     ceiling = MAX_BLOCKED_ATTEMPTS
                 elif result.outcome == "AMBIGUOUS":
