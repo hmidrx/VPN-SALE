@@ -34,8 +34,6 @@ class CountingProvisioner:
         _ = order, item
         with self._lock:
             self.calls += 1
-        # Keep the first worker in provider I/O long enough for the second worker to
-        # encounter the already-persisted fulfillment identity and active lease.
         time.sleep(0.2)
         starts_at = datetime.now(UTC)
         return ProvisioningResult(
@@ -130,7 +128,7 @@ def _create_race_schema() -> tuple[Engine, sessionmaker[Session], str]:
             unit_index integer NOT NULL,
             entitlement_snapshot jsonb NOT NULL,
             allocation_policy_snapshot jsonb,
-            starts_at timestamptz NOT NULL,
+            starts_at timestamptz,
             expires_at timestamptz,
             activated_at timestamptz,
             created_at timestamptz NOT NULL,
@@ -304,8 +302,6 @@ def test_two_distinct_outbox_rows_converge_with_two_postgres_workers(
                 event.available_at = datetime.now(UTC) - timedelta(seconds=1)
                 event.claimed_at = None
 
-        # A duplicate event deferred by the active lease must converge after the first
-        # worker finalizes; it must not invoke the provider a second time.
         first.run_once()
         assert provider.calls == 1
         with factory() as db:
