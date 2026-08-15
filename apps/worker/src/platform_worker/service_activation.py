@@ -63,7 +63,6 @@ class FernetDeliveryCipher:
 
     def __init__(self, key: str, key_version: str) -> None:
         self.encryptor = FernetSecretEncryptor(key, key_version)
-        self.key_version = key_version
 
     def encrypt_links(self, links: tuple[str, ...]) -> tuple[str, str, str]:
         if not links:
@@ -201,7 +200,11 @@ class ServiceActivationWorker:
         now = datetime.now(UTC)
         with self.factory() as db:
             request = db.get(ServiceActivationRequestModel, request_id)
-            if request is None or request.status != "CLAIMED" or request.lease_owner != self.worker_id:
+            if (
+                request is None
+                or request.status != "CLAIMED"
+                or request.lease_owner != self.worker_id
+            ):
                 return None
             service = db.get(ServiceModel, request.service_id)
             if service is None:
@@ -209,7 +212,9 @@ class ServiceActivationWorker:
                 db.commit()
                 return None
             deliveries = list(
-                db.scalars(select(ServiceDeliveryModel).where(ServiceDeliveryModel.service_id == service.id))
+                db.scalars(
+                    select(ServiceDeliveryModel).where(ServiceDeliveryModel.service_id == service.id)
+                )
             )
             if service.lifecycle == "ACTIVE":
                 if len(deliveries) == 1 and deliveries[0].status == "DELIVERED":
@@ -281,7 +286,11 @@ class ServiceActivationWorker:
                 .where(ServiceActivationRequestModel.id == request_id)
                 .with_for_update()
             )
-            if request is None or request.status != "CLAIMED" or request.lease_owner != self.worker_id:
+            if (
+                request is None
+                or request.status != "CLAIMED"
+                or request.lease_owner != self.worker_id
+            ):
                 return
             service = db.scalar(
                 select(ServiceModel).where(ServiceModel.id == request.service_id).with_for_update()
@@ -300,6 +309,22 @@ class ServiceActivationWorker:
             )
             if attachment is None:
                 self._operator_review(request, "ATTACHMENT_MISSING", now)
+                db.commit()
+                return
+            fulfillment = db.scalar(
+                select(ServiceFulfillmentRequestModel).where(
+                    ServiceFulfillmentRequestModel.service_id == service.id
+                )
+            )
+            if fulfillment is None:
+                self._operator_review(request, "FULFILLMENT_REQUEST_MISSING", now)
+                db.commit()
+                return
+            clock = db.get(FulfillmentEntitlementClockModel, fulfillment.id)
+            if clock is not None and (
+                clock.starts_at != result.activation_at or clock.expires_at != result.expires_at
+            ):
+                self._operator_review(request, "ENTITLEMENT_CLOCK_CONFLICT", now)
                 db.commit()
                 return
 
@@ -333,16 +358,6 @@ class ServiceActivationWorker:
                 delivery.status = "DELIVERED"
                 delivery.delivered_at = now
 
-            fulfillment = db.scalar(
-                select(ServiceFulfillmentRequestModel).where(
-                    ServiceFulfillmentRequestModel.service_id == service.id
-                )
-            )
-            if fulfillment is None:
-                self._operator_review(request, "FULFILLMENT_REQUEST_MISSING", now)
-                db.rollback()
-                return
-            clock = db.get(FulfillmentEntitlementClockModel, fulfillment.id)
             if clock is None:
                 db.add(
                     FulfillmentEntitlementClockModel(
@@ -352,10 +367,6 @@ class ServiceActivationWorker:
                         created_at=now,
                     )
                 )
-            elif clock.starts_at != result.activation_at or clock.expires_at != result.expires_at:
-                self._operator_review(request, "ENTITLEMENT_CLOCK_CONFLICT", now)
-                db.rollback()
-                return
 
             service.lifecycle = "ACTIVE"
             service.starts_at = result.activation_at
@@ -394,7 +405,11 @@ class ServiceActivationWorker:
                 .where(ServiceActivationRequestModel.id == request_id)
                 .with_for_update()
             )
-            if request is None or request.status != "CLAIMED" or request.lease_owner != self.worker_id:
+            if (
+                request is None
+                or request.status != "CLAIMED"
+                or request.lease_owner != self.worker_id
+            ):
                 return
             blocked = result.outcome in {
                 "BLOCKED_BY_CONFIGURATION",
@@ -419,7 +434,9 @@ class ServiceActivationWorker:
             request.status = "BLOCKED" if blocked else "RETRY_PENDING"
             request.failure_category = result.outcome
             request.result_code = result.safe_code
-            request.next_attempt_at = now + (BLOCKED_RETRY if blocked else retry_delay(request.attempt_count))
+            request.next_attempt_at = now + (
+                BLOCKED_RETRY if blocked else retry_delay(request.attempt_count)
+            )
             request.lease_owner = None
             request.lease_expires_at = None
             request.updated_at = now
