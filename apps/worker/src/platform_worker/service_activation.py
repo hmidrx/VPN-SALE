@@ -167,9 +167,7 @@ class ServiceActivationWorker:
             return [row.id for row in rows]
 
     @staticmethod
-    def _operator_review(
-        request: ServiceActivationRequestModel, code: str, now: datetime
-    ) -> None:
+    def _operator_review(request: ServiceActivationRequestModel, code: str, now: datetime) -> None:
         request.status = "OPERATOR_REVIEW"
         request.failure_category = code
         request.result_code = code
