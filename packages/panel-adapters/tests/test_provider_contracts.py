@@ -135,7 +135,9 @@ def test_vault_rejects_tamper_wrong_key_and_wrong_aad() -> None:
         vault.decrypt_for_adapter(encrypted, b"other-panel")
 
 
-def test_legacy_vault_records_are_blocked_by_default_but_readable_for_controlled_migration() -> None:
+def test_legacy_vault_records_are_blocked_by_default_but_readable_for_controlled_migration() -> (
+    None
+):
     key = b"3" * 32
     record = _legacy_record(key, "legacy-value", b"panel")
     strict = ProviderCredentialVault(base64.urlsafe_b64encode(key).decode())
