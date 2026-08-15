@@ -32,7 +32,7 @@ CERTIFIED_CONTRACTS: dict[ProviderKind, ProviderContractVersion] = {
     ProviderKind.SANAEI_3X_UI: ProviderContractVersion(
         upstream_repository="https://github.com/MHSanaei/3x-ui",
         release_tag="v3.5.0",
-        commit_sha="4e928a1b5a2c0b0f6c4f6a4d9a5a8e6f9f4b6c1d",
+        commit_sha="4e928a1ce0945a6e956aa63365034ec24d2b1387",
         release_date="2026-07-12",
         contract_digest="sha256:sanaei-3x-ui-v3.5.0-read-only-contract",
         extraction_date="2026-07-18",
@@ -75,6 +75,7 @@ class SecureHttpTransport(Protocol):
     async def get(
         self, path: str, headers: dict[str, str] | None = None
     ) -> SanitizedHttpResponse: ...
+
     async def post_form(
         self, path: str, form: dict[str, str], headers: dict[str, str] | None = None
     ) -> SanitizedHttpResponse: ...
@@ -86,9 +87,11 @@ class ProviderAdapter(Protocol):
     capabilities: tuple[ProviderCapabilityEvidence, ...]
 
     async def detect_version(self, transport: SecureHttpTransport) -> PanelVersionDetection: ...
+
     async def test_connection(
         self, ctx: ProviderRequestContext, transport: SecureHttpTransport
     ) -> PanelConnectionTest: ...
+
     async def fetch_inventory(
         self, ctx: ProviderRequestContext, transport: SecureHttpTransport
     ) -> RemoteServerSnapshot: ...
@@ -185,10 +188,7 @@ class AdapterRegistry:
 
     def certified(self, kind: ProviderKind, version: str, digest: str | None) -> ProviderAdapter:
         adapter = self.adapters[kind]
-        if (
-            version != adapter.contract.release_tag.lstrip("v")
-            and version != adapter.contract.release_tag
-        ):
+        if version != adapter.contract.release_tag.lstrip("v") and version != adapter.contract.release_tag:
             raise ProviderError(
                 ProviderErrorCode.PROVIDER_VERSION_UNSUPPORTED, "unsupported panel version"
             )
