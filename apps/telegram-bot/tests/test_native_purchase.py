@@ -170,7 +170,14 @@ def test_successful_fake_provider_result_renders_native_service() -> None:
     class SuccessfulPortal(InMemoryCustomerPortal):
         def confirm_purchase(self, context, plan, idempotency_key):  # type: ignore[no-untyped-def]
             return PurchaseResult(
-                "ord_safe", "ACTIVE", "SUCCEEDED", plan, service_reference="svc_customer8"
+                "ord_safe",
+                "ACTIVE",
+                "SUCCEEDED",
+                plan,
+                service_reference="svc_customer8",
+                purchase_state="ACTIVE",
+                service_lifecycle="ACTIVE",
+                delivery_ready=True,
             )
 
     portal = SuccessfulPortal()
@@ -179,6 +186,27 @@ def test_successful_fake_provider_result_renders_native_service() -> None:
     result = handler.handle_callback(callback(76, CallbackAction.CONFIRM_PURCHASE))
     assert "سرویس شما فعال شد" in result.messages[0].text
     assert "svc_customer8" not in result.messages[0].text
+
+
+def test_provider_created_service_is_rendered_as_pending_delivery() -> None:
+    portal = InMemoryCustomerPortal()
+    plan = portal._purchase_plans[0]
+    portal._purchases["ord_pending"] = PurchaseResult(
+        "ord_pending",
+        "READY_FOR_FULFILLMENT",
+        "SUCCEEDED",
+        plan,
+        service_reference="svc_pending8",
+        purchase_state="PENDING_DELIVERY",
+        service_lifecycle="PENDING_ACTIVATION",
+        delivery_ready=False,
+    )
+    handler = BotCommandHandler(settings(), InMemoryTelegramIdentityService(), portal=portal)
+
+    result = handler.handle_callback(callback(77, CallbackAction.PURCHASE_STATUS, "ord_pending"))
+
+    assert "فعال شد" not in result.messages[0].text
+    assert "تحویل امن" in result.messages[0].text
 
 
 def test_provider_write_disabled_stays_provisioning_not_fake_active() -> None:
@@ -218,6 +246,7 @@ def test_transport_reconciliation_replays_exact_request_and_key() -> None:
                 "order_reference": "ord_safe",
                 "status": "ACCEPTED",
                 "fulfillment_status": "PROVISIONING",
+                "purchase_state": "PENDING_DELIVERY",
                 "plan": {
                     "reference": plan.reference,
                     "title": plan.title,
@@ -230,6 +259,9 @@ def test_transport_reconciliation_replays_exact_request_and_key() -> None:
                     "price_toman": plan.price_toman,
                     "selection": plan.selection,
                 },
+                "service_reference": "svc_pending8",
+                "service_lifecycle": "PENDING_ACTIVATION",
+                "delivery_ready": False,
                 "refunded": False,
             }
 
@@ -241,6 +273,11 @@ def test_transport_reconciliation_replays_exact_request_and_key() -> None:
         "stable-purchase-key",  # type: ignore[arg-type]
     )
     assert result.order_reference == "ord_safe"
+    assert result.fulfillment_status == "PROVISIONING"
+    assert result.purchase_state == "PENDING_DELIVERY"
+    assert result.service_reference == "svc_pending8"
+    assert result.service_lifecycle == "PENDING_ACTIVATION"
+    assert result.delivery_ready is False
     assert client.calls[0] == client.calls[1]
 
 
