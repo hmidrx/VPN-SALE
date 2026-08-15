@@ -1,9 +1,4 @@
-"""Certified Sanaei 3x-ui v3.5.0 activation with read-before/reconcile semantics.
-
-Activation is intentionally separate from CREATE. It updates the already-provisioned global
-client, verifies the exact desired enabled/expiry/quota state, then retrieves provider-generated
-client links. A local caller must still persist those links securely before exposing the service.
-"""
+"""Certified Sanaei 3x-ui v3.5.0 activation with read-before/reconcile semantics."""
 
 from __future__ import annotations
 
@@ -31,7 +26,6 @@ class ProviderActivationResult:
     outcome: MutationOutcome
     safe_code: str
     remote_identity: RemoteIdentifier | None = None
-    delivery_links: tuple[str, ...] = ()
 
 
 class SanaeiActivationExecutor:
@@ -74,7 +68,13 @@ class SanaeiActivationExecutor:
             return await self._read_client(command), None
         except PermissionError:
             return None, "AUTH"
-        except (TimeoutError, httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError, ConnectionError):
+        except (
+            TimeoutError,
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            httpx.HTTPError,
+            ConnectionError,
+        ):
             return None, "TRANSIENT"
         except ValueError:
             return None, "CONTRACT"
@@ -112,45 +112,6 @@ class SanaeiActivationExecutor:
             and int(client["limitIp"]) == device_limit
         )
 
-    async def _delivery_links(self, command: ProviderMutationCommand) -> tuple[str, ...]:
-        path = f"/panel/api/clients/links/{quote(self._path_label(command), safe='')}"
-        response = await self.transport.get(path)
-        if response.status_code in {401, 403}:
-            raise PermissionError("provider authentication failed")
-        if response.status_code == 429 or response.status_code >= 500:
-            raise ConnectionError("provider delivery links unavailable")
-        if response.status_code >= 400 or not isinstance(response.json_body, Mapping):
-            raise ValueError("provider delivery link envelope invalid")
-        body = response.json_body
-        if body.get("success") is not True:
-            raise ValueError("provider delivery links rejected")
-        obj = body.get("obj")
-        if not isinstance(obj, list) or not obj or len(obj) > 16:
-            raise ValueError("provider delivery links invalid")
-        expected_prefix = command.desired_state.protocol.lower() + "://"
-        links: list[str] = []
-        total = 0
-        for raw in obj:
-            if not isinstance(raw, str) or not raw.startswith(expected_prefix) or len(raw) > 8192:
-                raise ValueError("provider delivery link invalid")
-            total += len(raw)
-            if total > 65536:
-                raise ValueError("provider delivery links too large")
-            links.append(raw)
-        return tuple(links)
-
-    async def _safe_links(
-        self, command: ProviderMutationCommand
-    ) -> tuple[tuple[str, ...] | None, str | None]:
-        try:
-            return await self._delivery_links(command), None
-        except PermissionError:
-            return None, "AUTH"
-        except (TimeoutError, httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError, ConnectionError):
-            return None, "TRANSIENT"
-        except ValueError:
-            return None, "CONTRACT"
-
     async def execute(self, command: ProviderMutationCommand) -> ProviderActivationResult:
         if command.operation is not ProviderMutationOperation.UPDATE_REMOTE_IDENTITY:
             return ProviderActivationResult(MutationOutcome.PERMANENT_FAILURE, "OPERATION_UNSUPPORTED")
@@ -158,7 +119,8 @@ class SanaeiActivationExecutor:
             remote_id, traffic, expiry_ms, device_limit = self._desired_values(command)
         except ValueError:
             return ProviderActivationResult(
-                MutationOutcome.BLOCKED_BY_CONFIGURATION, "ACTIVATION_DESIRED_STATE_INVALID"
+                MutationOutcome.BLOCKED_BY_CONFIGURATION,
+                "ACTIVATION_DESIRED_STATE_INVALID",
             )
 
         current, read_error = await self._safe_read(command)
@@ -168,7 +130,8 @@ class SanaeiActivationExecutor:
             )
         if read_error == "TRANSIENT":
             return ProviderActivationResult(
-                MutationOutcome.TRANSIENT_FAILURE, "PROVIDER_RECONCILIATION_UNAVAILABLE"
+                MutationOutcome.TRANSIENT_FAILURE,
+                "PROVIDER_RECONCILIATION_UNAVAILABLE",
             )
         if read_error == "CONTRACT":
             return ProviderActivationResult(
@@ -182,26 +145,11 @@ class SanaeiActivationExecutor:
             return ProviderActivationResult(
                 MutationOutcome.PERMANENT_FAILURE, "REMOTE_IDENTITY_MISMATCH"
             )
-
         if self._matches(current, command):
-            links, link_error = await self._safe_links(command)
-            if link_error == "AUTH":
-                return ProviderActivationResult(
-                    MutationOutcome.BLOCKED_BY_CONFIGURATION, "PROVIDER_AUTH_FAILED"
-                )
-            if link_error == "CONTRACT":
-                return ProviderActivationResult(
-                    MutationOutcome.CONTRACT_MISMATCH, "DELIVERY_LINK_CONTRACT_MISMATCH"
-                )
-            if links is None:
-                return ProviderActivationResult(
-                    MutationOutcome.AMBIGUOUS, "DELIVERY_LINKS_UNAVAILABLE"
-                )
             return ProviderActivationResult(
                 MutationOutcome.SUCCESS,
                 "AUTHORITATIVE_ACTIVATION_MATCH",
                 RemoteIdentifier(remote_id),
-                links,
             )
 
         payload = dict(current)
@@ -229,8 +177,7 @@ class SanaeiActivationExecutor:
             return ProviderActivationResult(
                 MutationOutcome.TRANSIENT_FAILURE, "PROVIDER_TEMPORARY_FAILURE"
             )
-        body = response.json_body
-        envelope = body if isinstance(body, Mapping) else None
+        envelope = response.json_body if isinstance(response.json_body, Mapping) else None
         accepted = (
             response.status_code < 400 and envelope is not None and envelope.get("success") is True
         )
@@ -242,7 +189,8 @@ class SanaeiActivationExecutor:
             )
         if verify_error == "TRANSIENT":
             return ProviderActivationResult(
-                MutationOutcome.AMBIGUOUS, "POST_ACTIVATION_RECONCILIATION_UNAVAILABLE"
+                MutationOutcome.AMBIGUOUS,
+                "POST_ACTIVATION_RECONCILIATION_UNAVAILABLE",
             )
         if verify_error == "CONTRACT":
             return ProviderActivationResult(
@@ -256,23 +204,10 @@ class SanaeiActivationExecutor:
             return ProviderActivationResult(
                 MutationOutcome.AMBIGUOUS, "ACTIVATION_POSTCONDITION_NOT_VERIFIED"
             )
-
-        links, link_error = await self._safe_links(command)
-        if link_error == "AUTH":
-            return ProviderActivationResult(
-                MutationOutcome.BLOCKED_BY_CONFIGURATION, "PROVIDER_AUTH_FAILED"
-            )
-        if link_error == "CONTRACT":
-            return ProviderActivationResult(
-                MutationOutcome.CONTRACT_MISMATCH, "DELIVERY_LINK_CONTRACT_MISMATCH"
-            )
-        if links is None:
-            return ProviderActivationResult(MutationOutcome.AMBIGUOUS, "DELIVERY_LINKS_UNAVAILABLE")
         return ProviderActivationResult(
             MutationOutcome.SUCCESS,
-            "ACTIVATION_AND_DELIVERY_VERIFIED",
+            "ACTIVATION_VERIFIED",
             RemoteIdentifier(remote_id),
-            links,
         )
 
 
@@ -305,7 +240,8 @@ async def execute_certified_sanaei_activation(
     )
     if preflight.status is MutationPreflightStatus.REQUIRES_RECERTIFICATION:
         return ProviderActivationResult(
-            MutationOutcome.REQUIRES_RECERTIFICATION, "PROVIDER_RECERTIFICATION_REQUIRED"
+            MutationOutcome.REQUIRES_RECERTIFICATION,
+            "PROVIDER_RECERTIFICATION_REQUIRED",
         )
     if preflight.status is MutationPreflightStatus.CONTRACT_MISMATCH:
         return ProviderActivationResult(MutationOutcome.CONTRACT_MISMATCH, "CONTRACT_MISMATCH")
