@@ -51,6 +51,39 @@ class CountingProvisioner:
         )
 
 
+class CrashAfterRemoteSuccessProvisioner:
+    """First call creates remotely then crashes before local finalization; retry reconciles."""
+
+    def __init__(self) -> None:
+        self.remote_exists = False
+        self.create_calls = 0
+        self.reconcile_calls = 0
+
+    def provision(
+        self, attempt: ServiceFulfillmentRequestModel, order: OrderModel, item: OrderItemModel
+    ) -> ProvisioningResult:
+        _ = order, item
+        if not self.remote_exists:
+            self.remote_exists = True
+            self.create_calls += 1
+            raise RuntimeError("simulated crash after remote create")
+        self.reconcile_calls += 1
+        return ProvisioningResult(
+            "SUCCESS",
+            "AUTHORITATIVE_RECONCILIATION_MATCH",
+            None,
+            {
+                "allocation_target_id": TARGET_ID,
+                "provider_kind": "sanaei_3x_ui",
+                "panel_reference": "panel_safe",
+                "entitlement_start_policy": "DELIVERY_ACTIVATION",
+            },
+            False,
+            attempt.remote_identity_uuid,
+            None,
+        )
+
+
 def _postgres_url() -> str:
     value = os.environ.get("VPN_SALE_DATABASE_URL", "")
     if not value.startswith("postgresql"):
@@ -314,5 +347,55 @@ def test_two_distinct_outbox_rows_converge_with_two_postgres_workers(
                 == 2
             )
             assert db.scalar(select(func.count()).select_from(ServiceModel)) == 1
+    finally:
+        _drop_race_schema(admin_engine, schema)
+
+
+def test_crash_after_remote_success_reuses_identity_and_reconciles_before_second_create(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admin_engine, factory, schema = _create_race_schema()
+    try:
+        order_id, item_id = _seed_duplicate_events(factory)
+        monkeypatch.setattr(order_fulfillment, "MAX_BATCH", 1)
+        started = datetime.now(UTC)
+        provider = CrashAfterRemoteSuccessProvisioner()
+        first = OrderFulfillmentWorker(factory, provider, "crash-worker", now=lambda: started)
+
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            first.run_once()
+
+        expected_identity = str(uuid5(NAMESPACE_URL, f"vpnsale:fulfillment:{order_id}:{item_id}:1"))
+        with factory() as db:
+            attempt = db.scalar(select(ServiceFulfillmentRequestModel))
+            assert attempt is not None
+            assert attempt.status == "IN_PROGRESS"
+            assert attempt.remote_identity_uuid == expected_identity
+            assert db.scalar(select(func.count()).select_from(ServiceModel)) == 0
+        assert provider.remote_exists is True
+        assert provider.create_calls == 1
+
+        recovered_at = started + order_fulfillment.LEASE + timedelta(seconds=1)
+        second = OrderFulfillmentWorker(
+            factory,
+            provider,
+            "recovery-worker",
+            now=lambda: recovered_at,
+        )
+        assert second.run_once() == 1
+        assert provider.create_calls == 1
+        assert provider.reconcile_calls == 1
+        assert second.run_once() == 0
+        assert provider.create_calls == 1
+
+        with factory() as db:
+            attempt = db.scalar(select(ServiceFulfillmentRequestModel))
+            service = db.scalar(select(ServiceModel))
+            assert attempt is not None and attempt.status == "SUCCEEDED"
+            assert attempt.remote_identity_uuid == expected_identity
+            assert service is not None
+            assert service.lifecycle == "PENDING_ACTIVATION"
+            assert service.starts_at is None
+            assert service.expires_at is None
     finally:
         _drop_race_schema(admin_engine, schema)
