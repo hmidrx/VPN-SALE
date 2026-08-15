@@ -6,7 +6,6 @@ from uuid import UUID
 
 import httpx
 import pytest
-
 from panel_adapters.contracts import SanitizedHttpResponse
 from panel_adapters.write_execution import MutationOutcome, SanaeiUpdateExecutor
 from vpnsale_domain.providers import (
