@@ -279,15 +279,16 @@ def _seed(factory: sessionmaker[Session]) -> None:
                     entitlement_snapshot, allocation_policy_snapshot, starts_at, expires_at,
                     activated_at, created_at, version
                 ) VALUES (
-                    :id, 'svc_activation_race', 'PENDING_ACTIVATION', :customer,
-                    'CUSTOMER', :customer, :order_id, :item_id, 1,
+                    :id, 'svc_activation_race', 'PENDING_ACTIVATION', :customer_id,
+                    'CUSTOMER', :payer_reference, :order_id, :item_id, 1,
                     CAST(:entitlement AS jsonb), '{}'::jsonb, NULL, NULL, NULL, :now, 1
                 )
                 """
             ),
             {
                 "id": SERVICE_ID,
-                "customer": CUSTOMER_ID,
+                "customer_id": CUSTOMER_ID,
+                "payer_reference": CUSTOMER_ID,
                 "order_id": ORDER_ID,
                 "item_id": ORDER_ITEM_ID,
                 "entitlement": '{"product_version_id":"'
