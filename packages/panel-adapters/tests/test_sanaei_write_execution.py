@@ -180,7 +180,9 @@ def command() -> ProviderMutationCommand:
     )
 
 
-async def _authenticated_executor(panel_server: str) -> tuple[SanaeiAuthenticatedTransport, SanaeiCreateExecutor]:
+async def _authenticated_executor(
+    panel_server: str,
+) -> tuple[SanaeiAuthenticatedTransport, SanaeiCreateExecutor]:
     transport = await SanaeiAuthenticatedTransport.authenticate(
         panel_server,
         "test",
