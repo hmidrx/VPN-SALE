@@ -16,6 +16,7 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import cast
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -47,7 +48,7 @@ class ProviderCredentialVault:
             )
         keys: dict[str, bytes] = {}
         for version, encoded in (decryption_keys_b64 or {}).items():
-            if not isinstance(version, str) or not version:
+            if not version:
                 raise ProviderError(
                     ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
                     "invalid provider vault key version",
@@ -101,7 +102,8 @@ class ProviderCredentialVault:
                     ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
                     "provider vault keyring configuration invalid",
                 )
-            for version, encoded in parsed.items():
+            parsed_keyring = cast(dict[object, object], parsed)
+            for version, encoded in parsed_keyring.items():
                 if not isinstance(version, str) or not isinstance(encoded, str):
                     raise ProviderError(
                         ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
