@@ -64,11 +64,15 @@ def delivery_profile_from_model(
     tls = None
     if tls_value:
         server_name = tls_value.get("server_name")
-        alpn_value = tls_value.get("alpn", [])
-        if (
-            not isinstance(server_name, str)
-            or not isinstance(alpn_value, list)
-            or not all(isinstance(item, str) for item in alpn_value)
+        alpn_raw = tls_value.get("alpn", [])
+        if not isinstance(alpn_raw, list):
+            raise DeliveryError(
+                DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE,
+                "invalid TLS profile",
+            )
+        alpn_objects = cast(list[object], alpn_raw)
+        if not isinstance(server_name, str) or not all(
+            isinstance(item, str) for item in alpn_objects
         ):
             raise DeliveryError(
                 DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE,
@@ -76,7 +80,7 @@ def delivery_profile_from_model(
             )
         tls = DeliveryTlsSettings(
             server_name=server_name,
-            alpn=tuple(cast(list[str], alpn_value)),
+            alpn=tuple(cast(list[str], alpn_objects)),
             fingerprint=_optional_str(tls_value.get("fingerprint")),
             verify_certificate=tls_value.get("verify_certificate") is not False,
         )
@@ -161,10 +165,10 @@ def delivery_profile_from_model(
 
     protocol_fields: dict[str, str | int | bool] = {}
     for key, value in protocol_value.items():
-        if isinstance(key, str) and (
-            isinstance(value, str) or isinstance(value, bool) or type(value) is int
-        ):
-            protocol_fields[key] = cast(str | int | bool, value)
+        if isinstance(value, str) or isinstance(value, bool):
+            protocol_fields[key] = value
+        elif type(value) is int:
+            protocol_fields[key] = value
 
     profile = DeliveryProfileVersion(
         profile_id=UUID(row.profile_id),
