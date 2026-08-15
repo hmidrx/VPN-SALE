@@ -9,7 +9,7 @@ from telegram_bot.config import BotMode, BotSettings
 from telegram_bot.conversation import RedisConversationStore
 from telegram_bot.internal_api import PrivatePlatformClient
 from telegram_bot.runtime.lifecycle import BotRuntime
-from telegram_bot.transport.polling import TelegramPollingRuntime
+from telegram_bot.runtime.purchase_truth import TruthfulTelegramPollingRuntime
 
 
 def configure_logging() -> None:
@@ -38,7 +38,7 @@ async def _serve_until_stopped(runtime: BotRuntime) -> None:
 
 async def _run_polling(settings: BotSettings) -> None:
     platform = PrivatePlatformClient(settings.internal_api_url, settings.internal_token_file)
-    polling = TelegramPollingRuntime(
+    polling = TruthfulTelegramPollingRuntime(
         settings,
         platform,
         portal=platform,
