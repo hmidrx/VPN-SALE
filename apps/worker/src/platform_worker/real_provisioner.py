@@ -129,9 +129,7 @@ class DatabaseSanaeiProvisioner:
             )
             eligible: list[tuple[AllocationTargetModel, FulfillmentTargetBindingModel]] = []
             for binding in bindings:
-                capability_codes = {
-                    value for value in binding.capability_codes if isinstance(value, str)
-                }
+                capability_codes = set(binding.capability_codes)
                 if not required_codes.issubset(capability_codes):
                     continue
                 target = db.get(AllocationTargetModel, binding.allocation_target_id)
@@ -210,13 +208,15 @@ class DatabaseSanaeiProvisioner:
 
     @staticmethod
     def _panel(row: PanelInstanceModel, credential: PanelCredentialModel) -> PanelInstance:
-        tls = row.tls_policy
-        endpoint = row.endpoint_policy
+        tls = cast(dict[str, object], row.tls_policy)
+        endpoint = cast(dict[str, object], row.endpoint_policy)
         allowed_ports_value = endpoint.get("allowed_ports", [443, 8443])
-        if not isinstance(allowed_ports_value, list) or not all(
-            type(value) is int for value in allowed_ports_value
-        ):
+        if not isinstance(allowed_ports_value, list):
             raise ValueError("invalid endpoint port policy")
+        allowed_ports_objects = cast(list[object], allowed_ports_value)
+        if not all(type(value) is int for value in allowed_ports_objects):
+            raise ValueError("invalid endpoint port policy")
+        allowed_ports = frozenset(cast(list[int], allowed_ports_objects))
         return PanelInstance(
             UUID(row.id),
             PanelReference(row.public_reference),
@@ -231,7 +231,7 @@ class DatabaseSanaeiProvisioner:
             PanelTlsPolicy(verify_tls=tls.get("verify_tls") is not False),
             PanelEndpointPolicy(
                 allow_private_network=endpoint.get("allow_private_network") is True,
-                allowed_ports=frozenset(cast(list[int], allowed_ports_value)),
+                allowed_ports=allowed_ports,
                 require_https=endpoint.get("require_https") is not False,
             ),
             row.optimistic_version,
