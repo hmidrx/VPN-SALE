@@ -18,6 +18,7 @@ from vpnsale_domain.providers import (
     MutationPreflightStatus,
     PanelInstance,
     ProviderCertificationStatus,
+    ProviderError,
     ProviderKind,
     ProviderMutationCommand,
     ProviderMutationOperation,
@@ -121,13 +122,14 @@ class SanaeiAuthenticatedTransport:
 class SanaeiCreateExecutor:
     """Execute the v3.5.0 add-client contract through an authenticated transport."""
 
-    def __init__(self, transport: SecureHttpTransport) -> None:
+    def __init__(self, transport: SecureHttpTransport, panel: PanelInstance) -> None:
         self.transport = transport
+        self.panel = panel
         self.adapter = Sanaei3xUiAdapter()
 
     async def reconcile(self, command: ProviderMutationCommand) -> ProviderMutationResult | None:
         inventory = await self.adapter.fetch_inventory(
-            ProviderRequestContext(command_panel(command)),
+            ProviderRequestContext(self.panel, correlation_id=command.correlation_reference),
             self.transport,
         )
         expected = str(command.target_remote_identity or "")
@@ -152,7 +154,12 @@ class SanaeiCreateExecutor:
             return ProviderMutationResult(
                 MutationOutcome.BLOCKED_BY_CONFIGURATION, "AUTHORITATIVE_INBOUND_REQUIRED"
             )
-        existing = await self.reconcile(command)
+        try:
+            existing = await self.reconcile(command)
+        except (httpx.TimeoutException, httpx.NetworkError, ProviderError):
+            return ProviderMutationResult(
+                MutationOutcome.TRANSIENT_FAILURE, "PROVIDER_RECONCILIATION_UNAVAILABLE"
+            )
         if existing:
             return existing
         desired = command.desired_state
@@ -174,8 +181,10 @@ class SanaeiCreateExecutor:
                     "settings": json.dumps({"clients": [client]}, separators=(",", ":")),
                 },
             )
-        except TimeoutError:
+        except (TimeoutError, httpx.TimeoutException, httpx.NetworkError):
             return ProviderMutationResult(MutationOutcome.AMBIGUOUS, "PROVIDER_RESPONSE_LOST")
+        except httpx.HTTPError:
+            return ProviderMutationResult(MutationOutcome.AMBIGUOUS, "PROVIDER_TRANSPORT_FAILURE")
         if response.status_code == 429 or response.status_code >= 500:
             return ProviderMutationResult(
                 MutationOutcome.TRANSIENT_FAILURE, "PROVIDER_TEMPORARY_FAILURE"
@@ -198,7 +207,12 @@ class SanaeiCreateExecutor:
             return ProviderMutationResult(
                 MutationOutcome.CONTRACT_MISMATCH, "SUCCESS_ENVELOPE_INVALID"
             )
-        verified = await self.reconcile(command)
+        try:
+            verified = await self.reconcile(command)
+        except (httpx.HTTPError, ProviderError):
+            return ProviderMutationResult(
+                MutationOutcome.AMBIGUOUS, "POST_CREATE_RECONCILIATION_UNAVAILABLE"
+            )
         return verified or ProviderMutationResult(
             MutationOutcome.AMBIGUOUS, "READ_AFTER_WRITE_NOT_VERIFIED"
         )
@@ -242,20 +256,3 @@ async def execute_certified_sanaei_create(
             MutationOutcome.BLOCKED_BY_CONFIGURATION, "PROVIDER_PREFLIGHT_BLOCKED"
         )
     return await executor.execute(command)
-
-
-def command_panel(command: ProviderMutationCommand):
-    """Minimal panel context for inventory; selection/preflight owns full policy."""
-    from uuid import UUID
-
-    from vpnsale_domain.providers import PanelInstance
-
-    return PanelInstance(
-        UUID(int=0),
-        command.panel_reference,
-        ProviderKind.SANAEI_3X_UI,
-        "selected",
-        "https://invalid.example",
-        "",
-        "enabled",
-    )

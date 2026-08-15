@@ -381,7 +381,7 @@ def _capture_reservation(
 
 
 def _post_refund(
-    db: Session, order: OrderModel, payment: WalletPaymentModel, request: Request
+    db: Session, order: OrderModel, payment: WalletPaymentModel, request: Request | str
 ) -> str:
     if payment.refund_journal_id:
         return payment.refund_journal_id
@@ -399,7 +399,7 @@ def _post_refund(
         wallet_id=payment.wallet_id,
         actor_type="system",
         actor_id=None,
-        correlation_id=_cid(request),
+        correlation_id=_cid(request) if isinstance(request, Request) else request,
         description_code="ORDER_CANCELLATION_REFUND",
         safe_metadata={"order_reference": order.reference},
         occurred_at=now,
@@ -435,6 +435,45 @@ def _post_refund(
     payment.status = "REFUNDED"
     payment.refund_journal_id = journal.id
     return journal.id
+
+
+def compensate_failed_fulfillment(
+    db: Session, order: OrderModel, correlation_id: str, reason_code: str
+) -> str:
+    """Authoritative, idempotent compensation used by HTTP cancellation and workers."""
+    payment = db.scalar(
+        select(WalletPaymentModel).where(WalletPaymentModel.order_id == order.id).with_for_update()
+    )
+    if payment is None or payment.status not in {"CAPTURED", "REFUNDED"}:
+        raise ValueError("captured wallet payment required for fulfillment compensation")
+    refund_id = _post_refund(db, order, payment, correlation_id)
+    now = datetime.now(UTC)
+    order.status = "REFUNDED"
+    order.financial_status = "REFUNDED"
+    order.fulfillment_status = "FAILED"
+    order.cancelled_at = order.cancelled_at or now
+    invoice = db.scalar(select(InvoiceModel).where(InvoiceModel.order_id == order.id))
+    if invoice is not None:
+        invoice.status = "REFUNDED"
+    existing = db.scalar(
+        select(OrderCancellationModel).where(
+            OrderCancellationModel.order_id == order.id,
+            OrderCancellationModel.reason_code == reason_code,
+        )
+    )
+    if existing is None:
+        db.add(
+            OrderCancellationModel(
+                order_id=order.id,
+                actor_type="system",
+                actor_reference="fulfillment-worker",
+                reason_code=reason_code,
+                reason="Definitive provider provisioning rejection",
+                refund_journal_id=refund_id,
+                created_at=now,
+            )
+        )
+    return refund_id
 
 
 @customer_router.post("/checkout")

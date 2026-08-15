@@ -189,6 +189,7 @@ def _customer_summary(row: ServiceModel, verified: int) -> CustomerServiceSummar
         quality_label=_allowlisted_text(snapshot, "quality_label", 80),
     )
     progress = min(100, round(verified / required * 100)) if required else 0
+    delivery_ready = required > 0 and verified == required and row.lifecycle == "ACTIVE"
     return CustomerServiceSummary(
         service_reference=row.public_reference,
         display_name=_allowlisted_text(snapshot, "product_label", 120) or "خدمت شبکه",
@@ -198,7 +199,7 @@ def _customer_summary(row: ServiceModel, verified: int) -> CustomerServiceSummar
         starts_at=row.starts_at,
         activated_at=row.activated_at,
         expires_at=row.expires_at,
-        delivery_ready=False,
+        delivery_ready=delivery_ready,
         required_attachment_count=required,
         verified_attachment_count=verified,
         provisioning_progress=progress,
@@ -252,7 +253,10 @@ def customer_service_projection(
         summary=summary,
         service_health=summary.lifecycle_label,
         eligible_operations=[],
-        delivery={"ready": summary.delivery_ready, "formats": []},
+        delivery={
+            "ready": summary.delivery_ready,
+            "formats": ["subscription"] if summary.delivery_ready else [],
+        },
         latest_activity=[],
     )
 

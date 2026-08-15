@@ -16,6 +16,17 @@ from .manual_topup_delivery import (
     TelegramDeliveryError,
 )
 from .order_fulfillment import DisabledProvisioner, OrderFulfillmentWorker
+from .real_provisioner import DatabaseSanaeiProvisioner
+
+
+def build_order_provisioner(
+    factory: sessionmaker[Session], provider_writes_enabled: bool
+) -> DisabledProvisioner | DatabaseSanaeiProvisioner:
+    return (
+        DatabaseSanaeiProvisioner(factory, True)
+        if provider_writes_enabled
+        else DisabledProvisioner()
+    )
 
 
 class BotApiTransport:
@@ -56,8 +67,12 @@ def main() -> None:
         BotApiTransport(token),
         DeliverySettings(enabled, os.getenv("VPN_SALE_PUBLIC_APP_ORIGIN", "http://localhost:3000")),
     )
+    provider_writes_enabled = (
+        os.getenv("VPN_SALE_PROVIDER_WRITES_ENABLED", "false").lower() == "true"
+    )
+    provisioner = build_order_provisioner(factory, provider_writes_enabled)
     fulfillment = OrderFulfillmentWorker(
-        factory, DisabledProvisioner(), f"{socket.gethostname()}:{os.getpid()}"
+        factory, provisioner, f"{socket.gethostname()}:{os.getpid()}"
     )
     while True:
         processed = 0

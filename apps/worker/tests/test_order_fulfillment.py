@@ -2,7 +2,9 @@ from datetime import timedelta
 from inspect import getsource
 
 from platform_worker import order_fulfillment
-from platform_worker.order_fulfillment import BLOCKED_RETRY, retry_delay
+from platform_worker.main import build_order_provisioner
+from platform_worker.order_fulfillment import BLOCKED_RETRY, DisabledProvisioner, retry_delay
+from platform_worker.real_provisioner import DatabaseSanaeiProvisioner
 
 
 def test_retry_is_bounded_and_blocked_work_is_not_hammered() -> None:
@@ -24,3 +26,9 @@ def test_remote_identity_and_service_reference_are_deterministic() -> None:
     assert 'uuid5(NAMESPACE_URL, f"vpnsale:fulfillment:{order.id}:{item.id}:1")' in source
     assert 'uuid5(NAMESPACE_URL, "service:" + order.id)' in source
     assert "Telegram" not in source
+
+
+def test_production_composition_reaches_real_provisioner_only_when_enabled() -> None:
+    factory = object()
+    assert isinstance(build_order_provisioner(factory, False), DisabledProvisioner)  # type: ignore[arg-type]
+    assert isinstance(build_order_provisioner(factory, True), DatabaseSanaeiProvisioner)  # type: ignore[arg-type]

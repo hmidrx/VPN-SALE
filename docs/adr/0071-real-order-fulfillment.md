@@ -21,16 +21,25 @@ closed until separately certified executors exist.
 Provider writes remain disabled by default in Compose. Disabled/configuration and
 recertification outcomes retain paid orders in provisioning and retry after six hours;
 they never fabricate a service. Transient and ambiguous results are scheduled with
-bounded exponential backoff and reconciliation precedes any retry. Definitive permanent
-failure must enter the existing order cancellation application service, which remains
-the sole wallet-refund journal writer; automatic compensation wiring is deliberately
-blocked until that service is extracted from the HTTP route.
+bounded exponential backoff and reconciliation precedes any retry. Durable attempt
+ceilings move exhausted work to operator review without refunding ambiguous creates.
+Definitive permanent rejection invokes the shared authoritative order compensation
+service, whose locked wallet payment and refund-journal guard make retries idempotent.
 
 On verified success, service creation, fulfillment/order success, and outbox completion
 are one transaction. Unique service and attempt constraints make crashes after local
 creation converge without duplicates. The immutable order-item snapshot is copied into
 the entitlement, so catalog edits cannot alter purchased traffic, duration, devices,
-location, or quality. Sensitive remote identity and delivery values are never logged.
+location, or quality. A verified attachment and token-issuance-ready delivery subscription
+are created before a service becomes ACTIVE; otherwise it stays PENDING_ACTIVATION.
+Sensitive remote identity and delivery values are never logged.
+
+When `VPN_SALE_PROVIDER_WRITES_ENABLED=true`, worker composition selects an eligible
+Sanaei allocation target from the immutable purchased location/quality, resolves the
+latest panel credential through the provider vault, loads certification evidence,
+validates the endpoint/TLS policy, authenticates, executes certified preflight/CREATE,
+and always closes the authenticated client. The disabled provisioner is used only when
+the flag is explicitly false.
 
 ## Operations and rollback
 

@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 from collections.abc import Generator
@@ -24,12 +25,18 @@ from platform_api.catalog_models import (
 from platform_api.config import Settings, get_settings
 from platform_api.database import get_db_session
 from platform_api.identity.models import IdentityBase, TelegramAccountModel, UserModel
-from platform_api.order_models import OrderModel, WalletPaymentModel
+from platform_api.order_models import OrderModel, TransactionalOutboxModel, WalletPaymentModel
+from platform_api.service_models import ServiceModel
+from platform_api.services import customer_service_summaries
 from platform_api.wallet_models import (
     JournalEntryModel,
     WalletBalanceBucketModel,
     WalletBalanceProjectionModel,
     WalletModel,
+)
+from platform_worker.order_fulfillment import (
+    OrderFulfillmentWorker,
+    ProvisioningResult,
 )
 
 TOKEN = "integration-token-with-at-least-thirty-two-characters"  # noqa: S105
@@ -257,6 +264,104 @@ async def test_db_reconfirm_required_creates_no_checkout_or_debit(
         assert db.scalar(select(func.count()).select_from(WalletPaymentModel)) == 0
         projection = db.scalar(select(WalletBalanceProjectionModel))
         assert projection is not None and projection.posted_balance_rial == 10_000_000
+
+
+class SuccessfulProvisioner:
+    calls = 0
+
+    def provision(self, attempt, order, item):  # type: ignore[no-untyped-def]
+        self.calls += 1
+        return ProvisioningResult("SUCCESS", "VERIFIED", datetime.now(UTC) + timedelta(days=30))
+
+
+class RejectedProvisioner:
+    def provision(self, attempt, order, item):  # type: ignore[no-untyped-def]
+        return ProvisioningResult("PERMANENT_FAILURE", "PROVIDER_REJECTED_CREATE")
+
+
+@pytest.mark.asyncio
+async def test_fulfillment_is_exactly_once_and_visible_to_bot_and_service_projection(
+    purchase_app: PurchaseApp,
+) -> None:
+    app, factory, _ = purchase_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://private") as client:
+        item = await plan(client)
+        response = await client.post(
+            "/api/v1/internal/telegram/purchase/confirm",
+            headers=headers("fulfill-key-001"),
+            json=purchase_body(item),
+        )
+        order_reference = response.json()["order_reference"]
+    provider = SuccessfulProvisioner()
+    worker = OrderFulfillmentWorker(factory, provider, "test-worker")
+    assert worker.run_once() == 1
+    assert worker.run_once() == 0
+    assert provider.calls == 1
+    with factory() as db:
+        assert db.scalar(select(func.count()).select_from(ServiceModel)) == 1
+        summary = customer_service_summaries(db, CUSTOMER_ID)[0]
+        assert summary.entitlement.traffic_quota_bytes == 50 * 1024**3
+        assert summary.entitlement.duration_days == 30
+        assert summary.entitlement.device_limit == 1
+        assert summary.entitlement.location_label == "آلمان"
+        assert summary.entitlement.quality_label == "استاندارد"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://private") as client:
+        status_response = await client.get(
+            f"/api/v1/internal/telegram/purchase/orders/{order_reference}", headers=headers()
+        )
+    assert status_response.status_code == 200
+    assert status_response.json()["service_reference"].startswith("svc_")
+    assert status_response.json()["expires_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_definitive_failure_refunds_exactly_once(purchase_app: PurchaseApp) -> None:
+    app, factory, _ = purchase_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://private") as client:
+        item = await plan(client)
+        await client.post(
+            "/api/v1/internal/telegram/purchase/confirm",
+            headers=headers("refund-key-001"),
+            json=purchase_body(item),
+        )
+    worker = OrderFulfillmentWorker(factory, RejectedProvisioner(), "refund-worker")
+    assert worker.run_once() == 1
+    assert worker.run_once() == 0
+    with factory() as db:
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(JournalEntryModel)
+                .where(JournalEntryModel.operation_code == "ORDER_WALLET_REFUND")
+            )
+            == 1
+        )
+        payment = db.scalar(select(WalletPaymentModel))
+        order = db.scalar(select(OrderModel))
+        assert payment is not None and payment.refund_journal_id is not None
+        assert order is not None and order.status == "REFUNDED"
+
+
+@pytest.mark.asyncio
+async def test_two_workers_and_stale_claim_recovery(purchase_app: PurchaseApp) -> None:
+    app, factory, _ = purchase_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://private") as client:
+        item = await plan(client)
+        await client.post(
+            "/api/v1/internal/telegram/purchase/confirm",
+            headers=headers("claim-key-001"),
+            json=purchase_body(item),
+        )
+    first = OrderFulfillmentWorker(factory, SuccessfulProvisioner(), "worker-one")
+    second = OrderFulfillmentWorker(factory, SuccessfulProvisioner(), "worker-two")
+    claimed = first._claim()
+    assert len(claimed) == 1
+    assert second._claim() == []
+    with factory.begin() as db:
+        event = db.get(TransactionalOutboxModel, claimed[0])
+        assert event is not None
+        event.claimed_at = datetime.now(UTC) - timedelta(minutes=6)
+    assert second._claim() == claimed
 
 
 @pytest.mark.asyncio
