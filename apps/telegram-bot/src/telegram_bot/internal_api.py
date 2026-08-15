@@ -206,9 +206,7 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
         )
         delivery_ready = data.get("delivery_ready") is True
         active_delivery = (
-            purchase_state == "ACTIVE"
-            and service_lifecycle == "ACTIVE"
-            and delivery_ready
+            purchase_state == "ACTIVE" and service_lifecycle == "ACTIVE" and delivery_ready
         )
         return PurchaseResult(
             str(data.get("order_reference") or ""),
