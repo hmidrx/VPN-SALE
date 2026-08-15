@@ -276,13 +276,32 @@ def _native_order_result(db: Session, order: OrderModel) -> dict[str, object]:
             ServiceModel.beneficiary_customer_id == order.customer_id,
         )
     )
+    service_lifecycle: str | None = None
+    delivery_ready = False
+    if service is not None:
+        detail = customer_service_projection(db, order.customer_id, service.public_reference)
+        service_lifecycle = detail.summary.lifecycle if detail is not None else service.lifecycle
+        delivery_ready = detail.summary.delivery_ready if detail is not None else False
+    if status_value == "REFUNDED":
+        purchase_state = "REFUNDED"
+    elif order.fulfillment_status == "OPERATOR_REVIEW":
+        purchase_state = "OPERATOR_REVIEW"
+    elif service is not None and service_lifecycle == "ACTIVE" and delivery_ready:
+        purchase_state = "ACTIVE"
+    elif service is not None:
+        purchase_state = "PENDING_DELIVERY"
+    else:
+        purchase_state = "PROVISIONING"
     return {
         "outcome": "FINAL" if status_value in {"REFUNDED", "CANCELLED"} else "ACCEPTED",
         "order_reference": order.reference,
         "status": status_value,
         "fulfillment_status": order.fulfillment_status,
+        "purchase_state": purchase_state,
         "plan": cast(dict[str, object], display),
         "service_reference": service.public_reference if service else None,
+        "service_lifecycle": service_lifecycle,
+        "delivery_ready": delivery_ready,
         "expires_at": service.expires_at.isoformat() if service and service.expires_at else None,
         "refunded": status_value == "REFUNDED",
     }
@@ -488,8 +507,11 @@ def confirm_native_purchase(
             "order_reference": None,
             "status": "REVIEW_REQUIRED",
             "fulfillment_status": "NOT_STARTED",
+            "purchase_state": "REVIEW_REQUIRED",
             "plan": plan,
             "service_reference": None,
+            "service_lifecycle": None,
+            "delivery_ready": False,
             "expires_at": None,
             "refunded": False,
         }
@@ -519,8 +541,11 @@ def confirm_native_purchase(
             "order_reference": None,
             "status": "REVIEW_REQUIRED",
             "fulfillment_status": "NOT_STARTED",
+            "purchase_state": "REVIEW_REQUIRED",
             "plan": plan,
             "service_reference": None,
+            "service_lifecycle": None,
+            "delivery_ready": False,
             "expires_at": None,
             "refunded": False,
         }
@@ -569,8 +594,11 @@ def confirm_native_purchase(
         "order_reference": order["order_reference"],
         "status": "ACCEPTED",
         "fulfillment_status": "PROVISIONING",
+        "purchase_state": "PROVISIONING",
         "plan": plan,
         "service_reference": None,
+        "service_lifecycle": None,
+        "delivery_ready": False,
         "expires_at": None,
         "refunded": False,
     }
