@@ -13,7 +13,7 @@ from typing import Protocol
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from vpnsale_domain.services import canonical_service_entitlement
 
@@ -119,30 +119,35 @@ class OrderFulfillmentWorker:
 
             identity = str(uuid5(NAMESPACE_URL, f"vpnsale:fulfillment:{order.id}:{item.id}:1"))
             candidate_id = str(uuid4())
-            db.execute(
-                pg_insert(ServiceFulfillmentRequestModel)
-                .values(
-                    id=candidate_id,
-                    deduplication_key=f"order:{order.id}:item:{item.id}:unit:1",
-                    order_id=order.id,
-                    order_item_id=item.id,
-                    unit_index=1,
-                    event_version=1,
-                    status="IN_PROGRESS",
-                    correlation_id=str(event.payload.get("correlation_id", event.id)),
-                    causation_id=event.id,
-                    lease_owner=self.owner,
-                    lease_expires_at=now + LEASE,
-                    result_code=None,
-                    remote_identity_uuid=identity,
-                    attempt_count=1,
-                    failure_category=None,
-                    next_attempt_at=None,
-                    created_at=now,
-                    updated_at=now,
-                )
-                .on_conflict_do_nothing(constraint="uq_service_fulfillment_item_unit")
+            candidate = ServiceFulfillmentRequestModel(
+                id=candidate_id,
+                deduplication_key=f"order:{order.id}:item:{item.id}:unit:1",
+                order_id=order.id,
+                order_item_id=item.id,
+                unit_index=1,
+                event_version=1,
+                status="IN_PROGRESS",
+                correlation_id=str(event.payload.get("correlation_id", event.id)),
+                causation_id=event.id,
+                lease_owner=self.owner,
+                lease_expires_at=now + LEASE,
+                result_code=None,
+                remote_identity_uuid=identity,
+                attempt_count=1,
+                failure_category=None,
+                next_attempt_at=None,
+                created_at=now,
+                updated_at=now,
             )
+            try:
+                # The unique (order_item_id, unit_index) constraint is the cross-worker race
+                # arbiter. PostgreSQL waits on an in-flight conflicting insert; rolling back
+                # only this savepoint leaves the outer event claim transaction usable.
+                with db.begin_nested():
+                    db.add(candidate)
+                    db.flush()
+            except IntegrityError:
+                pass
             attempt = db.scalar(
                 select(ServiceFulfillmentRequestModel)
                 .where(
