@@ -73,9 +73,7 @@ class DatabaseSanaeiActivator:
             duration_days, traffic_bytes, device_limit = self._entitlement(service)
             remote_identity = self._remote_identity(attachment)
             with self.factory() as db:
-                profile = load_allocation_delivery_profile(
-                    db, target.id, target.required_protocol
-                )
+                profile = load_allocation_delivery_profile(db, target.id, target.required_protocol)
                 rendered_uri, credential_fingerprint = render_service_connection(
                     service,
                     attachment,
