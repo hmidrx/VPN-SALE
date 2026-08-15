@@ -21,7 +21,9 @@ def _plan() -> PurchasePlan:
     )
 
 
-def _result(state: str, *, service_reference: str | None = None, refunded: bool = False) -> PurchaseResult:
+def _result(
+    state: str, *, service_reference: str | None = None, refunded: bool = False
+) -> PurchaseResult:
     return PurchaseResult(
         "ord_12345678",
         "PAID",
