@@ -103,9 +103,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("fulfillment_entitlement_clocks")
-    op.drop_index(
-        "ix_fulfillment_target_binding_lookup", table_name="fulfillment_target_bindings"
-    )
+    op.drop_index("ix_fulfillment_target_binding_lookup", table_name="fulfillment_target_bindings")
     op.drop_table("fulfillment_target_bindings")
     op.drop_index("ix_service_fulfillment_retry", table_name="service_fulfillment_requests")
     op.drop_column("service_fulfillment_requests", "next_attempt_at")
