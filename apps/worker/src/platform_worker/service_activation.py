@@ -1,21 +1,26 @@
-"""Crash-safe service activation and encrypted customer delivery persistence."""
+"""Crash-safe service activation with delivery-profile gating."""
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
+from vpnsale_domain.delivery import DeliveryError
 
-from platform_api.activation_models import ServiceActivationRequestModel, ServiceDeliveryModel
+from platform_api.activation_models import ServiceActivationRequestModel
+from platform_api.delivery_models import DeliveryRevisionModel
+from platform_api.delivery_resolution import (
+    RENDERER_VERSION,
+    load_allocation_delivery_profile,
+    render_service_connection,
+)
 from platform_api.fulfillment_runtime_models import FulfillmentEntitlementClockModel
-from platform_api.identity.security import FernetSecretEncryptor
 from platform_api.service_models import (
+    AllocationTargetModel,
     ServiceAttachmentModel,
     ServiceFulfillmentRequestModel,
     ServiceModel,
@@ -35,7 +40,8 @@ class ActivationResult:
     safe_code: str
     activation_at: datetime | None = None
     expires_at: datetime | None = None
-    delivery_links: tuple[str, ...] = ()
+    delivery_profile_version_id: str | None = None
+    credential_fingerprint: str | None = None
 
 
 class ServiceActivator(Protocol):
@@ -58,26 +64,6 @@ class DisabledActivator:
         return ActivationResult("BLOCKED_BY_CONFIGURATION", "PROVIDER_WRITES_DISABLED")
 
 
-class FernetDeliveryCipher:
-    """Encrypt provider-generated customer links before any durable persistence."""
-
-    def __init__(self, key: str, key_version: str) -> None:
-        self.encryptor = FernetSecretEncryptor(key, key_version)
-
-    def encrypt_links(self, links: tuple[str, ...]) -> tuple[str, str, str]:
-        if not links:
-            raise ValueError("delivery links required")
-        payload = json.dumps(
-            {"version": 1, "links": list(links)},
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        digest = hashlib.sha256(payload.encode()).hexdigest()
-        encrypted = self.encryptor.encrypt(payload)
-        return encrypted.key_version, encrypted.ciphertext, digest
-
-
 def retry_delay(attempt: int) -> timedelta:
     seconds = min(15 * (2 ** max(attempt - 1, 0)), 3600)
     return timedelta(seconds=seconds)
@@ -89,12 +75,10 @@ class ServiceActivationWorker:
         factory: sessionmaker[Session],
         activator: ServiceActivator,
         worker_id: str,
-        delivery_cipher: FernetDeliveryCipher | None,
     ) -> None:
         self.factory = factory
         self.activator = activator
         self.worker_id = worker_id
-        self.delivery_cipher = delivery_cipher
 
     def _discover(self) -> int:
         now = datetime.now(UTC)
@@ -211,23 +195,27 @@ class ServiceActivationWorker:
                 self._operator_review(request, "SERVICE_MISSING", now)
                 db.commit()
                 return None
-            deliveries = list(
-                db.scalars(
-                    select(ServiceDeliveryModel).where(ServiceDeliveryModel.service_id == service.id)
+            revision = db.scalar(
+                select(DeliveryRevisionModel)
+                .where(
+                    DeliveryRevisionModel.service_id == service.id,
+                    DeliveryRevisionModel.status == "ACTIVE",
                 )
+                .order_by(DeliveryRevisionModel.revision_number.desc())
+                .limit(1)
             )
             if service.lifecycle == "ACTIVE":
-                if len(deliveries) == 1 and deliveries[0].status == "DELIVERED":
+                if revision is not None:
                     request.status = "SUCCEEDED"
                     request.failure_category = None
-                    request.result_code = "ALREADY_ACTIVE_AND_DELIVERED"
+                    request.result_code = "ALREADY_ACTIVE_AND_DELIVERABLE"
                     request.completed_at = now
                     request.lease_owner = None
                     request.lease_expires_at = None
                     request.updated_at = now
                     db.commit()
                     return None
-                self._operator_review(request, "ACTIVE_WITHOUT_DELIVERY", now)
+                self._operator_review(request, "ACTIVE_WITHOUT_DELIVERY_REVISION", now)
                 db.commit()
                 return None
             if service.lifecycle != "PENDING_ACTIVATION":
@@ -255,31 +243,20 @@ class ServiceActivationWorker:
                 self._operator_review(request, "ATTACHMENT_NOT_READY_FOR_ACTIVATION", now)
                 db.commit()
                 return None
-            if self.delivery_cipher is None:
-                request.status = "BLOCKED"
-                request.failure_category = "DELIVERY_ENCRYPTION_UNAVAILABLE"
-                request.result_code = "DELIVERY_ENCRYPTION_UNAVAILABLE"
-                request.next_attempt_at = now + BLOCKED_RETRY
-                request.lease_owner = None
-                request.lease_expires_at = None
-                request.updated_at = now
-                db.commit()
-                return None
             db.expunge(request)
             db.expunge(service)
             db.expunge(attachment)
             return request, service, attachment
 
-    def _complete_success(
-        self,
-        request_id: str,
-        result: ActivationResult,
-        encrypted: tuple[str, str, str],
-    ) -> None:
-        if result.activation_at is None or result.expires_at is None or not result.delivery_links:
-            raise ValueError("successful activation must include clock and delivery links")
+    def _complete_success(self, request_id: str, result: ActivationResult) -> None:
+        if (
+            result.activation_at is None
+            or result.expires_at is None
+            or result.delivery_profile_version_id is None
+            or result.credential_fingerprint is None
+        ):
+            raise ValueError("successful activation must include clock and delivery metadata")
         now = datetime.now(UTC)
-        key_version, ciphertext, digest = encrypted
         with self.factory() as db:
             request = db.scalar(
                 select(ServiceActivationRequestModel)
@@ -311,6 +288,33 @@ class ServiceActivationWorker:
                 self._operator_review(request, "ATTACHMENT_MISSING", now)
                 db.commit()
                 return
+            target = db.get(AllocationTargetModel, attachment.allocation_target_id)
+            if target is None:
+                self._operator_review(request, "ALLOCATION_TARGET_MISSING", now)
+                db.commit()
+                return
+            try:
+                profile = load_allocation_delivery_profile(db, target.id, target.required_protocol)
+                rendered_uri, fingerprint = render_service_connection(
+                    service,
+                    attachment,
+                    target,
+                    profile,
+                    require_verified=True,
+                )
+            except (DeliveryError, ValueError):
+                self._operator_review(request, "DELIVERY_PROFILE_CHANGED_OR_INVALID", now)
+                db.commit()
+                return
+            if (
+                str(profile.version_id) != result.delivery_profile_version_id
+                or fingerprint != result.credential_fingerprint
+                or not rendered_uri
+            ):
+                self._operator_review(request, "DELIVERY_PRECONDITION_CHANGED", now)
+                db.commit()
+                return
+
             fulfillment = db.scalar(
                 select(ServiceFulfillmentRequestModel).where(
                     ServiceFulfillmentRequestModel.service_id == service.id
@@ -328,36 +332,37 @@ class ServiceActivationWorker:
                 db.commit()
                 return
 
-            delivery = db.scalar(
-                select(ServiceDeliveryModel)
-                .where(ServiceDeliveryModel.service_id == service.id)
-                .with_for_update()
-            )
-            if delivery is None:
-                delivery = ServiceDeliveryModel(
-                    service_id=service.id,
-                    format="URI_LIST",
-                    encrypted_payload=ciphertext,
-                    encryption_key_version=key_version,
-                    payload_sha256=digest,
-                    item_count=len(result.delivery_links),
-                    status="DELIVERED",
-                    created_at=now,
-                    delivered_at=now,
+            latest_number = db.scalar(
+                select(func.max(DeliveryRevisionModel.revision_number)).where(
+                    DeliveryRevisionModel.service_id == service.id
                 )
-                db.add(delivery)
-            else:
-                if delivery.status == "DELIVERED" and delivery.payload_sha256 != digest:
-                    self._operator_review(request, "DELIVERY_PAYLOAD_CONFLICT", now)
-                    db.commit()
-                    return
-                delivery.encrypted_payload = ciphertext
-                delivery.encryption_key_version = key_version
-                delivery.payload_sha256 = digest
-                delivery.item_count = len(result.delivery_links)
-                delivery.status = "DELIVERED"
-                delivery.delivered_at = now
-
+            )
+            revision_number = int(latest_number or 0) + 1
+            db.add(
+                DeliveryRevisionModel(
+                    service_id=service.id,
+                    revision_number=revision_number,
+                    status="ACTIVE",
+                    attachment_snapshot={
+                        "attachment_id": attachment.id,
+                        "allocation_target_id": target.id,
+                        "profile_version_id": str(profile.version_id),
+                        "protocol": profile.protocol.value,
+                        "transport": profile.transport.value,
+                        "security": profile.security.value,
+                    },
+                    renderer_versions={"URI": RENDERER_VERSION},
+                    credential_fingerprints={attachment.id: fingerprint},
+                    compatibility_state={
+                        "direct_uri": True,
+                        "provider_host_used": False,
+                    },
+                    reason="ACTIVATION_VERIFIED",
+                    correlation_reference=request.correlation_id,
+                    created_at=now,
+                    superseded_at=None,
+                )
+            )
             if clock is None:
                 db.add(
                     FulfillmentEntitlementClockModel(
@@ -375,12 +380,14 @@ class ServiceActivationWorker:
             service.version += 1
             attachment.status = "VERIFIED"
             attachment.verification_status = "VERIFIED"
+            attachment.credential_fingerprint = fingerprint
             observed = dict(attachment.observed_state or {})
             observed.update(
                 {
                     "provider_verified": True,
                     "delivery_verified": True,
                     "activation_result_code": result.safe_code,
+                    "delivery_profile_version_id": str(profile.version_id),
                 }
             )
             attachment.observed_state = observed
@@ -452,17 +459,8 @@ class ServiceActivationWorker:
             request, service, attachment = work
             result = self.activator.activate(request, service, attachment)
             if result.outcome == "SUCCESS":
-                assert self.delivery_cipher is not None
-                try:
-                    encrypted = self.delivery_cipher.encrypt_links(result.delivery_links)
-                except (ValueError, TypeError):
-                    result = ActivationResult(
-                        "BLOCKED_BY_CONFIGURATION", "DELIVERY_ENCRYPTION_FAILED"
-                    )
-                else:
-                    self._complete_success(request_id, result, encrypted)
-                    processed += 1
-                    continue
-            self._complete_failure(request_id, result)
+                self._complete_success(request_id, result)
+            else:
+                self._complete_failure(request_id, result)
             processed += 1
         return processed
