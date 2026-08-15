@@ -20,12 +20,7 @@ from telegram_bot.transport.polling import TelegramPollingRuntime, TelegramTrans
 def purchase_status_text(result: PurchaseResult) -> str:
     """Render only states that the private API has authoritatively established."""
     state = result.purchase_state
-    active_delivery = (
-        state == "ACTIVE"
-        and result.service_lifecycle == "ACTIVE"
-        and result.delivery_ready
-        and result.service_reference is not None
-    )
+    service_reference = result.service_reference
     if result.refunded or state == "REFUNDED":
         return "ساخت سرویس کامل نشد و مبلغ سفارش به کیف پول شما بازگردانده شد."
     if state == "OPERATOR_REVIEW":
@@ -35,15 +30,20 @@ def purchase_status_text(result: PurchaseResult) -> str:
             "بر اساس یک نتیجه نامطمئن انجام نخواهد شد.\n"
             f"شناسه سفارش: {result.order_reference[-8:]}"
         )
-    if active_delivery:
+    if (
+        state == "ACTIVE"
+        and result.service_lifecycle == "ACTIVE"
+        and result.delivery_ready
+        and service_reference is not None
+    ):
         return (
             f"✅ سرویس شما فعال شد\n\nنام سرویس: {result.plan.title}\n"
             f"موقعیت: {result.plan.location_label}\n"
             f"اعتبار تا: {format_date(result.expires_at)}\n"
             f"حجم: {result.plan.traffic_gb:,} گیگابایت\n"
-            f"شناسه: {result.service_reference[-8:]}"
+            f"شناسه: {service_reference[-8:]}"
         )
-    if state == "PENDING_DELIVERY" or result.service_reference is not None:
+    if state == "PENDING_DELIVERY" or service_reference is not None:
         return (
             "🟡 ساخت سرویس در ارائه‌دهنده تأیید شده است، اما تحویل کانفیگ هنوز آماده نیست.\n"
             "سرویس تا آماده شدن مسیر تحویل، فعال اعلام نمی‌شود.\n"
