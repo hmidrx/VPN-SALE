@@ -200,7 +200,13 @@ class DatabaseSanaeiProvisioner:
             login_passphrase = credential_fields.get("password")
             if not isinstance(login_name, str) or not isinstance(login_passphrase, str):
                 raise ValueError("credential invalid")
-            return self._panel(panel_row, credential_row), target, certification, login_name, login_passphrase
+            return (
+                self._panel(panel_row, credential_row),
+                target,
+                certification,
+                login_name,
+                login_passphrase,
+            )
 
     @staticmethod
     def _panel(row: PanelInstanceModel, credential: PanelCredentialModel) -> PanelInstance:
