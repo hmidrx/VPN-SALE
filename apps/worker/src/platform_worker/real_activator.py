@@ -7,7 +7,6 @@ import asyncio
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import cast
 from uuid import UUID
 
 from panel_adapters.contracts import CERTIFIED_CONTRACTS, EndpointValidator
@@ -342,9 +341,9 @@ class DatabaseSanaeiActivator:
                     deduplication_key,
                     protocol,
                     True,
-                    RemoteTrafficLimit(cast(int, traffic_bytes)),
+                    RemoteTrafficLimit(traffic_bytes),
                     RemoteExpiryPolicy(expires_at),
-                    cast(int, device_limit),
+                    device_limit,
                     "customer service",
                     provider_label,
                     (RemoteIdentifier(inbound_id),),
