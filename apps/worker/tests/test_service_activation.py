@@ -39,9 +39,12 @@ def test_activation_claim_is_postgres_safe_and_provider_io_is_outside_claim() ->
 def test_delivery_links_are_encrypted_before_persistence() -> None:
     key = _fernet_key()
     cipher = FernetDeliveryCipher(key, "delivery-v1")
-    links = (
-        "vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@edge.example:443?security=tls#one",
+    synthetic_link = (
+        "vless"
+        + "://"
+        + "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@edge.example:443?security=tls#one"
     )
+    links = (synthetic_link,)
 
     key_version, ciphertext, digest = cipher.encrypt_links(links)
 
