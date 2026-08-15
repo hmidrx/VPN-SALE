@@ -106,6 +106,9 @@ log "Pytest"
 mkdir -p test-reports
 export VPN_SALE_RUN_MIGRATION_LIFECYCLE_TEST=1
 pytest --junitxml=test-reports/backend-pytest.xml
+log "Focused fulfillment/provider pytest"
+pytest apps/worker/tests packages/panel-adapters/tests \
+  --junitxml=test-reports/fulfillment-provider-pytest.xml
 log "API import/startup smoke"
 python - <<'PY'
 from platform_api.main import app
