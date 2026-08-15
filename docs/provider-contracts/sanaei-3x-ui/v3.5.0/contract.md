@@ -30,6 +30,23 @@ The adapter defines provider-specific upstream DTO names, endpoint identifiers, 
 - Supported contract-only write operations: create, update, enable, disable, delete, reset traffic, clear client IPs, attach inbound and detach inbound.
 - MTProto/WireGuard create/update remains unsupported unless exact credential DTOs are fully verified.
 
+#### Certified CREATE evidence
+
+- `internal/web/controller/api.go` mounts `ClientController` at `/panel/api/clients`.
+- `internal/web/controller/client.go` registers `POST /add`, binds JSON into
+  `service.ClientCreatePayload`, and returns the standard `entity.Msg` envelope through
+  `jsonMsgObj`; success is therefore HTTP 200 with `success: true`.
+- `internal/web/service/client.go` defines `ClientCreatePayload` as `{client,
+  inboundIds}`. `inboundIds` is a non-empty array of numeric inbound IDs.
+- `internal/database/model/model.go` defines the client fields used here: `id`, `email`,
+  `limitIp`, `totalGB`, `expiryTime`, `enable`, and `subId`.
+- `internal/web/service/client_crud.go` creates/reuses the global client record keyed by
+  email/sub-ID, then attaches that identity to every requested inbound. This is not the
+  Alireza `/inbounds/addClient/:id` contract.
+- The worker persists and reuses deterministic `id`, `email`, and `subId` values. It
+  reconciles the global identity through authoritative inventory before CREATE, after
+  CREATE, and after duplicate/conflict responses.
+
 ### Alireza X-UI v1.11.3
 
 - Repository: `https://github.com/alireza0/x-ui`; tag `v1.11.3`; release commit `419fce7`.

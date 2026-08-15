@@ -847,7 +847,11 @@ class BotCommandHandler:
             )
             if result.refunded:
                 text = "ساخت سرویس کامل نشد و مبلغ سفارش به کیف پول شما بازگردانده شد."
-            elif result.service_reference:
+            elif (
+                result.service_reference
+                and result.service_lifecycle == "ACTIVE"
+                and result.delivery_ready
+            ):
                 text = (
                     f"✅ سرویس شما فعال شد\n\nنام سرویس: {result.plan.title}\n"
                     f"موقعیت: {result.plan.location_label}\n"
@@ -855,6 +859,14 @@ class BotCommandHandler:
                     f"حجم: {result.plan.traffic_gb:,} گیگابایت\n"
                     f"شناسه: {result.service_reference[-8:]}"
                 )
+            elif result.service_reference:
+                text = (
+                    "✅ هویت سرویس نزد ارائه‌دهنده ساخته شد\n\n"
+                    "تحویل امن سرویس هنوز آماده نیست و سرویس فعال نشده است.\n"
+                    f"شناسه سفارش: {result.order_reference[-8:]}"
+                )
+            elif result.fulfillment_status == "OPERATOR_REVIEW":
+                text = "⚠️ آماده‌سازی سفارش نیازمند بررسی اپراتور است. مبلغ بازپرداخت نشده است."
             else:
                 text = (
                     "✅ سفارش پذیرفته شد\n\nساخت سرویس در حال انجام است.\n"
@@ -885,8 +897,16 @@ class BotCommandHandler:
                 return self._stale(locale)
             if result.refunded:
                 text = "ساخت سرویس کامل نشد و مبلغ سفارش به کیف پول شما بازگردانده شد."
-            elif result.service_reference:
+            elif (
+                result.service_reference
+                and result.service_lifecycle == "ACTIVE"
+                and result.delivery_ready
+            ):
                 text = f"✅ سرویس شما فعال شد\nشناسه: {result.service_reference[-8:]}"
+            elif result.service_reference:
+                text = "⏳ سرویس نزد ارائه‌دهنده ساخته شده اما تحویل امن آن هنوز آماده نیست."
+            elif result.fulfillment_status == "OPERATOR_REVIEW":
+                text = "⚠️ سفارش نیازمند بررسی اپراتور است. مبلغ بازپرداخت نشده است."
             else:
                 text = f"⏳ سفارش در حال آماده‌سازی است.\nشناسه سفارش: {result.order_reference[-8:]}"
             return self._callback_message(

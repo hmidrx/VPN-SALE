@@ -121,7 +121,7 @@ def provider_write_contracts() -> dict[ProviderKind, ProviderWriteContract]:
             "SanaeiClientCreateRequest",
             "SanaeiSuccessEnvelope",
             ProviderCapability.CLIENT_CREATE,
-            "web/controller/client.go@v3.5.0 routes /panel/api/clients and /panel/api/inbounds",
+            "internal/web/controller/api.go and client.go@v3.5.0; JSON ClientCreatePayload",
         ),
         _op(
             ProviderMutationOperation.UPDATE_REMOTE_IDENTITY,

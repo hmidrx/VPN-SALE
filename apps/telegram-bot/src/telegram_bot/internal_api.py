@@ -207,8 +207,12 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
             self._purchase_plan(cast(dict[str, Any], data["plan"])),
             str(data["service_reference"]) if data.get("service_reference") else None,
             datetime.fromisoformat(str(data["expires_at"])) if data.get("expires_at") else None,
-            bool(data.get("refunded", False)),
-            str(data.get("outcome", "ACCEPTED")),
+            refunded=bool(data.get("refunded", False)),
+            outcome=str(data.get("outcome", "ACCEPTED")),
+            service_lifecycle=(
+                str(data["service_lifecycle"]) if data.get("service_lifecycle") else None
+            ),
+            delivery_ready=bool(data.get("delivery_ready", False)),
         )
 
     def confirm_purchase(

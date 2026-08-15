@@ -41,7 +41,7 @@ class ServiceModel(IdentityBase):
     unit_index: Mapped[int] = mapped_column(Integer, nullable=False)
     entitlement_snapshot: Mapped[dict[str, object]] = mapped_column(JSON_TYPE, nullable=False)
     allocation_policy_snapshot: Mapped[dict[str, object] | None] = mapped_column(JSON_TYPE)
-    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -77,6 +77,10 @@ class ServiceFulfillmentRequestModel(IdentityBase):
     lease_owner: Mapped[str | None] = mapped_column(String(96))
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     result_code: Mapped[str | None] = mapped_column(String(80))
+    remote_identity_uuid: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failure_category: Mapped[str | None] = mapped_column(String(64))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     __table_args__ = (
@@ -138,6 +142,7 @@ class AllocationTargetModel(IdentityBase):
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
     )
+
     pool_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), ForeignKey("allocation_pools.id", ondelete="RESTRICT"), nullable=False
     )
@@ -165,6 +170,35 @@ class AllocationTargetModel(IdentityBase):
             name="ck_allocation_targets_capacity",
         ),
         Index("ix_allocation_targets_pool_status", "pool_id", "status"),
+    )
+
+
+class FulfillmentAllocationBindingModel(IdentityBase):
+    """Explicit immutable paid-selection to allocation-target configuration."""
+
+    __tablename__ = "fulfillment_allocation_bindings"
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    product_version_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("product_versions.id", ondelete="RESTRICT"), nullable=False
+    )
+    location_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    quality_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    allocation_target_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("allocation_targets.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        UniqueConstraint(
+            "product_version_id",
+            "location_code",
+            "quality_code",
+            name="uq_fulfillment_binding_purchase_target",
+        ),
     )
 
 

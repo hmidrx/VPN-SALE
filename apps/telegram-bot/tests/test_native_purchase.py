@@ -170,7 +170,13 @@ def test_successful_fake_provider_result_renders_native_service() -> None:
     class SuccessfulPortal(InMemoryCustomerPortal):
         def confirm_purchase(self, context, plan, idempotency_key):  # type: ignore[no-untyped-def]
             return PurchaseResult(
-                "ord_safe", "ACTIVE", "SUCCEEDED", plan, service_reference="svc_customer8"
+                "ord_safe",
+                "ACTIVE",
+                "SUCCEEDED",
+                plan,
+                service_reference="svc_customer8",
+                service_lifecycle="ACTIVE",
+                delivery_ready=True,
             )
 
     portal = SuccessfulPortal()
@@ -178,6 +184,24 @@ def test_successful_fake_provider_result_renders_native_service() -> None:
     handler.handle_callback(callback(75, CallbackAction.SELECT_PLAN, "basic"))
     result = handler.handle_callback(callback(76, CallbackAction.CONFIRM_PURCHASE))
     assert "سرویس شما فعال شد" in result.messages[0].text
+
+
+def test_provider_created_service_is_not_rendered_as_active() -> None:
+    portal = InMemoryCustomerPortal()
+    plan = portal._purchase_plans[0]
+    portal._purchases["pending"] = PurchaseResult(
+        "ord_pending",
+        "READY_FOR_FULFILLMENT",
+        "SUCCEEDED",
+        plan,
+        service_reference="svc_pending8",
+        service_lifecycle="PENDING_ACTIVATION",
+        delivery_ready=False,
+    )
+    handler = BotCommandHandler(settings(), InMemoryTelegramIdentityService(), portal=portal)
+    result = handler.handle_callback(callback(77, CallbackAction.PURCHASE_STATUS, "ord_pending"))
+    assert "فعال شد" not in result.messages[0].text
+    assert "تحویل امن" in result.messages[0].text
     assert "svc_customer8" not in result.messages[0].text
 
 

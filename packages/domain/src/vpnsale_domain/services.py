@@ -4,6 +4,7 @@ import hashlib
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from typing import cast
 from uuid import UUID, uuid4
 
 from vpnsale_domain.orders import OrderFinancialStatus, OrderStatus
@@ -533,3 +534,42 @@ def reconcile_service(
                 )
             )
     return tuple(issues)
+
+
+def canonical_service_entitlement(snapshot: dict[str, object]) -> dict[str, object]:
+    """Flatten an immutable paid-order snapshot for customer service projections."""
+    selected_value = snapshot.get("selected_options")
+    if not isinstance(selected_value, dict):
+        raise ValueError("paid order selected_options missing")
+    selected = cast(dict[str, object], selected_value)
+    display_value = snapshot.get("telegram_purchase_display")
+    display = cast(dict[str, object], display_value) if isinstance(display_value, dict) else {}
+    labels_value = snapshot.get("product_label_snapshot")
+    labels = cast(dict[str, object], labels_value) if isinstance(labels_value, dict) else {}
+    fa_value = labels.get("fa")
+    fa = cast(dict[str, object], fa_value) if isinstance(fa_value, dict) else {}
+    values: dict[str, object] = {
+        "traffic_quota_bytes": selected.get("traffic_bytes"),
+        "duration_days": selected.get("duration_days"),
+        "device_limit": selected.get("device_count"),
+        "location_code": selected.get("location_code"),
+        "quality_code": selected.get("quality_code"),
+        "location_label": display.get("location_label") or selected.get("location_code"),
+        "quality_label": display.get("quality_label") or selected.get("quality_code"),
+        "product_label": display.get("title")
+        or fa.get("title")
+        or snapshot.get("product_machine_code"),
+        "product_version_id": snapshot.get("product_version_id"),
+        "required_attachment_count": 1,
+    }
+    integer_fields = ("traffic_quota_bytes", "duration_days", "device_limit")
+    if any(
+        type(values[name]) is not int or cast(int, values[name]) <= 0 for name in integer_fields
+    ):
+        raise ValueError("paid order entitlement is invalid")
+    if any(
+        not isinstance(values[name], str) or not values[name]
+        for name in ("location_code", "quality_code", "product_label")
+    ):
+        raise ValueError("paid order entitlement labels are invalid")
+    return values

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
+import hmac
 
 import pytest
 from panel_adapters.contracts import AdapterRegistry, EndpointValidator, SanitizedHttpResponse
 from panel_adapters.live_certification import main
-from panel_adapters.vault import ProviderCredentialVault
+from panel_adapters.vault import EncryptedProviderCredential, ProviderCredentialVault
 from vpnsale_domain.providers import (
     CapabilitySupport,
     PanelEndpointPolicy,
@@ -87,6 +89,52 @@ def test_vault_encrypts_without_plaintext_recovery_api() -> None:
     encrypted = vault.encrypt("secret-token", "api_token", b"panel")
     assert "secret-token" not in encrypted.ciphertext_b64
     assert vault.decrypt_for_adapter(encrypted, b"panel") == "secret-token"
+    assert encrypted.key_version == "aead:v1"
+
+
+@pytest.mark.parametrize("failure", ["wrong-key", "wrong-aad", "tamper"])
+def test_aead_vault_rejects_unauthenticated_credentials(failure: str) -> None:
+    key = base64.urlsafe_b64encode(b"0" * 32).decode()
+    vault = ProviderCredentialVault(key)
+    record = vault.encrypt("provider credential", "panel_login", b"panel-a")
+    decryptor = vault
+    aad = b"panel-a"
+    if failure == "wrong-key":
+        decryptor = ProviderCredentialVault(base64.urlsafe_b64encode(b"1" * 32).decode())
+    elif failure == "wrong-aad":
+        aad = b"panel-b"
+    else:
+        raw = bytearray(base64.urlsafe_b64decode(record.ciphertext_b64))
+        raw[-1] ^= 1
+        record = EncryptedProviderCredential(
+            record.key_version,
+            record.nonce_b64,
+            base64.urlsafe_b64encode(raw).decode(),
+            record.credential_kind,
+        )
+    with pytest.raises(ProviderError) as exc:
+        decryptor.decrypt_for_adapter(record, aad)
+    assert exc.value.code is ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE
+
+
+def test_legacy_vault_record_can_be_read_only_for_aead_rotation() -> None:
+    raw_key = b"0" * 32
+    key = base64.urlsafe_b64encode(raw_key).decode()
+    nonce = b"legacy-nonce-123"
+    aad = b"panel"
+    plaintext = b"legacy credential"
+    stream = hmac.new(raw_key, nonce + aad + (1).to_bytes(4, "big"), hashlib.sha256).digest()
+    ciphertext = bytes(a ^ b for a, b in zip(plaintext, stream[: len(plaintext)], strict=True))
+    tag = hmac.new(raw_key, nonce + aad + ciphertext, hashlib.sha256).digest()
+    legacy = EncryptedProviderCredential(
+        "v1",
+        base64.urlsafe_b64encode(nonce).decode(),
+        base64.urlsafe_b64encode(tag + ciphertext).decode(),
+        "panel_login",
+    )
+    vault = ProviderCredentialVault(key)
+    assert vault.decrypt_for_adapter(legacy, aad) == plaintext.decode()
+    assert vault.encrypt("rotated", "panel_login", aad).key_version == "aead:v1"
 
 
 def test_endpoint_validator_rejects_unsafe_schemes() -> None:
