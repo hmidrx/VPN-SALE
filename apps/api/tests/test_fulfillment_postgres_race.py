@@ -8,6 +8,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
 from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from platform_api.order_models import OrderItemModel, OrderModel, TransactionalOutboxModel
@@ -59,127 +60,139 @@ def _postgres_url() -> str:
     return value.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
 
 
-def _create_race_schema() -> tuple[object, sessionmaker[Session], str]:
+def _create_race_schema() -> tuple[Engine, sessionmaker[Session], str]:
     url = _postgres_url()
     admin_engine = create_engine(url)
     schema = f"fulfill_race_{uuid4().hex[:12]}"
     with admin_engine.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
     engine = create_engine(url, connect_args={"options": f"-csearch_path={schema}"})
-    ddl = """
-    CREATE TABLE orders (
-        id uuid PRIMARY KEY,
-        reference varchar(40) NOT NULL,
-        customer_id uuid NOT NULL,
-        quote_id uuid NOT NULL,
-        quote_reference varchar(64) NOT NULL,
-        status varchar(40) NOT NULL,
-        financial_status varchar(40) NOT NULL,
-        fulfillment_status varchar(40) NOT NULL,
-        payment_method varchar(24) NOT NULL,
-        currency varchar(3) NOT NULL,
-        subtotal_rial bigint NOT NULL,
-        adjustment_total_rial bigint NOT NULL,
-        final_amount_rial bigint NOT NULL,
-        snapshot jsonb NOT NULL,
-        created_at timestamptz NOT NULL,
-        paid_at timestamptz,
-        cancelled_at timestamptz,
-        version integer NOT NULL
-    );
-    CREATE TABLE order_items (
-        id uuid PRIMARY KEY,
-        order_id uuid NOT NULL,
-        product_id uuid NOT NULL,
-        product_version_id uuid NOT NULL,
-        product_machine_code varchar(80) NOT NULL,
-        snapshot jsonb NOT NULL,
-        position integer NOT NULL
-    );
-    CREATE TABLE transactional_outbox (
-        id uuid PRIMARY KEY,
-        event_key varchar(120) NOT NULL UNIQUE,
-        event_type varchar(120) NOT NULL,
-        status varchar(24) NOT NULL,
-        payload jsonb NOT NULL,
-        attempt_count integer NOT NULL,
-        available_at timestamptz NOT NULL,
-        claimed_at timestamptz,
-        processed_at timestamptz,
-        failure_category varchar(64),
-        created_at timestamptz NOT NULL
-    );
-    CREATE TABLE services (
-        id uuid PRIMARY KEY,
-        public_reference varchar(48) NOT NULL UNIQUE,
-        lifecycle varchar(40) NOT NULL,
-        beneficiary_customer_id uuid NOT NULL,
-        payer_type varchar(32) NOT NULL,
-        payer_reference varchar(80) NOT NULL,
-        reseller_id uuid,
-        order_id uuid NOT NULL,
-        order_item_id uuid NOT NULL,
-        unit_index integer NOT NULL,
-        entitlement_snapshot jsonb NOT NULL,
-        allocation_policy_snapshot jsonb,
-        starts_at timestamptz NOT NULL,
-        expires_at timestamptz,
-        activated_at timestamptz,
-        created_at timestamptz NOT NULL,
-        version integer NOT NULL,
-        CONSTRAINT uq_services_order_item_unit UNIQUE (order_item_id, unit_index)
-    );
-    CREATE TABLE service_fulfillment_requests (
-        id uuid PRIMARY KEY,
-        deduplication_key varchar(160) NOT NULL UNIQUE,
-        order_id uuid NOT NULL,
-        order_item_id uuid NOT NULL,
-        unit_index integer NOT NULL,
-        service_id uuid,
-        event_version integer NOT NULL,
-        status varchar(40) NOT NULL,
-        correlation_id varchar(96) NOT NULL,
-        causation_id varchar(96) NOT NULL,
-        lease_owner varchar(96),
-        lease_expires_at timestamptz,
-        result_code varchar(80),
-        remote_identity_uuid uuid NOT NULL,
-        attempt_count integer NOT NULL,
-        failure_category varchar(64),
-        next_attempt_at timestamptz,
-        created_at timestamptz NOT NULL,
-        updated_at timestamptz NOT NULL,
-        CONSTRAINT uq_service_fulfillment_item_unit UNIQUE (order_item_id, unit_index)
-    );
-    CREATE TABLE service_attachments (
-        id uuid PRIMARY KEY,
-        service_id uuid NOT NULL,
-        allocation_target_id uuid NOT NULL,
-        required boolean NOT NULL,
-        status varchar(40) NOT NULL,
-        verification_status varchar(40) NOT NULL,
-        provider_operation_id uuid,
-        remote_identity_reference varchar(160),
-        credential_fingerprint varchar(120),
-        target_snapshot jsonb NOT NULL,
-        observed_state jsonb NOT NULL,
-        last_reconciled_at timestamptz,
-        version integer NOT NULL,
-        CONSTRAINT uq_service_attachments_target UNIQUE (service_id, allocation_target_id),
-        CONSTRAINT uq_service_attachments_remote_identity
-            UNIQUE (allocation_target_id, remote_identity_reference)
-    );
-    """
+    statements = (
+        """
+        CREATE TABLE orders (
+            id uuid PRIMARY KEY,
+            reference varchar(40) NOT NULL,
+            customer_id uuid NOT NULL,
+            quote_id uuid NOT NULL,
+            quote_reference varchar(64) NOT NULL,
+            status varchar(40) NOT NULL,
+            financial_status varchar(40) NOT NULL,
+            fulfillment_status varchar(40) NOT NULL,
+            payment_method varchar(24) NOT NULL,
+            currency varchar(3) NOT NULL,
+            subtotal_rial bigint NOT NULL,
+            adjustment_total_rial bigint NOT NULL,
+            final_amount_rial bigint NOT NULL,
+            snapshot jsonb NOT NULL,
+            created_at timestamptz NOT NULL,
+            paid_at timestamptz,
+            cancelled_at timestamptz,
+            version integer NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE order_items (
+            id uuid PRIMARY KEY,
+            order_id uuid NOT NULL,
+            product_id uuid NOT NULL,
+            product_version_id uuid NOT NULL,
+            product_machine_code varchar(80) NOT NULL,
+            snapshot jsonb NOT NULL,
+            position integer NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE transactional_outbox (
+            id uuid PRIMARY KEY,
+            event_key varchar(120) NOT NULL UNIQUE,
+            event_type varchar(120) NOT NULL,
+            status varchar(24) NOT NULL,
+            payload jsonb NOT NULL,
+            attempt_count integer NOT NULL,
+            available_at timestamptz NOT NULL,
+            claimed_at timestamptz,
+            processed_at timestamptz,
+            failure_category varchar(64),
+            created_at timestamptz NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE services (
+            id uuid PRIMARY KEY,
+            public_reference varchar(48) NOT NULL UNIQUE,
+            lifecycle varchar(40) NOT NULL,
+            beneficiary_customer_id uuid NOT NULL,
+            payer_type varchar(32) NOT NULL,
+            payer_reference varchar(80) NOT NULL,
+            reseller_id uuid,
+            order_id uuid NOT NULL,
+            order_item_id uuid NOT NULL,
+            unit_index integer NOT NULL,
+            entitlement_snapshot jsonb NOT NULL,
+            allocation_policy_snapshot jsonb,
+            starts_at timestamptz NOT NULL,
+            expires_at timestamptz,
+            activated_at timestamptz,
+            created_at timestamptz NOT NULL,
+            version integer NOT NULL,
+            CONSTRAINT uq_services_order_item_unit UNIQUE (order_item_id, unit_index)
+        )
+        """,
+        """
+        CREATE TABLE service_fulfillment_requests (
+            id uuid PRIMARY KEY,
+            deduplication_key varchar(160) NOT NULL UNIQUE,
+            order_id uuid NOT NULL,
+            order_item_id uuid NOT NULL,
+            unit_index integer NOT NULL,
+            service_id uuid,
+            event_version integer NOT NULL,
+            status varchar(40) NOT NULL,
+            correlation_id varchar(96) NOT NULL,
+            causation_id varchar(96) NOT NULL,
+            lease_owner varchar(96),
+            lease_expires_at timestamptz,
+            result_code varchar(80),
+            remote_identity_uuid uuid NOT NULL,
+            attempt_count integer NOT NULL,
+            failure_category varchar(64),
+            next_attempt_at timestamptz,
+            created_at timestamptz NOT NULL,
+            updated_at timestamptz NOT NULL,
+            CONSTRAINT uq_service_fulfillment_item_unit UNIQUE (order_item_id, unit_index)
+        )
+        """,
+        """
+        CREATE TABLE service_attachments (
+            id uuid PRIMARY KEY,
+            service_id uuid NOT NULL,
+            allocation_target_id uuid NOT NULL,
+            required boolean NOT NULL,
+            status varchar(40) NOT NULL,
+            verification_status varchar(40) NOT NULL,
+            provider_operation_id uuid,
+            remote_identity_reference varchar(160),
+            credential_fingerprint varchar(120),
+            target_snapshot jsonb NOT NULL,
+            observed_state jsonb NOT NULL,
+            last_reconciled_at timestamptz,
+            version integer NOT NULL,
+            CONSTRAINT uq_service_attachments_target UNIQUE (service_id, allocation_target_id),
+            CONSTRAINT uq_service_attachments_remote_identity
+                UNIQUE (allocation_target_id, remote_identity_reference)
+        )
+        """,
+    )
     with engine.begin() as connection:
-        connection.exec_driver_sql(ddl)
+        for statement in statements:
+            connection.exec_driver_sql(statement)
     return admin_engine, sessionmaker(bind=engine, expire_on_commit=False), schema
 
 
-def _drop_race_schema(admin_engine: object, schema: str) -> None:
-    engine = admin_engine
-    with engine.begin() as connection:  # type: ignore[union-attr]
+def _drop_race_schema(admin_engine: Engine, schema: str) -> None:
+    with admin_engine.begin() as connection:
         connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
-    engine.dispose()  # type: ignore[union-attr]
+    admin_engine.dispose()
 
 
 def _seed_duplicate_events(factory: sessionmaker[Session]) -> tuple[str, str]:
@@ -279,9 +292,7 @@ def test_two_distinct_outbox_rows_converge_with_two_postgres_workers(
         assert errors == []
         assert provider.calls == 1
 
-        expected_identity = str(
-            uuid5(NAMESPACE_URL, f"vpnsale:fulfillment:{order_id}:{item_id}:1")
-        )
+        expected_identity = str(uuid5(NAMESPACE_URL, f"vpnsale:fulfillment:{order_id}:{item_id}:1"))
         with factory.begin() as db:
             attempts = list(db.scalars(select(ServiceFulfillmentRequestModel)))
             assert len(attempts) == 1
