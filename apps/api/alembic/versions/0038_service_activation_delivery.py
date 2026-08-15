@@ -1,4 +1,4 @@
-"""Durable service activation attempts and encrypted customer delivery material.
+"""Durable service activation attempts using the existing delivery revision subsystem.
 
 Revision ID: 0038_service_activation_delivery
 Revises: 0037_real_fulfillment
@@ -63,44 +63,7 @@ def upgrade() -> None:
         ["status", "next_attempt_at", "lease_expires_at"],
     )
 
-    op.create_table(
-        "service_deliveries",
-        sa.Column("id", UUID_TYPE, primary_key=True),
-        sa.Column(
-            "service_id",
-            UUID_TYPE,
-            sa.ForeignKey("services.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column("format", sa.String(32), nullable=False, server_default="URI_LIST"),
-        sa.Column("encrypted_payload", sa.Text(), nullable=False),
-        sa.Column("encryption_key_version", sa.String(32), nullable=False),
-        sa.Column("payload_sha256", sa.String(64), nullable=False),
-        sa.Column("item_count", sa.Integer(), nullable=False),
-        sa.Column("status", sa.String(24), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("now()"),
-        ),
-        sa.Column("delivered_at", sa.DateTime(timezone=True)),
-        sa.UniqueConstraint("service_id", name="uq_service_delivery_service"),
-        sa.CheckConstraint("item_count > 0", name="ck_service_delivery_item_count"),
-        sa.CheckConstraint(
-            "status in ('PREPARED','DELIVERED')",
-            name="ck_service_delivery_status",
-        ),
-    )
-    op.create_index(
-        "ix_service_delivery_status_created",
-        "service_deliveries",
-        ["status", "created_at"],
-    )
-
 
 def downgrade() -> None:
-    op.drop_index("ix_service_delivery_status_created", table_name="service_deliveries")
-    op.drop_table("service_deliveries")
     op.drop_index("ix_service_activation_retry", table_name="service_activation_requests")
     op.drop_table("service_activation_requests")
