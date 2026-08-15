@@ -67,6 +67,7 @@ services:
       VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED: "${VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED:-false}"
       VPN_SALE_BOT_ENABLED: "${VPN_SALE_BOT_ENABLED:-false}"
       VPN_SALE_PUBLIC_APP_ORIGIN: "${VPN_SALE_PUBLIC_APP_ORIGIN:-http://localhost:3000}"
+      VPN_SALE_PROVIDER_WRITES_ENABLED: "${VPN_SALE_PROVIDER_WRITES_ENABLED:-false}"
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

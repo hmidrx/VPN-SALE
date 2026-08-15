@@ -48,6 +48,7 @@ from .notification_preferences import (
 )
 from .order_models import OrderModel, TelegramPurchaseIdempotencyModel
 from .orders import CheckoutRequest, confirm_checkout, create_checkout, order_detail
+from .service_models import ServiceModel
 from .services import (
     CustomerServiceSummary,
     customer_service_projection,
@@ -264,19 +265,44 @@ def _review_revision(body: NativePurchaseRequest) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def _native_order_result(order: OrderModel) -> dict[str, object]:
+def _native_order_result(db: Session, order: OrderModel) -> dict[str, object]:
     display = order.snapshot.get("telegram_purchase_display")
     if not isinstance(display, dict):
         raise HTTPException(status_code=409, detail="historical_display_unavailable")
     status_value = order.status
+    service = db.scalar(
+        select(ServiceModel).where(
+            ServiceModel.order_id == order.id,
+            ServiceModel.beneficiary_customer_id == order.customer_id,
+        )
+    )
+    service_lifecycle: str | None = None
+    delivery_ready = False
+    if service is not None:
+        detail = customer_service_projection(db, order.customer_id, service.public_reference)
+        service_lifecycle = detail.summary.lifecycle if detail is not None else service.lifecycle
+        delivery_ready = detail.summary.delivery_ready if detail is not None else False
+    if status_value == "REFUNDED":
+        purchase_state = "REFUNDED"
+    elif order.fulfillment_status == "OPERATOR_REVIEW":
+        purchase_state = "OPERATOR_REVIEW"
+    elif service is not None and service_lifecycle == "ACTIVE" and delivery_ready:
+        purchase_state = "ACTIVE"
+    elif service is not None:
+        purchase_state = "PENDING_DELIVERY"
+    else:
+        purchase_state = "PROVISIONING"
     return {
         "outcome": "FINAL" if status_value in {"REFUNDED", "CANCELLED"} else "ACCEPTED",
         "order_reference": order.reference,
         "status": status_value,
         "fulfillment_status": order.fulfillment_status,
+        "purchase_state": purchase_state,
         "plan": cast(dict[str, object], display),
-        "service_reference": None,
-        "expires_at": None,
+        "service_reference": service.public_reference if service else None,
+        "service_lifecycle": service_lifecycle,
+        "delivery_ready": delivery_ready,
+        "expires_at": service.expires_at.isoformat() if service and service.expires_at else None,
         "refunded": status_value == "REFUNDED",
     }
 
@@ -379,6 +405,7 @@ def _native_plan(db: Session, product: ProductModel, request: Request) -> dict[s
         "location_code": str(location["code"]),
         "location_label": _option_label(location),
         "quality_code": str(quality["code"]),
+        "quality_label": _option_label(quality),
         "price_toman": amount // 10,
         "selection": selection.model_dump(mode="json", exclude={"product_id", "operation"}),
     }
@@ -445,7 +472,7 @@ def confirm_native_purchase(
     committed_order = _committed_anchor_order(db, anchor)
     if committed_order is not None:
         _no_store(response)
-        return _native_order_result(committed_order)
+        return _native_order_result(db, committed_order)
     existing_quote_key = _purchase_idempotency_key(idempotency_key, "quote", _review_revision(body))
     existing_idem = db.scalar(
         select(QuoteIdempotencyRecordModel).where(
@@ -463,7 +490,7 @@ def confirm_native_purchase(
             anchor.order_id = existing_order.id
             anchor.committed_at = datetime.now(UTC)
             _no_store(response)
-            return _native_order_result(existing_order)
+            return _native_order_result(db, existing_order)
 
     product = _product_for_plan_reference(db, body.plan_reference)
     if not product or product.status != "ACTIVE" or not product.customer_visible:
@@ -480,8 +507,11 @@ def confirm_native_purchase(
             "order_reference": None,
             "status": "REVIEW_REQUIRED",
             "fulfillment_status": "NOT_STARTED",
+            "purchase_state": "REVIEW_REQUIRED",
             "plan": plan,
             "service_reference": None,
+            "service_lifecycle": None,
+            "delivery_ready": False,
             "expires_at": None,
             "refunded": False,
         }
@@ -511,8 +541,11 @@ def confirm_native_purchase(
             "order_reference": None,
             "status": "REVIEW_REQUIRED",
             "fulfillment_status": "NOT_STARTED",
+            "purchase_state": "REVIEW_REQUIRED",
             "plan": plan,
             "service_reference": None,
+            "service_lifecycle": None,
+            "delivery_ready": False,
             "expires_at": None,
             "refunded": False,
         }
@@ -547,6 +580,7 @@ def confirm_native_purchase(
                 "location_label": plan["location_label"],
                 "location_code": plan["location_code"],
                 "quality_code": plan["quality_code"],
+                "quality_label": plan["quality_label"],
                 "price_toman": plan["price_toman"],
                 "selection": plan["selection"],
             },
@@ -560,8 +594,11 @@ def confirm_native_purchase(
         "order_reference": order["order_reference"],
         "status": "ACCEPTED",
         "fulfillment_status": "PROVISIONING",
+        "purchase_state": "PROVISIONING",
         "plan": plan,
         "service_reference": None,
+        "service_lifecycle": None,
+        "delivery_ready": False,
         "expires_at": None,
         "refunded": False,
     }
@@ -582,7 +619,7 @@ def native_purchase_order(
     if order_row is None:
         raise HTTPException(status_code=404, detail="order_not_found")
     _no_store(response)
-    return _native_order_result(order_row)
+    return _native_order_result(db, order_row)
 
 
 def _service_item(summary: CustomerServiceSummary) -> dict[str, object]:
