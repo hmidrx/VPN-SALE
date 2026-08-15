@@ -1,4 +1,4 @@
-"""Database-selected, vault-backed production Sanaei provisioning composition."""
+"""Database-selected, AEAD-vault-backed production Sanaei provisioning composition."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ from vpnsale_domain.providers import (
     PanelReference,
     PanelTlsPolicy,
     ProviderCertificationStatus,
+    ProviderError,
     ProviderKind,
     ProviderMutationCommand,
     ProviderMutationOperation,
@@ -34,6 +35,10 @@ from vpnsale_domain.providers import (
     RemoteTrafficLimit,
 )
 
+from platform_api.fulfillment_runtime_models import (
+    FulfillmentEntitlementClockModel,
+    FulfillmentTargetBindingModel,
+)
 from platform_api.order_models import OrderItemModel, OrderModel
 from platform_api.provider_runtime_models import (
     PanelCredentialModel,
@@ -55,49 +60,101 @@ class DatabaseSanaeiProvisioner:
         if not self.writes_enabled:
             return ProvisioningResult("BLOCKED_BY_CONFIGURATION", "PROVIDER_WRITES_DISABLED")
         try:
-            selected = self._select(attempt, item)
-        except (ValueError, KeyError):
-            return ProvisioningResult("BLOCKED_BY_CONFIGURATION", "PROVIDER_SELECTION_BLOCKED")
-        panel, target, certification, username, password = selected
-        try:
-            return asyncio.run(
-                self._execute(
-                    attempt,
-                    order,
-                    item,
-                    panel,
-                    target,
-                    certification,
-                    username,
-                    password,
-                )
+            panel, target, certification, login_name, login_passphrase = self._select(item)
+            base_url = EndpointValidator().validate(
+                panel.endpoint_origin + panel.base_path,
+                panel.endpoint_policy,
+                panel.tls_policy,
             )
-        except Exception:
-            return ProvisioningResult("TRANSIENT_FAILURE", "PROVIDER_EXECUTION_UNAVAILABLE")
+        except (ProviderError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+            return ProvisioningResult("BLOCKED_BY_CONFIGURATION", "PROVIDER_SELECTION_BLOCKED")
+        return asyncio.run(
+            self._execute(
+                attempt,
+                order,
+                item,
+                panel,
+                target,
+                certification,
+                login_name,
+                login_passphrase,
+                base_url,
+            )
+        )
 
-    def _select(self, attempt: ServiceFulfillmentRequestModel, item: OrderItemModel):
+    def _select(
+        self, item: OrderItemModel
+    ) -> tuple[
+        PanelInstance,
+        AllocationTargetModel,
+        ProviderConnectionTestModel,
+        str,
+        str,
+    ]:
         selected_value = item.snapshot.get("selected_options")
         if not isinstance(selected_value, dict):
             raise ValueError("immutable selection missing")
         selected = cast(dict[str, object], selected_value)
+        location_code = selected.get("location_code")
+        quality_code = selected.get("quality_code")
+        product_version_id = item.snapshot.get("product_version_id")
+        if not all(isinstance(value, str) and value for value in (location_code, quality_code)):
+            raise ValueError("immutable location/quality missing")
+        if not isinstance(product_version_id, str) or not product_version_id:
+            raise ValueError("immutable product version missing")
+
         requirements_value = item.snapshot.get("fulfillment_requirement_snapshot", [])
         if not isinstance(requirements_value, list):
             raise ValueError("immutable fulfillment requirements missing")
         requirements = cast(list[object], requirements_value)
+        required_codes = {
+            value["capability_code"]
+            for raw in requirements
+            if isinstance(raw, dict)
+            for value in [cast(dict[str, object], raw)]
+            if isinstance(value.get("capability_code"), str)
+        }
+
+        contract = CERTIFIED_CONTRACTS[ProviderKind.SANAEI_3X_UI]
         with self.factory() as db:
-            targets = db.scalars(
-                select(AllocationTargetModel)
-                .where(
-                    AllocationTargetModel.status.in_(("ACTIVE", "ENABLED")),
-                    AllocationTargetModel.provider_kind == ProviderKind.SANAEI_3X_UI.value,
+            bindings = list(
+                db.scalars(
+                    select(FulfillmentTargetBindingModel).where(
+                        FulfillmentTargetBindingModel.product_version_id == product_version_id,
+                        FulfillmentTargetBindingModel.location_code == location_code,
+                        FulfillmentTargetBindingModel.quality_code == quality_code,
+                        FulfillmentTargetBindingModel.active.is_(True),
+                    )
                 )
-                .order_by(AllocationTargetModel.priority, AllocationTargetModel.id)
-            ).all()
-            target = next(
-                (row for row in targets if self._eligible(row, selected, requirements)), None
             )
-            if target is None:
-                raise ValueError("eligible allocation target unavailable")
+            eligible: list[tuple[AllocationTargetModel, FulfillmentTargetBindingModel]] = []
+            for binding in bindings:
+                capability_codes = {
+                    value for value in binding.capability_codes if isinstance(value, str)
+                }
+                if not required_codes.issubset(capability_codes):
+                    continue
+                target = db.get(AllocationTargetModel, binding.allocation_target_id)
+                if target is None:
+                    continue
+                try:
+                    inbound_number = int(target.inbound_id)
+                except ValueError:
+                    continue
+                if (
+                    target.status not in {"ACTIVE", "ENABLED"}
+                    or target.provider_kind != ProviderKind.SANAEI_3X_UI.value
+                    or target.required_protocol not in {"vless", "vmess"}
+                    or inbound_number <= 0
+                    or target.max_capacity <= target.safety_reserve
+                ):
+                    continue
+                eligible.append((target, binding))
+            if not eligible:
+                raise ValueError("authoritative allocation binding unavailable")
+            eligible.sort(key=lambda pair: (pair[0].priority, pair[0].id))
+            target = eligible[0][0]
+
             panel_row = db.get(PanelInstanceModel, target.panel_id)
             if panel_row is None or panel_row.status != "enabled":
                 raise ValueError("panel unavailable")
@@ -115,6 +172,16 @@ class DatabaseSanaeiProvisioner:
             )
             if credential_row is None or certification is None:
                 raise ValueError("credential or certification unavailable")
+            if not credential_row.key_version.startswith("aead-"):
+                raise ValueError("provider credential requires AEAD migration")
+            if (
+                certification.status != ProviderCertificationStatus.CONTRACT_VERIFIED.value
+                or certification.detected_version
+                not in {contract.release_tag, contract.release_tag.lstrip("v")}
+                or certification.contract_digest != contract.contract_digest
+            ):
+                raise ValueError("provider certification unavailable or stale")
+
             vault = ProviderCredentialVault.from_environment()
             plaintext = vault.decrypt_for_adapter(
                 EncryptedProviderCredential(
@@ -128,48 +195,22 @@ class DatabaseSanaeiProvisioner:
             secret_value: object = json.loads(plaintext)
             if not isinstance(secret_value, dict):
                 raise ValueError("credential invalid")
-            secret = cast(dict[str, object], secret_value)
-            username, password = secret.get("username"), secret.get("password")
-            if not isinstance(username, str) or not isinstance(password, str):
+            credential_fields = cast(dict[str, object], secret_value)
+            login_name = credential_fields.get("username")
+            login_passphrase = credential_fields.get("password")
+            if not isinstance(login_name, str) or not isinstance(login_passphrase, str):
                 raise ValueError("credential invalid")
-            panel = self._panel(panel_row, credential_row)
-            return panel, target, certification, username, password
-
-    @staticmethod
-    def _eligible(
-        target: AllocationTargetModel,
-        selected: dict[str, object],
-        requirements: list[object],
-    ) -> bool:
-        diagnostic = target.safe_diagnostics
-        locations = diagnostic.get("location_codes")
-        qualities = diagnostic.get("quality_codes")
-        capabilities = diagnostic.get("capability_codes")
-        capability_codes: set[str] = (
-            {value for value in cast(list[object], capabilities) if isinstance(value, str)}
-            if isinstance(capabilities, list)
-            else set[str]()
-        )
-        required_codes = {
-            value["capability_code"]
-            for item in requirements
-            if isinstance(item, dict)
-            for value in [cast(dict[str, object], item)]
-            if isinstance(value.get("capability_code"), str)
-        }
-        return (
-            isinstance(locations, list)
-            and selected.get("location_code") in locations
-            and isinstance(qualities, list)
-            and selected.get("quality_code") in qualities
-            and required_codes.issubset(capability_codes)
-            and target.required_protocol in {"vless", "vmess"}
-        )
+            return self._panel(panel_row, credential_row), target, certification, login_name, login_passphrase
 
     @staticmethod
     def _panel(row: PanelInstanceModel, credential: PanelCredentialModel) -> PanelInstance:
         tls = row.tls_policy
         endpoint = row.endpoint_policy
+        allowed_ports_value = endpoint.get("allowed_ports", [443, 8443])
+        if not isinstance(allowed_ports_value, list) or not all(
+            type(value) is int for value in allowed_ports_value
+        ):
+            raise ValueError("invalid endpoint port policy")
         return PanelInstance(
             UUID(row.id),
             PanelReference(row.public_reference),
@@ -184,13 +225,30 @@ class DatabaseSanaeiProvisioner:
             PanelTlsPolicy(verify_tls=tls.get("verify_tls") is not False),
             PanelEndpointPolicy(
                 allow_private_network=endpoint.get("allow_private_network") is True,
-                allowed_ports=frozenset(
-                    cast(list[int], endpoint.get("allowed_ports", [443, 8443]))
-                ),
+                allowed_ports=frozenset(cast(list[int], allowed_ports_value)),
                 require_https=endpoint.get("require_https") is not False,
             ),
             row.optimistic_version,
         )
+
+    def _entitlement_clock(self, attempt_id: str, duration_days: int) -> tuple[datetime, datetime]:
+        if duration_days <= 0:
+            raise ValueError("duration must be positive")
+        with self.factory.begin() as db:
+            existing = db.get(FulfillmentEntitlementClockModel, attempt_id)
+            if existing is not None:
+                return existing.starts_at, existing.expires_at
+            starts_at = datetime.now(UTC)
+            expires_at = starts_at + timedelta(days=duration_days)
+            db.add(
+                FulfillmentEntitlementClockModel(
+                    fulfillment_request_id=attempt_id,
+                    starts_at=starts_at,
+                    expires_at=expires_at,
+                    created_at=starts_at,
+                )
+            )
+            return starts_at, expires_at
 
     async def _execute(
         self,
@@ -200,51 +258,71 @@ class DatabaseSanaeiProvisioner:
         panel: PanelInstance,
         target: AllocationTargetModel,
         certification: ProviderConnectionTestModel,
-        username: str,
-        password: str,
+        login_name: str,
+        login_passphrase: str,
+        base_url: str,
     ) -> ProvisioningResult:
-        selected = cast(dict[str, object], item.snapshot["selected_options"])
-        starts = order.paid_at or order.created_at
-        expires = starts + timedelta(days=int(cast(int, selected["duration_days"])))
-        contract = CERTIFIED_CONTRACTS[ProviderKind.SANAEI_3X_UI]
-        identity = RemoteIdentifier(attempt.remote_identity_uuid)
-        inbound = RemoteIdentifier(target.inbound_id)
-        command = ProviderMutationCommand(
-            UUID(attempt.id),
-            ProviderMutationOperation.CREATE_REMOTE_IDENTITY,
-            f"svc_{attempt.id[:24]}",
-            f"customer_{order.customer_id[:12]}",
-            panel.public_reference,
-            "0.6a1",
-            certification.detected_version or "",
-            identity,
-            (inbound,),
-            DesiredRemoteIdentity(
-                attempt.deduplication_key,
-                target.required_protocol,
-                True,
-                RemoteTrafficLimit(int(cast(int, selected["traffic_bytes"]))),
-                RemoteExpiryPolicy(expires),
-                int(cast(int, selected["device_count"])),
-                "customer service",
-                f"svc-{attempt.remote_identity_uuid.replace('-', '')[:20]}",
-                (inbound,),
-            ),
-            None,
-            attempt.deduplication_key,
-            "fulfillment-worker",
-            "paid order fulfillment",
-            datetime.now(UTC),
-            attempt.correlation_id,
-            attempt.causation_id,
-        )
-        base_url = EndpointValidator().validate(
-            panel.endpoint_origin + panel.base_path, panel.endpoint_policy, panel.tls_policy
-        )
         transport: SanaeiAuthenticatedTransport | None = None
         try:
-            transport = await SanaeiAuthenticatedTransport.authenticate(
-                base_url, username, password, verify_tls=panel.tls_policy.verify_tls
+            try:
+                transport = await SanaeiAuthenticatedTransport.authenticate(
+                    base_url,
+                    login_name,
+                    login_passphrase,
+                    verify_tls=panel.tls_policy.verify_tls,
+                )
+            except PermissionError:
+                return ProvisioningResult("BLOCKED_BY_CONFIGURATION", "PROVIDER_AUTH_FAILED")
+            except ConnectionError:
+                return ProvisioningResult("TRANSIENT_FAILURE", "PROVIDER_AUTH_UNAVAILABLE")
+
+            selected = cast(dict[str, object], item.snapshot["selected_options"])
+            duration_days = selected.get("duration_days")
+            traffic_bytes = selected.get("traffic_bytes")
+            device_count = selected.get("device_count")
+            if (
+                type(duration_days) is not int
+                or type(traffic_bytes) is not int
+                or type(device_count) is not int
+                or duration_days <= 0
+                or traffic_bytes < 0
+                or device_count <= 0
+            ):
+                return ProvisioningResult(
+                    "BLOCKED_BY_CONFIGURATION", "IMMUTABLE_ENTITLEMENT_INVALID"
+                )
+            starts_at, expires_at = self._entitlement_clock(attempt.id, duration_days)
+            contract = CERTIFIED_CONTRACTS[ProviderKind.SANAEI_3X_UI]
+            identity = RemoteIdentifier(attempt.remote_identity_uuid)
+            inbound = RemoteIdentifier(target.inbound_id)
+            command = ProviderMutationCommand(
+                UUID(attempt.id),
+                ProviderMutationOperation.CREATE_REMOTE_IDENTITY,
+                f"svc_{attempt.id[:24]}",
+                f"customer_{order.customer_id[:12]}",
+                panel.public_reference,
+                contract.contract_digest,
+                certification.detected_version or "",
+                identity,
+                (inbound,),
+                DesiredRemoteIdentity(
+                    attempt.deduplication_key,
+                    target.required_protocol,
+                    True,
+                    RemoteTrafficLimit(traffic_bytes),
+                    RemoteExpiryPolicy(expires_at),
+                    device_count,
+                    "customer service",
+                    f"svc-{attempt.remote_identity_uuid.replace('-', '')[:20]}",
+                    (inbound,),
+                ),
+                None,
+                attempt.deduplication_key,
+                "fulfillment-worker",
+                "paid order fulfillment",
+                starts_at,
+                attempt.correlation_id,
+                attempt.causation_id,
             )
             result = await execute_certified_sanaei_create(
                 SanaeiCreateExecutor(transport, panel),
@@ -255,22 +333,20 @@ class DatabaseSanaeiProvisioner:
                 detected_digest=certification.contract_digest,
                 certification_status=ProviderCertificationStatus(certification.status),
             )
-        except PermissionError:
-            return ProvisioningResult("BLOCKED_BY_CONFIGURATION", "PROVIDER_AUTH_FAILED")
+            return ProvisioningResult(
+                result.outcome.value,
+                result.safe_code,
+                expires_at,
+                {
+                    "allocation_target_id": target.id,
+                    "panel_reference": panel.public_reference,
+                    "provider_kind": ProviderKind.SANAEI_3X_UI.value,
+                    "contract_digest": contract.contract_digest,
+                },
+                False,
+                str(result.remote_identity) if result.outcome is MutationOutcome.SUCCESS else None,
+                starts_at,
+            )
         finally:
             if transport is not None:
                 await transport.aclose()
-        delivery_ready = target.safe_diagnostics.get("delivery_ready") is True
-        return ProvisioningResult(
-            result.outcome.value,
-            result.safe_code,
-            expires,
-            {
-                "allocation_target_id": target.id,
-                "panel_reference": panel.public_reference,
-                "provider_kind": ProviderKind.SANAEI_3X_UI.value,
-                "contract_digest": contract.contract_digest,
-            },
-            delivery_ready,
-            str(result.remote_identity) if result.outcome is MutationOutcome.SUCCESS else None,
-        )
