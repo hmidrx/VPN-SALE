@@ -47,7 +47,8 @@ class ServiceActivationRequestModel(IdentityBase):
     __table_args__ = (
         UniqueConstraint("service_id", name="uq_service_activation_service"),
         CheckConstraint(
-            "status in ('PENDING','CLAIMED','RETRY_PENDING','BLOCKED','OPERATOR_REVIEW','SUCCEEDED')",
+            "status in ('PENDING','CLAIMED','RETRY_PENDING','BLOCKED',"
+            "'OPERATOR_REVIEW','SUCCEEDED')",
             name="ck_service_activation_status",
         ),
         CheckConstraint("attempt_count >= 0", name="ck_service_activation_attempt_count"),
