@@ -16,6 +16,7 @@ SERVICE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 ATTACHMENT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 TARGET_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 PANEL_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+POOL_ID = "99999999-9999-4999-8999-999999999999"
 PROFILE_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 PROFILE_VERSION_ID = "ffffffff-ffff-4fff-8fff-ffffffffffff"
 PRODUCT_VERSION_ID = "11111111-1111-4111-8111-111111111111"
@@ -93,6 +94,7 @@ def _attachment() -> ServiceAttachmentModel:
 def _target() -> AllocationTargetModel:
     return AllocationTargetModel(
         id=TARGET_ID,
+        pool_id=POOL_ID,
         panel_id=PANEL_ID,
         node_id=None,
         inbound_id="1",
@@ -104,11 +106,8 @@ def _target() -> AllocationTargetModel:
         max_capacity=100,
         safety_reserve=5,
         status="ACTIVE",
-        minimum_certification_status="CONTRACT_VERIFIED",
+        certification_minimum="CONTRACT_VERIFIED",
         safe_diagnostics={},
-        created_at=datetime(2026, 8, 15, tzinfo=UTC),
-        updated_at=datetime(2026, 8, 15, tzinfo=UTC),
-        version=1,
     )
 
 
