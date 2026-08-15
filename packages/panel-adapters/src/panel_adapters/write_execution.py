@@ -229,7 +229,9 @@ class SanaeiCreateExecutor:
 
         body = response.json_body
         envelope = cast(Mapping[str, object], body) if isinstance(body, Mapping) else None
-        accepted = response.status_code < 400 and envelope is not None and envelope.get("success") is True
+        accepted = (
+            response.status_code < 400 and envelope is not None and envelope.get("success") is True
+        )
 
         # CREATE is not naturally idempotent. Any deterministic rejection/duplicate-like response
         # is reconciled before it can become a compensating/refund decision.
