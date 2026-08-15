@@ -38,6 +38,7 @@ from .orders import (
     admin_wallet_reservation_router,
 )
 from .orders import admin_router as admin_order_router
+from .orders import customer_router as order_router
 from .payments import admin_router as admin_payment_router
 from .payments import customer_router as payment_router
 from .payments import webhook_router as payment_webhook_router
