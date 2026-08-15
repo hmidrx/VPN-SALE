@@ -51,7 +51,11 @@ def _optional_int(value: object) -> int | None:
     return value if type(value) is int else None
 
 
-def _profile_from_model(row: DeliveryProfileVersionModel) -> DeliveryProfileVersion:
+def delivery_profile_from_model(
+    row: DeliveryProfileVersionModel,
+    *,
+    require_published: bool = True,
+) -> DeliveryProfileVersion:
     tls_value = _str_dict(row.tls_settings)
     reality_value = _str_dict(row.reality_settings)
     transport_value = _str_dict(row.transport_settings)
@@ -64,7 +68,10 @@ def _profile_from_model(row: DeliveryProfileVersionModel) -> DeliveryProfileVers
         if not isinstance(server_name, str) or not isinstance(alpn_value, list) or not all(
             isinstance(item, str) for item in alpn_value
         ):
-            raise DeliveryError(DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE, "invalid TLS profile")
+            raise DeliveryError(
+                DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE,
+                "invalid TLS profile",
+            )
         tls = DeliveryTlsSettings(
             server_name=server_name,
             alpn=tuple(cast(list[str], alpn_value)),
@@ -77,9 +84,13 @@ def _profile_from_model(row: DeliveryProfileVersionModel) -> DeliveryProfileVers
         server_name = reality_value.get("server_name")
         public_key = reality_value.get("public_key")
         short_id = reality_value.get("short_id")
-        if not all(isinstance(value, str) and value for value in (server_name, public_key, short_id)):
+        if not all(
+            isinstance(value, str) and value
+            for value in (server_name, public_key, short_id)
+        ):
             raise DeliveryError(
-                DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE, "invalid REALITY profile"
+                DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE,
+                "invalid REALITY profile",
             )
         reality = DeliveryRealitySettings(
             server_name=cast(str, server_name),
@@ -100,19 +111,23 @@ def _profile_from_model(row: DeliveryProfileVersionModel) -> DeliveryProfileVers
         path = transport_value.get("path")
         if not isinstance(path, str) or not path:
             raise DeliveryError(
-                DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE, "invalid WebSocket profile"
+                DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE,
+                "invalid WebSocket profile",
             )
         websocket = DeliveryWebSocketSettings(
             path=path,
             host=_optional_str(transport_value.get("host")),
-            early_data_header_name=_optional_str(transport_value.get("early_data_header_name")),
+            early_data_header_name=_optional_str(
+                transport_value.get("early_data_header_name")
+            ),
             early_data_length=_optional_int(transport_value.get("early_data_length")),
         )
     elif transport is DeliveryTransport.GRPC:
         service_name = transport_value.get("service_name")
         if not isinstance(service_name, str) or not service_name:
             raise DeliveryError(
-                DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE, "invalid gRPC profile"
+                DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE,
+                "invalid gRPC profile",
             )
         grpc = DeliveryGrpcSettings(
             service_name=service_name,
@@ -123,7 +138,8 @@ def _profile_from_model(row: DeliveryProfileVersionModel) -> DeliveryProfileVers
         path = transport_value.get("path")
         if not isinstance(path, str) or not path:
             raise DeliveryError(
-                DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE, "invalid XHTTP profile"
+                DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE,
+                "invalid XHTTP profile",
             )
         xhttp = DeliveryXhttpSettings(
             path=path,
@@ -134,14 +150,17 @@ def _profile_from_model(row: DeliveryProfileVersionModel) -> DeliveryProfileVers
         path = transport_value.get("path")
         if not isinstance(path, str) or not path:
             raise DeliveryError(
-                DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE, "invalid HTTPUpgrade profile"
+                DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE,
+                "invalid HTTPUpgrade profile",
             )
         httpupgrade = DeliveryHttpUpgradeSettings(
             path=path,
             host=_optional_str(transport_value.get("host")),
         )
     elif transport is DeliveryTransport.RAW:
-        raw = DeliveryRawSettings(header_type=_optional_str(transport_value.get("header_type")))
+        raw = DeliveryRawSettings(
+            header_type=_optional_str(transport_value.get("header_type"))
+        )
 
     protocol_fields: dict[str, str | int | bool] = {}
     for key, value in protocol_value.items():
@@ -174,9 +193,13 @@ def _profile_from_model(row: DeliveryProfileVersionModel) -> DeliveryProfileVers
         compatibility_tags=frozenset(row.compatibility_tags or []),
         published_at=row.published_at,
     )
-    if profile.status is not DeliveryProfileStatus.PUBLISHED or profile.validate():
+    allowed_statuses = {DeliveryProfileStatus.PUBLISHED}
+    if not require_published:
+        allowed_statuses.add(DeliveryProfileStatus.SUPERSEDED)
+    if profile.status not in allowed_statuses or profile.published_at is None or profile.validate():
         raise DeliveryError(
-            DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE, "delivery profile is not publishable"
+            DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE,
+            "delivery profile is not renderable",
         )
     return profile
 
@@ -201,9 +224,10 @@ def load_allocation_delivery_profile(
     row = db.get(DeliveryProfileVersionModel, assignment.profile_version_id)
     if row is None:
         raise DeliveryError(
-            DeliveryErrorCode.DELIVERY_PROFILE_NOT_FOUND, "delivery profile version missing"
+            DeliveryErrorCode.DELIVERY_PROFILE_NOT_FOUND,
+            "delivery profile version missing",
         )
-    profile = _profile_from_model(row)
+    profile = delivery_profile_from_model(row)
     if profile.protocol.value.lower() != required_protocol.lower():
         raise DeliveryError(
             DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE,
@@ -223,12 +247,14 @@ def render_service_connection(
     remote_identity = attachment.remote_identity_reference
     if not remote_identity:
         raise DeliveryError(
-            DeliveryErrorCode.DELIVERY_CREDENTIAL_UNAVAILABLE, "remote identity unavailable"
+            DeliveryErrorCode.DELIVERY_CREDENTIAL_UNAVAILABLE,
+            "remote identity unavailable",
         )
     product_version = service.entitlement_snapshot.get("product_version_id")
     if not isinstance(product_version, str) or not product_version:
         raise DeliveryError(
-            DeliveryErrorCode.DELIVERY_FIELD_REQUIRED, "product version unavailable"
+            DeliveryErrorCode.DELIVERY_FIELD_REQUIRED,
+            "product version unavailable",
         )
     fingerprint = hashlib.sha256(remote_identity.encode()).hexdigest()
     ctx = DeliveryAttachmentContext(
@@ -243,7 +269,9 @@ def render_service_connection(
         transport=profile.transport,
         security=profile.security,
         status="VERIFIED" if require_verified else attachment.status,
-        verification_status="VERIFIED" if require_verified else attachment.verification_status,
+        verification_status=(
+            "VERIFIED" if require_verified else attachment.verification_status
+        ),
         credential_fingerprint=fingerprint,
         observed_remote_identity=remote_identity,
         required=attachment.required,
