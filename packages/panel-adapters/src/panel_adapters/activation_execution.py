@@ -186,7 +186,9 @@ class SanaeiActivationExecutor:
                 MutationOutcome.TRANSIENT_FAILURE, "PROVIDER_TEMPORARY_FAILURE"
             )
         response_body = response.json_body
-        envelope = cast(dict[str, object], response_body) if isinstance(response_body, dict) else None
+        envelope = (
+            cast(dict[str, object], response_body) if isinstance(response_body, dict) else None
+        )
         accepted = (
             response.status_code < 400 and envelope is not None and envelope.get("success") is True
         )
