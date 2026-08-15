@@ -29,6 +29,10 @@ class OrderFinancialStatus(StrEnum):
 class OrderFulfillmentStatus(StrEnum):
     NOT_READY = "NOT_READY"
     READY = "READY"
+    PROVISIONING = "PROVISIONING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    OPERATOR_REVIEW = "OPERATOR_REVIEW"
     CANCELLED = "CANCELLED"
 
 

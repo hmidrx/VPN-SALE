@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import time
 
 import httpx
@@ -14,6 +15,18 @@ from .manual_topup_delivery import (
     ManualTopupDeliveryWorker,
     TelegramDeliveryError,
 )
+from .order_fulfillment import DisabledProvisioner, OrderFulfillmentWorker
+from .real_provisioner import DatabaseSanaeiProvisioner
+
+
+def build_order_provisioner(
+    factory: sessionmaker[Session], provider_writes_enabled: bool
+) -> DisabledProvisioner | DatabaseSanaeiProvisioner:
+    return (
+        DatabaseSanaeiProvisioner(factory, True)
+        if provider_writes_enabled
+        else DisabledProvisioner()
+    )
 
 
 class BotApiTransport:
@@ -54,8 +67,24 @@ def main() -> None:
         BotApiTransport(token),
         DeliverySettings(enabled, os.getenv("VPN_SALE_PUBLIC_APP_ORIGIN", "http://localhost:3000")),
     )
+    provider_writes_enabled = (
+        os.getenv("VPN_SALE_PROVIDER_WRITES_ENABLED", "false").lower() == "true"
+    )
+    provisioner = build_order_provisioner(factory, provider_writes_enabled)
+    fulfillment = OrderFulfillmentWorker(
+        factory, provisioner, f"{socket.gethostname()}:{os.getpid()}"
+    )
     while True:
-        processed = worker.run_once()
+        processed = 0
+        try:
+            processed += worker.run_once()
+        except Exception:
+            # A responsibility is isolated so its next poll remains available. Log only type.
+            print("manual_topup_worker_cycle_failed", flush=True)
+        try:
+            processed += fulfillment.run_once()
+        except Exception:
+            print("order_fulfillment_worker_cycle_failed", flush=True)
         time.sleep(1 if processed else 5)
 
 

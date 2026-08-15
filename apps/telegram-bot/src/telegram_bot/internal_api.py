@@ -200,6 +200,11 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
             return None
 
     def _purchase_result(self, data: dict[str, Any]) -> PurchaseResult:
+        purchase_state = str(data.get("purchase_state") or data["fulfillment_status"])
+        service_lifecycle = (
+            str(data["service_lifecycle"]) if data.get("service_lifecycle") else None
+        )
+        delivery_ready = data.get("delivery_ready") is True
         return PurchaseResult(
             str(data.get("order_reference") or ""),
             str(data["status"]),
@@ -207,8 +212,11 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
             self._purchase_plan(cast(dict[str, Any], data["plan"])),
             str(data["service_reference"]) if data.get("service_reference") else None,
             datetime.fromisoformat(str(data["expires_at"])) if data.get("expires_at") else None,
-            bool(data.get("refunded", False)),
-            str(data.get("outcome", "ACCEPTED")),
+            refunded=bool(data.get("refunded", False)),
+            outcome=str(data.get("outcome", "ACCEPTED")),
+            purchase_state=purchase_state,
+            service_lifecycle=service_lifecycle,
+            delivery_ready=delivery_ready,
         )
 
     def confirm_purchase(

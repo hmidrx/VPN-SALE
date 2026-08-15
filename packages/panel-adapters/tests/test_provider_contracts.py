@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
+import hmac
 
 import pytest
 from panel_adapters.contracts import AdapterRegistry, EndpointValidator, SanitizedHttpResponse
 from panel_adapters.live_certification import main
-from panel_adapters.vault import ProviderCredentialVault
+from panel_adapters.vault import EncryptedProviderCredential, ProviderCredentialVault
 from vpnsale_domain.providers import (
     CapabilitySupport,
     PanelEndpointPolicy,
@@ -81,12 +83,70 @@ def test_write_capabilities_are_disabled() -> None:
     assert exc.value.code is ProviderErrorCode.PROVIDER_OPERATION_NOT_ENABLED
 
 
-def test_vault_encrypts_without_plaintext_recovery_api() -> None:
-    key = base64.urlsafe_b64encode(b"0" * 32).decode()
-    vault = ProviderCredentialVault(key)
-    encrypted = vault.encrypt("secret-token", "api_token", b"panel")
+def _vault_key(byte: bytes) -> str:
+    return base64.urlsafe_b64encode(byte * 32).decode()
+
+
+def _legacy_record(key: bytes, plaintext: str, aad: bytes) -> EncryptedProviderCredential:
+    nonce = b"n" * 16
+    payload = plaintext.encode()
+    blocks: list[bytes] = []
+    counter = 0
+    while sum(len(block) for block in blocks) < len(payload):
+        counter += 1
+        blocks.append(
+            hmac.new(key, nonce + aad + counter.to_bytes(4, "big"), hashlib.sha256).digest()
+        )
+    stream = b"".join(blocks)[: len(payload)]
+    ciphertext = bytes(a ^ b for a, b in zip(payload, stream, strict=True))
+    tag = hmac.new(key, nonce + aad + ciphertext, hashlib.sha256).digest()
+    return EncryptedProviderCredential(
+        "v1",
+        base64.urlsafe_b64encode(nonce).decode(),
+        base64.urlsafe_b64encode(tag + ciphertext).decode(),
+        "api_token",
+    )
+
+
+def test_vault_uses_aead_and_round_trips_without_plaintext_storage() -> None:
+    vault = ProviderCredentialVault(_vault_key(b"0"))
+    encrypted = vault.encrypt("secret-token", "api_token", b"panel")  # noqa: S106
+    assert encrypted.key_version == "aead-v1"
     assert "secret-token" not in encrypted.ciphertext_b64
     assert vault.decrypt_for_adapter(encrypted, b"panel") == "secret-token"
+
+
+def test_vault_rejects_tamper_wrong_key_and_wrong_aad() -> None:
+    vault = ProviderCredentialVault(_vault_key(b"1"))
+    encrypted = vault.encrypt("secret-token", "api_token", b"panel")  # noqa: S106
+    raw = bytearray(base64.urlsafe_b64decode(encrypted.ciphertext_b64))
+    raw[-1] ^= 1
+    tampered = EncryptedProviderCredential(
+        encrypted.key_version,
+        encrypted.nonce_b64,
+        base64.urlsafe_b64encode(bytes(raw)).decode(),
+        encrypted.credential_kind,
+    )
+    with pytest.raises(ProviderError):
+        vault.decrypt_for_adapter(tampered, b"panel")
+    with pytest.raises(ProviderError):
+        ProviderCredentialVault(_vault_key(b"2")).decrypt_for_adapter(encrypted, b"panel")
+    with pytest.raises(ProviderError):
+        vault.decrypt_for_adapter(encrypted, b"other-panel")
+
+
+def test_legacy_vault_records_are_blocked_by_default_but_readable_for_controlled_migration() -> (
+    None
+):
+    key = b"3" * 32
+    record = _legacy_record(key, "legacy-value", b"panel")
+    strict = ProviderCredentialVault(base64.urlsafe_b64encode(key).decode())
+    with pytest.raises(ProviderError):
+        strict.decrypt_for_adapter(record, b"panel")
+    migration = ProviderCredentialVault(
+        base64.urlsafe_b64encode(key).decode(), allow_legacy_decrypt=True
+    )
+    assert migration.decrypt_for_adapter(record, b"panel") == "legacy-value"
 
 
 def test_endpoint_validator_rejects_unsafe_schemes() -> None:
@@ -125,11 +185,7 @@ class InventoryTransport:
 def _ctx() -> ProviderRequestContext:
     from uuid import uuid4
 
-    from vpnsale_domain.providers import (
-        PanelInstance,
-        PanelReference,
-        ProviderKind,
-    )
+    from vpnsale_domain.providers import PanelInstance, PanelReference, ProviderKind
 
     return ProviderRequestContext(
         PanelInstance(

@@ -32,7 +32,7 @@ postgres_last4_constraint = CheckConstraint(
 ).ddl_if(dialect="postgresql")
 
 sqlite_last4_constraint = CheckConstraint(
-    "length(card_last4) = 4 " "AND card_last4 GLOB '[0-9][0-9][0-9][0-9]'",
+    "length(card_last4) = 4 AND card_last4 GLOB '[0-9][0-9][0-9][0-9]'",
     name="ck_manual_topup_destination_last4_sqlite",
 ).ddl_if(dialect="sqlite")
 
