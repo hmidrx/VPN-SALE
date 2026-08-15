@@ -41,7 +41,7 @@ class ServiceModel(IdentityBase):
     unit_index: Mapped[int] = mapped_column(Integer, nullable=False)
     entitlement_snapshot: Mapped[dict[str, object]] = mapped_column(JSON_TYPE, nullable=False)
     allocation_policy_snapshot: Mapped[dict[str, object] | None] = mapped_column(JSON_TYPE)
-    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
