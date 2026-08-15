@@ -135,6 +135,27 @@ def test_vault_rejects_tamper_wrong_key_and_wrong_aad() -> None:
         vault.decrypt_for_adapter(encrypted, b"other-panel")
 
 
+def test_vault_rotation_keeps_previous_aead_version_decrypt_only() -> None:
+    old_key = _vault_key(b"4")
+    new_key = _vault_key(b"5")
+    old_vault = ProviderCredentialVault(old_key, "aead-v1")
+    old_record = old_vault.encrypt("rotated-value", "api_token", b"panel")
+
+    rotated = ProviderCredentialVault(
+        new_key,
+        "aead-v2",
+        decryption_keys_b64={"aead-v1": old_key},
+    )
+    assert rotated.decrypt_for_adapter(old_record, b"panel") == "rotated-value"
+    new_record = rotated.encrypt("new-value", "api_token", b"panel")
+    assert new_record.key_version == "aead-v2"
+    assert rotated.decrypt_for_adapter(new_record, b"panel") == "new-value"
+
+    without_previous = ProviderCredentialVault(new_key, "aead-v2")
+    with pytest.raises(ProviderError):
+        without_previous.decrypt_for_adapter(old_record, b"panel")
+
+
 def test_legacy_vault_records_are_blocked_by_default_but_readable_for_controlled_migration() -> (
     None
 ):
