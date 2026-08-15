@@ -114,7 +114,9 @@ class SanaeiActivationExecutor:
 
     async def execute(self, command: ProviderMutationCommand) -> ProviderActivationResult:
         if command.operation is not ProviderMutationOperation.UPDATE_REMOTE_IDENTITY:
-            return ProviderActivationResult(MutationOutcome.PERMANENT_FAILURE, "OPERATION_UNSUPPORTED")
+            return ProviderActivationResult(
+                MutationOutcome.PERMANENT_FAILURE, "OPERATION_UNSUPPORTED"
+            )
         try:
             remote_id, traffic, expiry_ms, device_limit = self._desired_values(command)
         except ValueError:
