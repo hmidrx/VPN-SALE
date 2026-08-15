@@ -17,6 +17,7 @@ from panel_adapters.vault import EncryptedProviderCredential, ProviderCredential
 from panel_adapters.write_execution import MutationOutcome, SanaeiAuthenticatedTransport
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
+from vpnsale_domain.delivery import DeliveryError
 from vpnsale_domain.providers import (
     DesiredRemoteIdentity,
     PanelCredentialReference,
@@ -35,6 +36,10 @@ from vpnsale_domain.providers import (
 )
 
 from platform_api.activation_models import ServiceActivationRequestModel
+from platform_api.delivery_resolution import (
+    load_allocation_delivery_profile,
+    render_service_connection,
+)
 from platform_api.provider_runtime_models import (
     PanelCredentialModel,
     PanelInstanceModel,
@@ -65,14 +70,35 @@ class DatabaseSanaeiActivator:
                 login_name,
                 login_passphrase,
             ) = self._select(attachment)
+            duration_days, traffic_bytes, device_limit = self._entitlement(service)
+            remote_identity = self._remote_identity(attachment)
+            with self.factory() as db:
+                profile = load_allocation_delivery_profile(
+                    db, target.id, target.required_protocol
+                )
+                rendered_uri, credential_fingerprint = render_service_connection(
+                    service,
+                    attachment,
+                    target,
+                    profile,
+                    require_verified=True,
+                )
+            if not rendered_uri:
+                raise ValueError("delivery renderer returned empty output")
+            delivery_profile_version_id = str(profile.version_id)
             base_url = EndpointValidator().validate(
                 panel.endpoint_origin + panel.base_path,
                 panel.endpoint_policy,
                 panel.tls_policy,
             )
-            duration_days, traffic_bytes, device_limit = self._entitlement(service)
-            remote_identity = self._remote_identity(attachment)
-        except (ProviderError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        except (
+            DeliveryError,
+            ProviderError,
+            ValueError,
+            KeyError,
+            TypeError,
+            json.JSONDecodeError,
+        ):
             return ActivationResult("BLOCKED_BY_CONFIGURATION", "ACTIVATION_SELECTION_BLOCKED")
 
         activation_at = datetime.now(UTC)
@@ -92,6 +118,8 @@ class DatabaseSanaeiActivator:
                 device_limit,
                 activation_at,
                 expires_at,
+                delivery_profile_version_id,
+                credential_fingerprint,
             )
         )
 
@@ -117,9 +145,7 @@ class DatabaseSanaeiActivator:
         value = attachment.remote_identity_reference
         if not value:
             raise ValueError("remote identity unavailable")
-        # The CREATE pipeline persists the deterministic UUID as the remote identity.
-        parsed = UUID(value)
-        return str(parsed)
+        return str(UUID(value))
 
     def _select(
         self, attachment: ServiceAttachmentModel
@@ -246,6 +272,8 @@ class DatabaseSanaeiActivator:
         device_limit: int,
         activation_at: datetime,
         expires_at: datetime,
+        delivery_profile_version_id: str,
+        credential_fingerprint: str,
     ) -> ActivationResult:
         transport: SanaeiAuthenticatedTransport | None = None
         try:
@@ -308,7 +336,8 @@ class DatabaseSanaeiActivator:
                     result.safe_code,
                     activation_at,
                     expires_at,
-                    result.delivery_links,
+                    delivery_profile_version_id,
+                    credential_fingerprint,
                 )
             return ActivationResult(result.outcome.value, result.safe_code)
         finally:
