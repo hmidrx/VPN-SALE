@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,33 +49,4 @@ class ServiceActivationRequestModel(IdentityBase):
             "next_attempt_at",
             "lease_expires_at",
         ),
-    )
-
-
-class ServiceDeliveryModel(IdentityBase):
-    """Encrypted customer delivery material. Plain provider links are never persisted."""
-
-    __tablename__ = "service_deliveries"
-
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
-    service_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False), ForeignKey("services.id", ondelete="CASCADE"), nullable=False
-    )
-    format: Mapped[str] = mapped_column(String(32), nullable=False, default="URI_LIST")
-    encrypted_payload: Mapped[str] = mapped_column(Text, nullable=False)
-    encryption_key_version: Mapped[str] = mapped_column(String(32), nullable=False)
-    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    item_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-    __table_args__ = (
-        UniqueConstraint("service_id", name="uq_service_delivery_service"),
-        CheckConstraint("item_count > 0", name="ck_service_delivery_item_count"),
-        CheckConstraint(
-            "status in ('PREPARED','DELIVERED')",
-            name="ck_service_delivery_status",
-        ),
-        Index("ix_service_delivery_status_created", "status", "created_at"),
     )
