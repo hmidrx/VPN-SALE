@@ -65,8 +65,10 @@ def delivery_profile_from_model(
     if tls_value:
         server_name = tls_value.get("server_name")
         alpn_value = tls_value.get("alpn", [])
-        if not isinstance(server_name, str) or not isinstance(alpn_value, list) or not all(
-            isinstance(item, str) for item in alpn_value
+        if (
+            not isinstance(server_name, str)
+            or not isinstance(alpn_value, list)
+            or not all(isinstance(item, str) for item in alpn_value)
         ):
             raise DeliveryError(
                 DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE,
@@ -85,8 +87,7 @@ def delivery_profile_from_model(
         public_key = reality_value.get("public_key")
         short_id = reality_value.get("short_id")
         if not all(
-            isinstance(value, str) and value
-            for value in (server_name, public_key, short_id)
+            isinstance(value, str) and value for value in (server_name, public_key, short_id)
         ):
             raise DeliveryError(
                 DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE,
@@ -117,9 +118,7 @@ def delivery_profile_from_model(
         websocket = DeliveryWebSocketSettings(
             path=path,
             host=_optional_str(transport_value.get("host")),
-            early_data_header_name=_optional_str(
-                transport_value.get("early_data_header_name")
-            ),
+            early_data_header_name=_optional_str(transport_value.get("early_data_header_name")),
             early_data_length=_optional_int(transport_value.get("early_data_length")),
         )
     elif transport is DeliveryTransport.GRPC:
@@ -158,9 +157,7 @@ def delivery_profile_from_model(
             host=_optional_str(transport_value.get("host")),
         )
     elif transport is DeliveryTransport.RAW:
-        raw = DeliveryRawSettings(
-            header_type=_optional_str(transport_value.get("header_type"))
-        )
+        raw = DeliveryRawSettings(header_type=_optional_str(transport_value.get("header_type")))
 
     protocol_fields: dict[str, str | int | bool] = {}
     for key, value in protocol_value.items():
@@ -269,9 +266,7 @@ def render_service_connection(
         transport=profile.transport,
         security=profile.security,
         status="VERIFIED" if require_verified else attachment.status,
-        verification_status=(
-            "VERIFIED" if require_verified else attachment.verification_status
-        ),
+        verification_status=("VERIFIED" if require_verified else attachment.verification_status),
         credential_fingerprint=fingerprint,
         observed_remote_identity=remote_identity,
         required=attachment.required,
