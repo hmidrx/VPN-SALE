@@ -34,10 +34,7 @@ from platform_api.wallet_models import (
     WalletBalanceProjectionModel,
     WalletModel,
 )
-from platform_worker.order_fulfillment import (
-    OrderFulfillmentWorker,
-    ProvisioningResult,
-)
+from platform_worker.order_fulfillment import OrderFulfillmentWorker, ProvisioningResult
 
 TOKEN = "integration-token-with-at-least-thirty-two-characters"  # noqa: S105
 CUSTOMER_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"
@@ -322,6 +319,9 @@ async def test_fulfillment_is_exactly_once_and_visible_to_bot_and_service_projec
         assert summary.entitlement.quality_label == "استاندارد"
         assert summary.lifecycle == "PENDING_ACTIVATION"
         assert summary.delivery_ready is False
+        assert summary.starts_at is None
+        assert summary.activated_at is None
+        assert summary.expires_at is None
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://private") as client:
         status_response = await client.get(
             f"/api/v1/internal/telegram/purchase/orders/{order_reference}", headers=headers()
@@ -329,7 +329,7 @@ async def test_fulfillment_is_exactly_once_and_visible_to_bot_and_service_projec
     assert status_response.status_code == 200
     status_payload = status_response.json()
     assert status_payload["service_reference"].startswith("svc_")
-    assert status_payload["expires_at"] is not None
+    assert status_payload["expires_at"] is None
     assert status_payload["service_lifecycle"] == "PENDING_ACTIVATION"
     assert status_payload["delivery_ready"] is False
     assert status_payload["purchase_state"] == "PENDING_DELIVERY"
