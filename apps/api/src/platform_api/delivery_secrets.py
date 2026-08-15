@@ -65,9 +65,10 @@ class DeliveryPayloadCipher:
     def validate_links(links: object) -> tuple[str, ...]:
         if not isinstance(links, list) or not 1 <= len(links) <= _MAX_LINKS:
             raise DeliveryPayloadError("provider delivery links invalid")
+        raw_links = cast(list[object], links)
         result: list[str] = []
         total = 0
-        for raw in links:
+        for raw in raw_links:
             if not isinstance(raw, str):
                 raise DeliveryPayloadError("provider delivery link invalid")
             link = raw.strip()
