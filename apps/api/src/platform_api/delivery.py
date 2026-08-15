@@ -147,8 +147,7 @@ def _required_attachments(db: Session, service_id: str) -> list[ServiceAttachmen
 def _verified_required_attachments(db: Session, service_id: str) -> bool:
     attachments = _required_attachments(db, service_id)
     return bool(attachments) and all(
-        item.status == "VERIFIED" and item.verification_status == "VERIFIED"
-        for item in attachments
+        item.status == "VERIFIED" and item.verification_status == "VERIFIED" for item in attachments
     )
 
 
