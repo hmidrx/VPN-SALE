@@ -188,7 +188,10 @@ class AdapterRegistry:
 
     def certified(self, kind: ProviderKind, version: str, digest: str | None) -> ProviderAdapter:
         adapter = self.adapters[kind]
-        if version != adapter.contract.release_tag.lstrip("v") and version != adapter.contract.release_tag:
+        if (
+            version != adapter.contract.release_tag.lstrip("v")
+            and version != adapter.contract.release_tag
+        ):
             raise ProviderError(
                 ProviderErrorCode.PROVIDER_VERSION_UNSUPPORTED, "unsupported panel version"
             )
