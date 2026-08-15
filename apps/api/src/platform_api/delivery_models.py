@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -116,6 +116,9 @@ class DeliveryRevisionModel(IdentityBase):
     compatibility_state: Mapped[dict[str, object]] = mapped_column(JSON_TYPE, nullable=False)
     reason: Mapped[str] = mapped_column(String(80), nullable=False)
     correlation_reference: Mapped[str] = mapped_column(String(96), nullable=False)
+    encrypted_payload: Mapped[str | None] = mapped_column(Text)
+    encryption_key_version: Mapped[str | None] = mapped_column(String(64))
+    payload_sha256: Mapped[str | None] = mapped_column(String(80))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
