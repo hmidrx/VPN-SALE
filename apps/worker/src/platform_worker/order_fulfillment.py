@@ -231,7 +231,9 @@ class OrderFulfillmentWorker:
                 entitlement = canonical_service_entitlement(
                     {
                         **item.snapshot,
-                        "telegram_purchase_display": order.snapshot.get("telegram_purchase_display"),
+                        "telegram_purchase_display": order.snapshot.get(
+                            "telegram_purchase_display"
+                        ),
                     }
                 )
                 target_id = (result.provider_mapping or {}).get("allocation_target_id")
