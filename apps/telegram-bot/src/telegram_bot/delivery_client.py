@@ -9,9 +9,7 @@ from telegram_bot.portal import CustomerContext
 class DeliveryPrivatePlatformClient(PrivatePlatformClient):
     """Production private platform client with explicit sensitive delivery access."""
 
-    def service_delivery_links(
-        self, context: CustomerContext, service_ref: str
-    ) -> tuple[str, ...]:
+    def service_delivery_links(self, context: CustomerContext, service_ref: str) -> tuple[str, ...]:
         data = self._request(  # noqa: SLF001 - intentional private adapter extension
             "GET", f"/services/{service_ref}/delivery", context.telegram_user_id
         )
