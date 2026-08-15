@@ -6,9 +6,7 @@ from telegram_bot.runtime.purchase_truth import _delivery_text
 
 
 class DeliveryPortal:
-    def service_delivery_links(
-        self, context: CustomerContext, service_ref: str
-    ) -> tuple[str, ...]:
+    def service_delivery_links(self, context: CustomerContext, service_ref: str) -> tuple[str, ...]:
         _ = context, service_ref
         return ("vless://safe",)
 
