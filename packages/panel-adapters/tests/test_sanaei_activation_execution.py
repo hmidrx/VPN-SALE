@@ -49,9 +49,7 @@ class ActivationTransport:
         self.last_payload: dict[str, object] | None = None
         self.raise_after_apply = False
 
-    async def get(
-        self, path: str, headers: dict[str, str] | None = None
-    ) -> SanitizedHttpResponse:
+    async def get(self, path: str, headers: dict[str, str] | None = None) -> SanitizedHttpResponse:
         del headers
         self.get_paths.append(path)
         if path == f"/panel/api/clients/get/{EMAIL}":
