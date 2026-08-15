@@ -316,9 +316,10 @@ class SanaeiUpdateExecutor:
             response = await self.transport.get(f"/panel/api/clients/links/{email}")
         except (TimeoutError, httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError):
             return None
-        if response.status_code >= 400 or not isinstance(response.json_body, Mapping):
+        body: object = response.json_body
+        if response.status_code >= 400 or not isinstance(body, Mapping):
             return None
-        envelope = cast(Mapping[str, object], response.json_body)
+        envelope = cast(Mapping[str, object], body)
         obj = envelope.get("obj")
         if (
             envelope.get("success") is not True
