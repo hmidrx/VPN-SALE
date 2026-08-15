@@ -1,7 +1,7 @@
 """Lease-based order fulfillment orchestration.
 
-The database claim is committed before provider I/O. A persisted remote UUID and
-read-before-create provider contract close all response-loss crash windows.
+Outbox claims commit before provider I/O. A persisted remote UUID, unique fulfillment
+identity, provider reconciliation and an active-attempt lease close duplicate/crash windows.
 """
 
 from __future__ import annotations
@@ -10,13 +10,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 from vpnsale_domain.services import canonical_service_entitlement
 
-from platform_api.delivery_models import DeliverySubscriptionModel
 from platform_api.order_models import OrderItemModel, OrderModel, TransactionalOutboxModel
 from platform_api.orders import compensate_failed_fulfillment
 from platform_api.service_models import (
@@ -42,6 +42,7 @@ class ProvisioningResult:
     provider_mapping: dict[str, object] | None = None
     delivery_ready: bool = False
     remote_identity_reference: str | None = None
+    starts_at: datetime | None = None
 
 
 class ProviderProvisioner(Protocol):
@@ -115,14 +116,13 @@ class OrderFulfillmentWorker:
             if not order or not item or order.status != "READY_FOR_FULFILLMENT":
                 self._fail_event(event, "ORDER_NOT_FULFILLABLE", now, terminal=True)
                 return None
-            attempt = db.scalar(
-                select(ServiceFulfillmentRequestModel)
-                .where(ServiceFulfillmentRequestModel.order_item_id == item.id)
-                .with_for_update()
-            )
-            if not attempt:
-                identity = str(uuid5(NAMESPACE_URL, f"vpnsale:fulfillment:{order.id}:{item.id}:1"))
-                attempt = ServiceFulfillmentRequestModel(
+
+            identity = str(uuid5(NAMESPACE_URL, f"vpnsale:fulfillment:{order.id}:{item.id}:1"))
+            candidate_id = str(uuid4())
+            db.execute(
+                pg_insert(ServiceFulfillmentRequestModel)
+                .values(
+                    id=candidate_id,
                     deduplication_key=f"order:{order.id}:item:{item.id}:unit:1",
                     order_id=order.id,
                     order_item_id=item.id,
@@ -133,23 +133,68 @@ class OrderFulfillmentWorker:
                     causation_id=event.id,
                     lease_owner=self.owner,
                     lease_expires_at=now + LEASE,
+                    result_code=None,
                     remote_identity_uuid=identity,
                     attempt_count=1,
+                    failure_category=None,
+                    next_attempt_at=None,
                     created_at=now,
                     updated_at=now,
                 )
-                db.add(attempt)
-                db.flush()
-            elif attempt.status == "SUCCEEDED":
+                .on_conflict_do_nothing(constraint="uq_service_fulfillment_item_unit")
+            )
+            attempt = db.scalar(
+                select(ServiceFulfillmentRequestModel)
+                .where(
+                    ServiceFulfillmentRequestModel.order_item_id == item.id,
+                    ServiceFulfillmentRequestModel.unit_index == 1,
+                )
+                .with_for_update()
+            )
+            if attempt is None:
+                self._fail_event(event, "FULFILLMENT_IDENTITY_UNAVAILABLE", now, terminal=False)
+                return None
+            if attempt.status == "SUCCEEDED":
                 event.status = "PROCESSED"
                 event.processed_at = now
+                event.claimed_at = None
                 return None
-            else:
-                attempt.status = "IN_PROGRESS"
-                attempt.lease_owner = self.owner
-                attempt.lease_expires_at = now + LEASE
+            if attempt.status in {"FAILED", "OPERATOR_REVIEW"}:
+                event.status = "FAILED"
+                event.processed_at = now
+                event.claimed_at = None
+                event.failure_category = attempt.failure_category or attempt.status
+                return None
+            if (
+                attempt.status == "IN_PROGRESS"
+                and attempt.lease_owner not in {None, self.owner}
+                and attempt.lease_expires_at is not None
+                and attempt.lease_expires_at > now
+            ):
+                event.status = "PENDING"
+                event.claimed_at = None
+                event.available_at = attempt.lease_expires_at
+                event.failure_category = "DUPLICATE_FULFILLMENT_IN_PROGRESS"
+                return None
+            if (
+                attempt.status in {"RETRY_PENDING", "BLOCKED"}
+                and attempt.next_attempt_at is not None
+                and attempt.next_attempt_at > now
+            ):
+                event.status = "PENDING"
+                event.claimed_at = None
+                event.available_at = attempt.next_attempt_at
+                event.failure_category = attempt.failure_category
+                return None
+
+            is_new = attempt.id == candidate_id
+            attempt.status = "IN_PROGRESS"
+            attempt.lease_owner = self.owner
+            attempt.lease_expires_at = now + LEASE
+            attempt.next_attempt_at = None
+            if not is_new:
                 attempt.attempt_count += 1
-                attempt.updated_at = now
+            attempt.updated_at = now
             order.fulfillment_status = "PROVISIONING"
             return attempt.id, order.id, item.id
 
@@ -160,7 +205,9 @@ class OrderFulfillmentWorker:
         event.status = "FAILED" if terminal else "PENDING"
         event.failure_category = code
         event.claimed_at = None
-        if not terminal:
+        if terminal:
+            event.processed_at = now
+        else:
             event.available_at = now + BLOCKED_RETRY
 
     def _finish(self, event_id: str, attempt_id: str, result: ProvisioningResult) -> None:
@@ -171,6 +218,7 @@ class OrderFulfillmentWorker:
             if not event or not attempt or attempt.status == "SUCCEEDED":
                 if event and attempt and attempt.status == "SUCCEEDED":
                     event.status, event.processed_at = "PROCESSED", now
+                    event.claimed_at = None
                 return
             order = db.get(OrderModel, attempt.order_id)
             item = db.get(OrderItemModel, attempt.order_item_id)
@@ -183,14 +231,14 @@ class OrderFulfillmentWorker:
                 entitlement = canonical_service_entitlement(
                     {
                         **item.snapshot,
-                        "telegram_purchase_display": order.snapshot.get(
-                            "telegram_purchase_display"
-                        ),
+                        "telegram_purchase_display": order.snapshot.get("telegram_purchase_display"),
                     }
                 )
                 target_id = (result.provider_mapping or {}).get("allocation_target_id")
-                if result.delivery_ready and not isinstance(target_id, str):
-                    result = ProvisioningResult("CONTRACT_MISMATCH", "DELIVERY_TARGET_MISSING")
+                if not isinstance(target_id, str) or not result.remote_identity_reference:
+                    result = ProvisioningResult(
+                        "CONTRACT_MISMATCH", "PROVIDER_SUCCESS_MAPPING_INCOMPLETE"
+                    )
                 else:
                     self._complete_success(
                         db, event, attempt, order, item, result, entitlement, now
@@ -205,6 +253,7 @@ class OrderFulfillmentWorker:
                 attempt.result_code = result.safe_code
                 event.status = "FAILED"
                 event.processed_at = now
+                event.claimed_at = None
                 event.failure_category = result.outcome
             else:
                 blocked = result.outcome in {
@@ -228,6 +277,7 @@ class OrderFulfillmentWorker:
                     order.fulfillment_status = "OPERATOR_REVIEW"
                     event.status = "FAILED"
                     event.processed_at = now
+                    event.claimed_at = None
                     event.failure_category = "RETRY_EXHAUSTED"
                     attempt.next_attempt_at = None
                 else:
@@ -257,11 +307,14 @@ class OrderFulfillmentWorker:
                 ServiceModel.order_item_id == item.id, ServiceModel.unit_index == 1
             )
         )
+        starts_at = result.starts_at or now
+        if result.expires_at is not None and result.expires_at <= starts_at:
+            raise ValueError("fulfillment expiry must be after entitlement start")
         if not service:
             service_reference = uuid5(NAMESPACE_URL, "service:" + order.id).hex[:24]
             service = ServiceModel(
                 public_reference=f"svc_{service_reference}",
-                lifecycle="ACTIVE" if result.delivery_ready else "PENDING_ACTIVATION",
+                lifecycle="PENDING_ACTIVATION",
                 beneficiary_customer_id=order.customer_id,
                 payer_type="CUSTOMER",
                 payer_reference=order.customer_id,
@@ -270,62 +323,52 @@ class OrderFulfillmentWorker:
                 unit_index=1,
                 entitlement_snapshot=entitlement,
                 allocation_policy_snapshot=result.provider_mapping or {},
-                starts_at=now,
+                starts_at=starts_at,
                 expires_at=result.expires_at,
-                activated_at=now if result.delivery_ready else None,
+                activated_at=None,
                 created_at=now,
             )
             db.add(service)
             db.flush()
-        if result.delivery_ready:
-            mapping = result.provider_mapping or {}
-            target_id = mapping["allocation_target_id"]
-            attachment = db.scalar(
-                select(ServiceAttachmentModel).where(
-                    ServiceAttachmentModel.service_id == service.id,
-                    ServiceAttachmentModel.allocation_target_id == target_id,
+
+        mapping = result.provider_mapping or {}
+        target_id = mapping.get("allocation_target_id")
+        if not isinstance(target_id, str) or not result.remote_identity_reference:
+            raise ValueError("verified provider mapping required")
+        attachment = db.scalar(
+            select(ServiceAttachmentModel).where(
+                ServiceAttachmentModel.service_id == service.id,
+                ServiceAttachmentModel.allocation_target_id == target_id,
+            )
+        )
+        if attachment is None:
+            db.add(
+                ServiceAttachmentModel(
+                    service_id=service.id,
+                    allocation_target_id=target_id,
+                    required=True,
+                    status="PROVISIONED",
+                    verification_status="PENDING_DELIVERY",
+                    provider_operation_id=attempt.id,
+                    remote_identity_reference=result.remote_identity_reference,
+                    credential_fingerprint=None,
+                    target_snapshot={
+                        "provider_kind": mapping.get("provider_kind"),
+                        "panel_reference": mapping.get("panel_reference"),
+                    },
+                    observed_state={"provider_verified": True, "delivery_verified": False},
+                    last_reconciled_at=now,
                 )
             )
-            if attachment is None:
-                db.add(
-                    ServiceAttachmentModel(
-                        service_id=service.id,
-                        allocation_target_id=target_id,
-                        required=True,
-                        status="VERIFIED",
-                        verification_status="VERIFIED",
-                        provider_operation_id=attempt.id,
-                        remote_identity_reference=result.remote_identity_reference,
-                        credential_fingerprint=None,
-                        target_snapshot={"delivery_ready": True},
-                        observed_state={"verified": True},
-                        last_reconciled_at=now,
-                    )
-                )
-            subscription = db.scalar(
-                select(DeliverySubscriptionModel).where(
-                    DeliverySubscriptionModel.service_id == service.id,
-                    DeliverySubscriptionModel.scope == "SERVICE",
-                )
-            )
-            if subscription is None:
-                subscription_reference = uuid5(NAMESPACE_URL, "subscription:" + service.id).hex[:24]
-                db.add(
-                    DeliverySubscriptionModel(
-                        public_reference=f"sub_{subscription_reference}",
-                        service_id=service.id,
-                        scope="SERVICE",
-                        status="READY_FOR_TOKEN_ISSUANCE",
-                        active_token_hash=None,
-                        created_at=now,
-                        updated_at=now,
-                    )
-                )
+
         attempt.service_id = service.id
         attempt.status = "SUCCEEDED"
         attempt.result_code = result.safe_code
+        attempt.failure_category = None
+        attempt.next_attempt_at = None
         order.fulfillment_status = "SUCCEEDED"
         event.status, event.processed_at = "PROCESSED", now
+        event.claimed_at = None
         event.failure_category = None
         attempt.lease_owner = None
         attempt.lease_expires_at = None
