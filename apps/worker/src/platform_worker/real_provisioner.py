@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
@@ -35,10 +35,7 @@ from vpnsale_domain.providers import (
     RemoteTrafficLimit,
 )
 
-from platform_api.fulfillment_runtime_models import (
-    FulfillmentEntitlementClockModel,
-    FulfillmentTargetBindingModel,
-)
+from platform_api.fulfillment_runtime_models import FulfillmentTargetBindingModel
 from platform_api.order_models import OrderItemModel, OrderModel
 from platform_api.provider_runtime_models import (
     PanelCredentialModel,
@@ -237,25 +234,6 @@ class DatabaseSanaeiProvisioner:
             row.optimistic_version,
         )
 
-    def _entitlement_clock(self, attempt_id: str, duration_days: int) -> tuple[datetime, datetime]:
-        if duration_days <= 0:
-            raise ValueError("duration must be positive")
-        with self.factory.begin() as db:
-            existing = db.get(FulfillmentEntitlementClockModel, attempt_id)
-            if existing is not None:
-                return existing.starts_at, existing.expires_at
-            starts_at = datetime.now(UTC)
-            expires_at = starts_at + timedelta(days=duration_days)
-            db.add(
-                FulfillmentEntitlementClockModel(
-                    fulfillment_request_id=attempt_id,
-                    starts_at=starts_at,
-                    expires_at=expires_at,
-                    created_at=starts_at,
-                )
-            )
-            return starts_at, expires_at
-
     async def _execute(
         self,
         attempt: ServiceFulfillmentRequestModel,
@@ -297,7 +275,12 @@ class DatabaseSanaeiProvisioner:
                 return ProvisioningResult(
                     "BLOCKED_BY_CONFIGURATION", "IMMUTABLE_ENTITLEMENT_INVALID"
                 )
-            starts_at, expires_at = self._entitlement_clock(attempt.id, duration_days)
+
+            # This milestone deliberately does not start paid entitlement time. The remote
+            # identity is created disabled and without expiry because no customer-usable
+            # repository-backed delivery path exists yet. BOT-2B activation must enable the
+            # remote identity and set provider/local start+expiry from one activation instant.
+            requested_at = datetime.now(UTC)
             contract = CERTIFIED_CONTRACTS[ProviderKind.SANAEI_3X_UI]
             identity = RemoteIdentifier(attempt.remote_identity_uuid)
             inbound = RemoteIdentifier(target.inbound_id)
@@ -314,9 +297,9 @@ class DatabaseSanaeiProvisioner:
                 DesiredRemoteIdentity(
                     attempt.deduplication_key,
                     target.required_protocol,
-                    True,
+                    False,
                     RemoteTrafficLimit(traffic_bytes),
-                    RemoteExpiryPolicy(expires_at),
+                    RemoteExpiryPolicy(None, no_expiry=True),
                     device_count,
                     "customer service",
                     f"svc-{attempt.remote_identity_uuid.replace('-', '')[:20]}",
@@ -325,8 +308,8 @@ class DatabaseSanaeiProvisioner:
                 None,
                 attempt.deduplication_key,
                 "fulfillment-worker",
-                "paid order fulfillment",
-                starts_at,
+                "paid order fulfillment pending delivery activation",
+                requested_at,
                 attempt.correlation_id,
                 attempt.causation_id,
             )
@@ -342,16 +325,17 @@ class DatabaseSanaeiProvisioner:
             return ProvisioningResult(
                 result.outcome.value,
                 result.safe_code,
-                expires_at,
+                None,
                 {
                     "allocation_target_id": target.id,
                     "panel_reference": panel.public_reference,
                     "provider_kind": ProviderKind.SANAEI_3X_UI.value,
                     "contract_digest": contract.contract_digest,
+                    "entitlement_start_policy": "DELIVERY_ACTIVATION",
                 },
                 False,
                 str(result.remote_identity) if result.outcome is MutationOutcome.SUCCESS else None,
-                starts_at,
+                None,
             )
         finally:
             if transport is not None:
