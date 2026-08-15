@@ -146,6 +146,9 @@ class PurchaseResult:
     expires_at: datetime | None = None
     refunded: bool = False
     outcome: str = "ACCEPTED"
+    purchase_state: str = "PROVISIONING"
+    service_lifecycle: str | None = None
+    delivery_ready: bool = False
 
 
 @dataclass(frozen=True)
