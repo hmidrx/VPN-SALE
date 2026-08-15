@@ -254,8 +254,9 @@ class DatabaseSanaeiActivator:
         login_passphrase: str,
         base_url: str,
     ) -> ActivationProviderResult:
-        from platform_api.provider_runtime_models import ProviderConnectionTestModel
         from vpnsale_domain.providers import PanelInstance
+
+        from platform_api.provider_runtime_models import ProviderConnectionTestModel
 
         if not isinstance(panel, PanelInstance) or not isinstance(
             certification, ProviderConnectionTestModel
