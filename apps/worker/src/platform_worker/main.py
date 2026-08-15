@@ -16,7 +16,9 @@ from .manual_topup_delivery import (
     TelegramDeliveryError,
 )
 from .order_fulfillment import DisabledProvisioner, OrderFulfillmentWorker
+from .real_activator import DatabaseSanaeiActivator
 from .real_provisioner import DatabaseSanaeiProvisioner
+from .service_activation import DisabledActivator, FernetDeliveryCipher, ServiceActivationWorker
 
 
 def build_order_provisioner(
@@ -26,6 +28,26 @@ def build_order_provisioner(
         DatabaseSanaeiProvisioner(factory, True)
         if provider_writes_enabled
         else DisabledProvisioner()
+    )
+
+
+def build_service_activator(
+    factory: sessionmaker[Session], provider_writes_enabled: bool
+) -> DisabledActivator | DatabaseSanaeiActivator:
+    return (
+        DatabaseSanaeiActivator(factory, True)
+        if provider_writes_enabled
+        else DisabledActivator()
+    )
+
+
+def build_delivery_cipher() -> FernetDeliveryCipher | None:
+    key = os.getenv("VPN_SALE_IDENTITY_ENCRYPTION_KEY", "")
+    if not key:
+        return None
+    return FernetDeliveryCipher(
+        key,
+        os.getenv("VPN_SALE_IDENTITY_ENCRYPTION_KEY_VERSION", "dev-v1"),
     )
 
 
@@ -70,9 +92,14 @@ def main() -> None:
     provider_writes_enabled = (
         os.getenv("VPN_SALE_PROVIDER_WRITES_ENABLED", "false").lower() == "true"
     )
+    worker_id = f"{socket.gethostname()}:{os.getpid()}"
     provisioner = build_order_provisioner(factory, provider_writes_enabled)
-    fulfillment = OrderFulfillmentWorker(
-        factory, provisioner, f"{socket.gethostname()}:{os.getpid()}"
+    fulfillment = OrderFulfillmentWorker(factory, provisioner, worker_id)
+    activation = ServiceActivationWorker(
+        factory,
+        build_service_activator(factory, provider_writes_enabled),
+        worker_id,
+        build_delivery_cipher(),
     )
     while True:
         processed = 0
@@ -85,6 +112,10 @@ def main() -> None:
             processed += fulfillment.run_once()
         except Exception:
             print("order_fulfillment_worker_cycle_failed", flush=True)
+        try:
+            processed += activation.run_once()
+        except Exception:
+            print("service_activation_worker_cycle_failed", flush=True)
         time.sleep(1 if processed else 5)
 
 
