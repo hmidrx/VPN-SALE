@@ -1,17 +1,16 @@
-"""Production provider mutation execution with mandatory reconciliation.
+"""Production Sanaei provider mutation execution with mandatory reconciliation.
 
-Only the certified Sanaei CREATE operation is executable.  Other providers fail
-closed rather than borrowing superficially similar endpoints.
+Only the exact certified Sanaei 3x-ui v3.5.0 CREATE contract is executable here.
+Other providers remain fail-closed until separately certified executors exist.
 """
 
 from __future__ import annotations
 
-import json
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import cast
+from typing import Protocol, cast
 
 import httpx
 from vpnsale_domain.providers import (
@@ -48,8 +47,14 @@ class ProviderMutationResult:
     remote_identity: RemoteIdentifier | None = None
 
 
+class SanaeiMutationTransport(SecureHttpTransport, Protocol):
+    async def post_json(
+        self, path: str, payload: Mapping[str, object], headers: dict[str, str] | None = None
+    ) -> SanitizedHttpResponse: ...
+
+
 class SanaeiAuthenticatedTransport:
-    """Cookie-session transport which never exposes credentials or response bodies."""
+    """Cookie-session transport which never exposes credentials or raw response bodies."""
 
     def __init__(self, client: httpx.AsyncClient) -> None:
         self._client = client
@@ -83,8 +88,10 @@ class SanaeiAuthenticatedTransport:
                 cast(Mapping[str, object], body) if isinstance(body, Mapping) else {}
             )
             if response.status_code >= 400 or envelope.get("success") is not True:
-                await client.aclose()
                 raise PermissionError("provider authentication failed")
+        except PermissionError:
+            await client.aclose()
+            raise
         except (httpx.HTTPError, ValueError) as exc:
             await client.aclose()
             raise ConnectionError("provider authentication unavailable") from exc
@@ -115,14 +122,21 @@ class SanaeiAuthenticatedTransport:
         response = await self._client.post(path, data=form, headers=headers)
         return self._response(response, started)
 
+    async def post_json(
+        self, path: str, payload: Mapping[str, object], headers: dict[str, str] | None = None
+    ) -> SanitizedHttpResponse:
+        started = time.monotonic()
+        response = await self._client.post(path, json=dict(payload), headers=headers)
+        return self._response(response, started)
+
     async def aclose(self) -> None:
         await self._client.aclose()
 
 
 class SanaeiCreateExecutor:
-    """Execute the v3.5.0 add-client contract through an authenticated transport."""
+    """Execute the exact v3.5.0 global-client CREATE contract."""
 
-    def __init__(self, transport: SecureHttpTransport, panel: PanelInstance) -> None:
+    def __init__(self, transport: SanaeiMutationTransport, panel: PanelInstance) -> None:
         self.transport = transport
         self.panel = panel
         self.adapter = Sanaei3xUiAdapter()
@@ -145,6 +159,14 @@ class SanaeiCreateExecutor:
                 )
         return None
 
+    async def _safe_reconcile(
+        self, command: ProviderMutationCommand
+    ) -> tuple[ProviderMutationResult | None, bool]:
+        try:
+            return await self.reconcile(command), True
+        except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError, ProviderError):
+            return None, False
+
     async def execute(self, command: ProviderMutationCommand) -> ProviderMutationResult:
         if command.operation is not ProviderMutationOperation.CREATE_REMOTE_IDENTITY:
             return ProviderMutationResult(
@@ -154,37 +176,48 @@ class SanaeiCreateExecutor:
             return ProviderMutationResult(
                 MutationOutcome.BLOCKED_BY_CONFIGURATION, "AUTHORITATIVE_INBOUND_REQUIRED"
             )
+        inbound_raw = str(command.target_inbound_relationships[0])
         try:
-            existing = await self.reconcile(command)
-        except (httpx.TimeoutException, httpx.NetworkError, ProviderError):
+            inbound_id = int(inbound_raw)
+        except ValueError:
+            return ProviderMutationResult(
+                MutationOutcome.BLOCKED_BY_CONFIGURATION, "AUTHORITATIVE_INBOUND_INVALID"
+            )
+        if inbound_id <= 0:
+            return ProviderMutationResult(
+                MutationOutcome.BLOCKED_BY_CONFIGURATION, "AUTHORITATIVE_INBOUND_INVALID"
+            )
+
+        existing, reconcile_available = await self._safe_reconcile(command)
+        if not reconcile_available:
             return ProviderMutationResult(
                 MutationOutcome.TRANSIENT_FAILURE, "PROVIDER_RECONCILIATION_UNAVAILABLE"
             )
-        if existing:
+        if existing is not None:
             return existing
+
         desired = command.desired_state
-        client = {
+        client: dict[str, object] = {
             "id": str(command.target_remote_identity),
             "email": desired.provider_safe_label,
             "enable": desired.enabled,
             "totalGB": desired.traffic_limit.bytes_limit or 0,
-            "expiryTime": int(desired.expiry.expires_at.timestamp() * 1000)
-            if desired.expiry.expires_at
-            else 0,
+            "expiryTime": (
+                int(desired.expiry.expires_at.timestamp() * 1000)
+                if desired.expiry.expires_at
+                else 0
+            ),
             "limitIp": desired.device_or_ip_limit or 0,
+            "tgId": 0,
+            "subId": command.idempotency_scope[-32:],
+            "comment": desired.customer_safe_remark,
         }
+        payload: Mapping[str, object] = {"client": client, "inboundIds": [inbound_id]}
         try:
-            response = await self.transport.post_form(
-                f"/panel/api/inbounds/addClient/{command.target_inbound_relationships[0]}",
-                {
-                    "id": str(command.target_inbound_relationships[0]),
-                    "settings": json.dumps({"clients": [client]}, separators=(",", ":")),
-                },
-            )
-        except (TimeoutError, httpx.TimeoutException, httpx.NetworkError):
+            response = await self.transport.post_json("/panel/api/clients/add", payload)
+        except (TimeoutError, httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError):
             return ProviderMutationResult(MutationOutcome.AMBIGUOUS, "PROVIDER_RESPONSE_LOST")
-        except httpx.HTTPError:
-            return ProviderMutationResult(MutationOutcome.AMBIGUOUS, "PROVIDER_TRANSPORT_FAILURE")
+
         if response.status_code == 429 or response.status_code >= 500:
             return ProviderMutationResult(
                 MutationOutcome.TRANSIENT_FAILURE, "PROVIDER_TEMPORARY_FAILURE"
@@ -193,23 +226,35 @@ class SanaeiCreateExecutor:
             return ProviderMutationResult(
                 MutationOutcome.BLOCKED_BY_CONFIGURATION, "PROVIDER_AUTH_FAILED"
             )
-        if response.status_code >= 400:
-            return ProviderMutationResult(
-                MutationOutcome.PERMANENT_FAILURE, "PROVIDER_REJECTED_CREATE"
-            )
+
         body = response.json_body
-        if not isinstance(body, Mapping):
+        envelope = cast(Mapping[str, object], body) if isinstance(body, Mapping) else None
+        accepted = response.status_code < 400 and envelope is not None and envelope.get("success") is True
+
+        # CREATE is not naturally idempotent. Any deterministic rejection/duplicate-like response
+        # is reconciled before it can become a compensating/refund decision.
+        if not accepted:
+            reconciled, available = await self._safe_reconcile(command)
+            if reconciled is not None:
+                return reconciled
+            if not available:
+                return ProviderMutationResult(
+                    MutationOutcome.AMBIGUOUS, "REJECTION_RECONCILIATION_UNAVAILABLE"
+                )
+            if response.status_code == 429 or response.status_code >= 500:
+                return ProviderMutationResult(
+                    MutationOutcome.TRANSIENT_FAILURE, "PROVIDER_TEMPORARY_FAILURE"
+                )
+            if response.status_code >= 400 or envelope is not None:
+                return ProviderMutationResult(
+                    MutationOutcome.PERMANENT_FAILURE, "PROVIDER_REJECTED_CREATE"
+                )
             return ProviderMutationResult(
                 MutationOutcome.CONTRACT_MISMATCH, "SUCCESS_ENVELOPE_INVALID"
             )
-        envelope = cast(Mapping[str, object], body)
-        if envelope.get("success") is not True:
-            return ProviderMutationResult(
-                MutationOutcome.CONTRACT_MISMATCH, "SUCCESS_ENVELOPE_INVALID"
-            )
-        try:
-            verified = await self.reconcile(command)
-        except (httpx.HTTPError, ProviderError):
+
+        verified, available = await self._safe_reconcile(command)
+        if not available:
             return ProviderMutationResult(
                 MutationOutcome.AMBIGUOUS, "POST_CREATE_RECONCILIATION_UNAVAILABLE"
             )
