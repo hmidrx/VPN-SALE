@@ -173,7 +173,10 @@ async def test_real_http_sanaei_create_uses_exact_v350_contract_and_read_after_w
     panel_server: str,
 ) -> None:
     transport = await SanaeiAuthenticatedTransport.authenticate(
-        panel_server, "test", "secret", verify_tls=False  # noqa: S106
+        panel_server,
+        "test",
+        "secret",
+        verify_tls=False,  # noqa: S106
     )
     try:
         result = await SanaeiCreateExecutor(transport, panel()).execute(command())
@@ -195,7 +198,10 @@ async def test_real_http_sanaei_create_uses_exact_v350_contract_and_read_after_w
 async def test_response_loss_reconciles_without_second_create(panel_server: str) -> None:
     PanelHandler.lose_create_response = True
     transport = await SanaeiAuthenticatedTransport.authenticate(
-        panel_server, "test", "secret", verify_tls=False  # noqa: S106
+        panel_server,
+        "test",
+        "secret",
+        verify_tls=False,  # noqa: S106
     )
     executor = SanaeiCreateExecutor(transport, panel())
     try:
@@ -213,7 +219,10 @@ async def test_response_loss_reconciles_without_second_create(panel_server: str)
 async def test_rejected_create_is_reconciled_before_permanent_failure(panel_server: str) -> None:
     PanelHandler.reject_create = True
     transport = await SanaeiAuthenticatedTransport.authenticate(
-        panel_server, "test", "secret", verify_tls=False  # noqa: S106
+        panel_server,
+        "test",
+        "secret",
+        verify_tls=False,  # noqa: S106
     )
     try:
         result = await SanaeiCreateExecutor(transport, panel()).execute(command())
