@@ -34,7 +34,9 @@ def build_order_provisioner(
 def build_service_activator(
     factory: sessionmaker[Session], provider_writes_enabled: bool
 ) -> DisabledActivator | DatabaseSanaeiActivator:
-    return DatabaseSanaeiActivator(factory, True) if provider_writes_enabled else DisabledActivator()
+    return (
+        DatabaseSanaeiActivator(factory, True) if provider_writes_enabled else DisabledActivator()
+    )
 
 
 class BotApiTransport:
