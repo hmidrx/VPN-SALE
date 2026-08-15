@@ -242,7 +242,9 @@ class OrderFulfillmentWorker:
                     }
                 )
                 target_id = (result.provider_mapping or {}).get("allocation_target_id")
-                if not isinstance(target_id, str) or not result.remote_identity_reference:
+                if result.delivery_ready:
+                    result = ProvisioningResult("CONTRACT_MISMATCH", "DELIVERY_NOT_IMPLEMENTED")
+                elif not isinstance(target_id, str) or not result.remote_identity_reference:
                     result = ProvisioningResult(
                         "CONTRACT_MISMATCH", "PROVIDER_SUCCESS_MAPPING_INCOMPLETE"
                     )
@@ -314,9 +316,6 @@ class OrderFulfillmentWorker:
                 ServiceModel.order_item_id == item.id, ServiceModel.unit_index == 1
             )
         )
-        starts_at = result.starts_at or now
-        if result.expires_at is not None and result.expires_at <= starts_at:
-            raise ValueError("fulfillment expiry must be after entitlement start")
         if not service:
             service_reference = uuid5(NAMESPACE_URL, "service:" + order.id).hex[:24]
             service = ServiceModel(
@@ -330,8 +329,8 @@ class OrderFulfillmentWorker:
                 unit_index=1,
                 entitlement_snapshot=entitlement,
                 allocation_policy_snapshot=result.provider_mapping or {},
-                starts_at=starts_at,
-                expires_at=result.expires_at,
+                starts_at=None,
+                expires_at=None,
                 activated_at=None,
                 created_at=now,
             )
@@ -362,6 +361,7 @@ class OrderFulfillmentWorker:
                     target_snapshot={
                         "provider_kind": mapping.get("provider_kind"),
                         "panel_reference": mapping.get("panel_reference"),
+                        "entitlement_start_policy": mapping.get("entitlement_start_policy"),
                     },
                     observed_state={"provider_verified": True, "delivery_verified": False},
                     last_reconciled_at=now,
