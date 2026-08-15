@@ -48,7 +48,6 @@ class ActivationTransport:
         self.post_paths: list[str] = []
         self.last_payload: dict[str, object] | None = None
         self.raise_after_apply = False
-        self.links: object = [f"vless://{REMOTE_UUID}@edge.example:443?security=tls#service"]
 
     async def get(
         self, path: str, headers: dict[str, str] | None = None
@@ -62,8 +61,6 @@ class ActivationTransport:
                 {},
                 1,
             )
-        if path == f"/panel/api/clients/links/{EMAIL}":
-            return SanitizedHttpResponse(200, {"success": True, "obj": self.links}, {}, 1)
         return SanitizedHttpResponse(404, {"success": False}, {}, 1)
 
     async def post_form(
@@ -139,17 +136,16 @@ def command() -> ProviderMutationCommand:
 
 
 @pytest.mark.asyncio
-async def test_activation_uses_exact_v350_update_and_links_contract() -> None:
+async def test_activation_uses_exact_v350_global_client_update_contract() -> None:
     transport = ActivationTransport()
     result = await SanaeiActivationExecutor(transport, panel()).execute(command())
 
     assert result.outcome is MutationOutcome.SUCCESS
-    assert result.delivery_links == tuple(transport.links)  # type: ignore[arg-type]
+    assert result.remote_identity == RemoteIdentifier(REMOTE_UUID)
     assert transport.post_paths == [f"/panel/api/clients/update/{EMAIL}"]
     assert transport.get_paths == [
         f"/panel/api/clients/get/{EMAIL}",
         f"/panel/api/clients/get/{EMAIL}",
-        f"/panel/api/clients/links/{EMAIL}",
     ]
     payload = transport.last_payload
     assert payload is not None
@@ -178,17 +174,7 @@ async def test_lost_activation_response_converges_without_second_update() -> Non
 
 
 @pytest.mark.asyncio
-async def test_activation_requires_provider_generated_delivery_links() -> None:
-    transport = ActivationTransport()
-    transport.links = []
-    result = await SanaeiActivationExecutor(transport, panel()).execute(command())
-
-    assert result.outcome is MutationOutcome.CONTRACT_MISMATCH
-    assert result.safe_code == "DELIVERY_LINK_CONTRACT_MISMATCH"
-
-
-@pytest.mark.asyncio
-async def test_activation_preflight_blocks_all_mutation_when_writes_disabled() -> None:
+async def test_activation_preflight_blocks_all_provider_io_when_writes_disabled() -> None:
     transport = ActivationTransport()
     executor = SanaeiActivationExecutor(transport, panel())
     contract = CERTIFIED_CONTRACTS[ProviderKind.SANAEI_3X_UI]
