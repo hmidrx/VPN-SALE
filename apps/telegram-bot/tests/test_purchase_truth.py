@@ -47,9 +47,7 @@ def _result(
 
 
 def test_purchase_status_distinguishes_provisioning_pending_delivery_and_operator_review() -> None:
-    provisioning = purchase_status_text(
-        _result("PROVISIONING", fulfillment_status="PROVISIONING")
-    )
+    provisioning = purchase_status_text(_result("PROVISIONING", fulfillment_status="PROVISIONING"))
     pending_delivery = purchase_status_text(
         _result(
             "PENDING_DELIVERY",
