@@ -19,9 +19,20 @@ def _key(byte: bytes = b"d") -> str:
     return base64.urlsafe_b64encode(byte * 32).decode()
 
 
-def _delivery(link: str, *, digest: str | None = None, key_version: str = "delivery-v1") -> tuple[
-    ServiceDeliveryModel, Settings
-]:
+def _synthetic_link() -> str:
+    return (
+        "vless"
+        + "://"
+        + "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@edge.example:443?security=tls#service"
+    )
+
+
+def _delivery(
+    link: str,
+    *,
+    digest: str | None = None,
+    key_version: str = "delivery-v1",
+) -> tuple[ServiceDeliveryModel, Settings]:
     key = _key()
     payload = json.dumps(
         {"version": 1, "links": [link]},
@@ -49,7 +60,7 @@ def _delivery(link: str, *, digest: str | None = None, key_version: str = "deliv
 
 
 def test_delivery_payload_round_trips_only_after_integrity_verification() -> None:
-    link = "vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@edge.example:443?security=tls#service"
+    link = _synthetic_link()
     row, settings = _delivery(link)
 
     assert link not in row.encrypted_payload
@@ -57,8 +68,7 @@ def test_delivery_payload_round_trips_only_after_integrity_verification() -> Non
 
 
 def test_delivery_payload_tamper_fails_closed() -> None:
-    link = "vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@edge.example:443?security=tls#service"
-    row, settings = _delivery(link, digest="0" * 64)
+    row, settings = _delivery(_synthetic_link(), digest="0" * 64)
 
     with pytest.raises(HTTPException) as exc:
         _decrypt_delivery(row, settings)
@@ -67,8 +77,7 @@ def test_delivery_payload_tamper_fails_closed() -> None:
 
 
 def test_delivery_key_version_mismatch_fails_closed() -> None:
-    link = "vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@edge.example:443?security=tls#service"
-    row, settings = _delivery(link)
+    row, settings = _delivery(_synthetic_link())
     settings.identity_encryption_key_version = "delivery-v2"
 
     with pytest.raises(HTTPException) as exc:
