@@ -348,9 +348,7 @@ def _subscription_not_found() -> Response:
     )
 
 
-def _subscription_response(
-    opaque_token: str, fmt: DeliveryOutputFormat, db: Session
-) -> Response:
+def _subscription_response(opaque_token: str, fmt: DeliveryOutputFormat, db: Session) -> Response:
     if len(opaque_token) < 43 or "/" in opaque_token:
         return _subscription_not_found()
     token_hash = hash_token(opaque_token)
