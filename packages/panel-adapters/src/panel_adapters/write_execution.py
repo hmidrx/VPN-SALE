@@ -1,13 +1,13 @@
 """Production Sanaei provider mutation execution with mandatory reconciliation.
 
-Only the exact certified Sanaei 3x-ui v3.5.0 CREATE contract is executable here.
+The exact certified Sanaei 3x-ui v3.5.0 CREATE and UPDATE contracts are executable here.
 Other providers remain fail-closed until separately certified executors exist.
 """
 
 from __future__ import annotations
 
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol, cast
@@ -232,9 +232,6 @@ class SanaeiCreateExecutor:
         accepted = (
             response.status_code < 400 and envelope is not None and envelope.get("success") is True
         )
-
-        # CREATE is not naturally idempotent. Any deterministic rejection/duplicate-like response
-        # is reconciled before it can become a compensating/refund decision.
         if not accepted:
             reconciled, available = await self._safe_reconcile(command)
             if reconciled is not None:
@@ -265,8 +262,168 @@ class SanaeiCreateExecutor:
         )
 
 
-async def execute_certified_sanaei_create(
-    executor: SanaeiCreateExecutor,
+class SanaeiUpdateExecutor:
+    """Exact v3.5.0 full-client UPDATE with read-before/write/read-after convergence."""
+
+    def __init__(self, transport: SanaeiMutationTransport, panel: PanelInstance) -> None:
+        self.transport = transport
+        self.panel = panel
+
+    async def _read_client(
+        self, email: str
+    ) -> tuple[Mapping[str, object] | None, bool]:
+        try:
+            response = await self.transport.get(f"/panel/api/clients/get/{email}")
+        except (TimeoutError, httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError):
+            return None, False
+        if response.status_code in {401, 403, 429} or response.status_code >= 500:
+            return None, False
+        body = response.json_body
+        if not isinstance(body, Mapping):
+            return None, False
+        envelope = cast(Mapping[str, object], body)
+        if envelope.get("success") is not True:
+            return None, True
+        obj = envelope.get("obj")
+        if not isinstance(obj, Mapping):
+            return None, False
+        client = cast(Mapping[str, object], obj).get("client")
+        if not isinstance(client, Mapping):
+            return None, False
+        return cast(Mapping[str, object], client), True
+
+    @staticmethod
+    def _matches(command: ProviderMutationCommand, client: Mapping[str, object]) -> bool:
+        desired = command.desired_state
+        expiry_ms = (
+            int(desired.expiry.expires_at.timestamp() * 1000)
+            if desired.expiry.expires_at is not None
+            else 0
+        )
+        expected_identity = str(command.target_remote_identity or "")
+        return (
+            str(client.get("id") or "") == expected_identity
+            and str(client.get("email") or "") == desired.provider_safe_label
+            and client.get("enable") is desired.enabled
+            and type(client.get("totalGB")) is int
+            and int(cast(int, client.get("totalGB"))) == (desired.traffic_limit.bytes_limit or 0)
+            and type(client.get("expiryTime")) is int
+            and int(cast(int, client.get("expiryTime"))) == expiry_ms
+            and type(client.get("limitIp")) is int
+            and int(cast(int, client.get("limitIp"))) == (desired.device_or_ip_limit or 0)
+        )
+
+    async def fetch_links(self, email: str) -> tuple[str, ...] | None:
+        try:
+            response = await self.transport.get(f"/panel/api/clients/links/{email}")
+        except (TimeoutError, httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError):
+            return None
+        if response.status_code >= 400 or not isinstance(response.json_body, Mapping):
+            return None
+        envelope = cast(Mapping[str, object], response.json_body)
+        obj = envelope.get("obj")
+        if envelope.get("success") is not True or not isinstance(obj, Sequence) or isinstance(
+            obj, str | bytes
+        ):
+            return None
+        links: list[str] = []
+        for value in cast(Sequence[object], obj):
+            if not isinstance(value, str):
+                return None
+            links.append(value)
+        return tuple(links)
+
+    async def execute(self, command: ProviderMutationCommand) -> ProviderMutationResult:
+        if command.operation not in {
+            ProviderMutationOperation.UPDATE_REMOTE_IDENTITY,
+            ProviderMutationOperation.ENABLE_REMOTE_IDENTITY,
+        }:
+            return ProviderMutationResult(
+                MutationOutcome.PERMANENT_FAILURE, "OPERATION_UNSUPPORTED"
+            )
+        if command.target_remote_identity is None:
+            return ProviderMutationResult(
+                MutationOutcome.BLOCKED_BY_CONFIGURATION, "REMOTE_IDENTITY_REQUIRED"
+            )
+        desired = command.desired_state
+        current, available = await self._read_client(desired.provider_safe_label)
+        if not available:
+            return ProviderMutationResult(
+                MutationOutcome.TRANSIENT_FAILURE, "PROVIDER_RECONCILIATION_UNAVAILABLE"
+            )
+        if current is None:
+            return ProviderMutationResult(MutationOutcome.PERMANENT_FAILURE, "REMOTE_CLIENT_MISSING")
+        if str(current.get("id") or "") != str(command.target_remote_identity):
+            return ProviderMutationResult(
+                MutationOutcome.PERMANENT_FAILURE, "REMOTE_IDENTITY_MISMATCH"
+            )
+        if self._matches(command, current):
+            return ProviderMutationResult(
+                MutationOutcome.SUCCESS,
+                "AUTHORITATIVE_RECONCILIATION_MATCH",
+                command.target_remote_identity,
+            )
+        if desired.expiry.expires_at is None:
+            return ProviderMutationResult(
+                MutationOutcome.BLOCKED_BY_CONFIGURATION, "ACTIVATION_EXPIRY_REQUIRED"
+            )
+        payload: Mapping[str, object] = {
+            "id": str(command.target_remote_identity),
+            "email": desired.provider_safe_label,
+            "enable": desired.enabled,
+            "totalGB": desired.traffic_limit.bytes_limit or 0,
+            "expiryTime": int(desired.expiry.expires_at.timestamp() * 1000),
+            "limitIp": desired.device_or_ip_limit or 0,
+            "tgId": 0,
+            "comment": desired.customer_safe_remark,
+        }
+        try:
+            response = await self.transport.post_json(
+                f"/panel/api/clients/update/{desired.provider_safe_label}", payload
+            )
+        except (TimeoutError, httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError):
+            verified, verify_available = await self._read_client(desired.provider_safe_label)
+            if verify_available and verified is not None and self._matches(command, verified):
+                return ProviderMutationResult(
+                    MutationOutcome.SUCCESS,
+                    "RESPONSE_LOST_BUT_RECONCILED",
+                    command.target_remote_identity,
+                )
+            return ProviderMutationResult(MutationOutcome.AMBIGUOUS, "PROVIDER_RESPONSE_LOST")
+
+        body = response.json_body
+        envelope = cast(Mapping[str, object], body) if isinstance(body, Mapping) else None
+        accepted = (
+            response.status_code < 400 and envelope is not None and envelope.get("success") is True
+        )
+        verified, verify_available = await self._read_client(desired.provider_safe_label)
+        if verify_available and verified is not None and self._matches(command, verified):
+            return ProviderMutationResult(
+                MutationOutcome.SUCCESS,
+                "AUTHORITATIVE_RECONCILIATION_MATCH",
+                command.target_remote_identity,
+            )
+        if not verify_available:
+            return ProviderMutationResult(
+                MutationOutcome.AMBIGUOUS, "UPDATE_RECONCILIATION_UNAVAILABLE"
+            )
+        if response.status_code == 429 or response.status_code >= 500:
+            return ProviderMutationResult(
+                MutationOutcome.TRANSIENT_FAILURE, "PROVIDER_TEMPORARY_FAILURE"
+            )
+        if response.status_code in {401, 403}:
+            return ProviderMutationResult(
+                MutationOutcome.BLOCKED_BY_CONFIGURATION, "PROVIDER_AUTH_FAILED"
+            )
+        if not accepted:
+            return ProviderMutationResult(
+                MutationOutcome.PERMANENT_FAILURE, "PROVIDER_REJECTED_UPDATE"
+            )
+        return ProviderMutationResult(MutationOutcome.AMBIGUOUS, "READ_AFTER_WRITE_NOT_VERIFIED")
+
+
+async def _execute_certified_sanaei(
+    executor: SanaeiCreateExecutor | SanaeiUpdateExecutor,
     panel: PanelInstance,
     command: ProviderMutationCommand,
     *,
@@ -275,7 +432,6 @@ async def execute_certified_sanaei_create(
     detected_digest: str | None,
     certification_status: ProviderCertificationStatus,
 ) -> ProviderMutationResult:
-    """The only public production entry point; safety gates always precede HTTP."""
     if not writes_enabled:
         return ProviderMutationResult(
             MutationOutcome.BLOCKED_BY_CONFIGURATION, "PROVIDER_WRITES_DISABLED"
@@ -303,3 +459,45 @@ async def execute_certified_sanaei_create(
             MutationOutcome.BLOCKED_BY_CONFIGURATION, "PROVIDER_PREFLIGHT_BLOCKED"
         )
     return await executor.execute(command)
+
+
+async def execute_certified_sanaei_create(
+    executor: SanaeiCreateExecutor,
+    panel: PanelInstance,
+    command: ProviderMutationCommand,
+    *,
+    writes_enabled: bool,
+    detected_version: str | None,
+    detected_digest: str | None,
+    certification_status: ProviderCertificationStatus,
+) -> ProviderMutationResult:
+    return await _execute_certified_sanaei(
+        executor,
+        panel,
+        command,
+        writes_enabled=writes_enabled,
+        detected_version=detected_version,
+        detected_digest=detected_digest,
+        certification_status=certification_status,
+    )
+
+
+async def execute_certified_sanaei_update(
+    executor: SanaeiUpdateExecutor,
+    panel: PanelInstance,
+    command: ProviderMutationCommand,
+    *,
+    writes_enabled: bool,
+    detected_version: str | None,
+    detected_digest: str | None,
+    certification_status: ProviderCertificationStatus,
+) -> ProviderMutationResult:
+    return await _execute_certified_sanaei(
+        executor,
+        panel,
+        command,
+        writes_enabled=writes_enabled,
+        detected_version=detected_version,
+        detected_digest=detected_digest,
+        certification_status=certification_status,
+    )
