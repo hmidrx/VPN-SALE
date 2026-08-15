@@ -30,6 +30,11 @@ def purchase_status_text(result: PurchaseResult) -> str:
             "بر اساس یک نتیجه نامطمئن انجام نخواهد شد.\n"
             f"شناسه سفارش: {result.order_reference[-8:]}"
         )
+    if result.service_lifecycle == "FAILED":
+        return (
+            "⚠️ فعال‌سازی سرویس کامل نشد. لطفاً برای بررسی یا تلاش مجدد با پشتیبانی تماس بگیرید.\n"
+            f"شناسه سفارش: {result.order_reference[-8:]}"
+        )
     if (
         state == "ACTIVE"
         and result.service_lifecycle == "ACTIVE"
@@ -42,6 +47,13 @@ def purchase_status_text(result: PurchaseResult) -> str:
             f"اعتبار تا: {format_date(result.expires_at)}\n"
             f"حجم: {result.plan.traffic_gb:,} گیگابایت\n"
             f"شناسه: {service_reference[-8:]}"
+        )
+    if result.service_lifecycle == "ACTIVATING":
+        return "⏳ در حال فعال‌سازی سرویس\n" f"شناسه سفارش: {result.order_reference[-8:]}"
+    if result.service_lifecycle == "PENDING_ACTIVATION":
+        return (
+            "🟡 سرویس شما در حال آماده‌سازی است؛ تحویل کانفیگ هنوز آماده نیست.\n"
+            f"شناسه سفارش: {result.order_reference[-8:]}"
         )
     if state == "PENDING_DELIVERY" or service_reference is not None:
         return (

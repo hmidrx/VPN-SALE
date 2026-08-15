@@ -97,6 +97,13 @@ def test_purchase_status_refund_is_explicit() -> None:
     assert "به کیف پول شما بازگردانده شد" in text
 
 
+def test_activation_states_are_truthful_and_require_delivery() -> None:
+    activating = _result("PENDING_DELIVERY", service_lifecycle="ACTIVATING", delivery_ready=False)
+    assert "در حال فعال‌سازی سرویس" in purchase_status_text(activating)
+    premature = _result("ACTIVE", service_lifecycle="ACTIVE", delivery_ready=False)
+    assert "سرویس شما فعال شد" not in purchase_status_text(premature)
+
+
 def test_private_api_mapping_preserves_independent_purchase_truth(tmp_path: Path) -> None:
     token_file = tmp_path / "telegram-internal-token"
     token_file.write_text("x" * 32, encoding="utf-8")

@@ -23,6 +23,7 @@ def _target_metadata() -> MetaData:
     # developer workflows still compare against the full current metadata.
     cmd_opts = getattr(config, "cmd_opts", None)
     if bool(getattr(cmd_opts, "autogenerate", False)):
+        import platform_api.activation_models  # noqa: F401
         import platform_api.catalog_models  # noqa: F401
         import platform_api.configuration_models  # noqa: F401
         import platform_api.customer_admin_models  # noqa: F401

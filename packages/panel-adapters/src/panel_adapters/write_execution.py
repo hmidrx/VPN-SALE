@@ -9,8 +9,10 @@ from __future__ import annotations
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Protocol, cast
+from urllib.parse import quote
 
 import httpx
 from vpnsale_domain.providers import (
@@ -262,6 +264,101 @@ class SanaeiCreateExecutor:
             )
         return verified or ProviderMutationResult(
             MutationOutcome.AMBIGUOUS, "READ_AFTER_WRITE_NOT_VERIFIED"
+        )
+
+
+@dataclass(frozen=True)
+class SanaeiActivationResult:
+    outcome: MutationOutcome
+    safe_code: str
+    activated_at: datetime | None = None
+    configuration: str | None = None
+
+
+class SanaeiActivationExecutor:
+    """Activate via the v3.5.0 global-client GET/update/GET/links contract."""
+
+    def __init__(self, transport: SanaeiMutationTransport) -> None:
+        self.transport = transport
+
+    @staticmethod
+    def _object(response: SanitizedHttpResponse) -> Mapping[str, object] | None:
+        body = response.json_body
+        envelope = cast(Mapping[str, object], body) if isinstance(body, Mapping) else None
+        obj = envelope.get("obj") if envelope and envelope.get("success") is True else None
+        return cast(Mapping[str, object], obj) if isinstance(obj, Mapping) else None
+
+    async def _read(self, email: str) -> Mapping[str, object] | None:
+        response = await self.transport.get(f"/panel/api/clients/get/{quote(email, safe='')}")
+        return self._object(response)
+
+    async def execute(
+        self, email: str, expected_identity: str, expires_at: datetime, activated_at: datetime
+    ) -> SanaeiActivationResult:
+        """Full replacement payload comes only from the authoritative provider read."""
+        try:
+            current = await self._read(email)
+        except (TimeoutError, httpx.HTTPError):
+            return SanaeiActivationResult(
+                MutationOutcome.TRANSIENT_FAILURE, "ACTIVATION_READ_UNAVAILABLE"
+            )
+        if current is None or str(current.get("id")) != expected_identity:
+            return SanaeiActivationResult(
+                MutationOutcome.PERMANENT_FAILURE, "ACTIVATION_IDENTITY_MISMATCH"
+            )
+        expiry_ms = int(expires_at.timestamp() * 1000)
+        verified = current.get("enable") is True and current.get("expiryTime") == expiry_ms
+        if not verified:
+            payload = dict(current)
+            payload.update({"enable": True, "expiryTime": expiry_ms})
+            try:
+                await self.transport.post_json(
+                    f"/panel/api/clients/update/{quote(email, safe='')}", payload
+                )
+            except (TimeoutError, httpx.HTTPError):
+                pass  # The mandatory read below resolves the uncertain response.
+        try:
+            authoritative = await self._read(email)
+        except (TimeoutError, httpx.HTTPError):
+            return SanaeiActivationResult(
+                MutationOutcome.AMBIGUOUS, "ACTIVATION_RECONCILIATION_UNAVAILABLE"
+            )
+        if (
+            authoritative is None
+            or str(authoritative.get("id")) != expected_identity
+            or authoritative.get("enable") is not True
+            or authoritative.get("expiryTime") != expiry_ms
+        ):
+            return SanaeiActivationResult(MutationOutcome.AMBIGUOUS, "ACTIVATION_NOT_VERIFIED")
+        try:
+            response = await self.transport.get(f"/panel/api/clients/links/{quote(email, safe='')}")
+        except (TimeoutError, httpx.HTTPError):
+            return SanaeiActivationResult(
+                MutationOutcome.TRANSIENT_FAILURE, "CONFIG_GENERATION_UNAVAILABLE"
+            )
+        raw_envelope = response.json_body
+        envelope = (
+            cast(Mapping[str, object], raw_envelope) if isinstance(raw_envelope, Mapping) else None
+        )
+        links = (
+            envelope.get("obj")
+            if envelope is not None and envelope.get("success") is True
+            else None
+        )
+        if not isinstance(links, list) or not links:
+            return SanaeiActivationResult(
+                MutationOutcome.CONTRACT_MISMATCH, "CONFIG_GENERATION_INVALID"
+            )
+        typed_links = cast(list[object], links)
+        if not all(isinstance(link, str) for link in typed_links):
+            return SanaeiActivationResult(
+                MutationOutcome.CONTRACT_MISMATCH, "CONFIG_GENERATION_INVALID"
+            )
+        return SanaeiActivationResult(
+            MutationOutcome.SUCCESS,
+            "ACTIVATION_AUTHORITATIVELY_VERIFIED",
+            activated_at,
+            "\n".join(cast(list[str], typed_links)),
         )
 
 

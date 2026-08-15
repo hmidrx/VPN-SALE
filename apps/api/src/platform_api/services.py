@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .activation_models import ServiceDeliveryRecordModel
 from .customer_auth.routes import current_customer_session_dependency
 from .database import get_db_session
 from .identity.models import CustomerSessionModel
@@ -170,15 +171,19 @@ def _allowlisted_text(snapshot: dict[str, object], name: str, maximum: int) -> s
 
 _LIFECYCLE_LABELS = {
     "ACTIVE": "فعال",
+    "ACTIVATING": "در حال فعال‌سازی سرویس",
     "PROVISIONING": "در حال آماده‌سازی",
-    "PENDING_ACTIVATION": "سفارش ثبت شد",
+    "PENDING_ACTIVATION": "سرویس شما در حال آماده‌سازی است",
+    "FAILED": "نیازمند پشتیبانی یا تلاش مجدد",
     "SUSPENDED": "متوقف",
     "EXPIRED": "منقضی",
     "DEGRADED": "نیازمند بررسی",
 }
 
 
-def _customer_summary(row: ServiceModel, verified: int) -> CustomerServiceSummary:
+def _customer_summary(
+    row: ServiceModel, verified: int, delivery_ready: bool = False
+) -> CustomerServiceSummary:
     snapshot = row.entitlement_snapshot
     required = _allowlisted_int(snapshot, "required_attachment_count") or 0
     entitlement = CustomerServiceEntitlement(
@@ -189,7 +194,7 @@ def _customer_summary(row: ServiceModel, verified: int) -> CustomerServiceSummar
         quality_label=_allowlisted_text(snapshot, "quality_label", 80),
     )
     progress = min(100, round(verified / required * 100)) if required else 0
-    delivery_ready = required > 0 and verified == required and row.lifecycle == "ACTIVE"
+    delivery_ready = delivery_ready and row.lifecycle == "ACTIVE"
     return CustomerServiceSummary(
         service_reference=row.public_reference,
         display_name=_allowlisted_text(snapshot, "product_label", 120) or "خدمت شبکه",
@@ -219,7 +224,20 @@ def customer_service_summaries(
         .order_by(ServiceModel.created_at.desc())
         .limit(min(max(limit, 1), 100))
     )
-    return [_customer_summary(row, _verified_attachment_count(db, row.id)) for row in rows]
+    return [
+        _customer_summary(row, _verified_attachment_count(db, row.id), _delivery_ready(db, row.id))
+        for row in rows
+    ]
+
+
+def _delivery_ready(db: Session, service_id: str) -> bool:
+    return bool(
+        db.scalar(
+            select(ServiceDeliveryRecordModel.delivery_ready).where(
+                ServiceDeliveryRecordModel.service_id == service_id
+            )
+        )
+    )
 
 
 def _verified_attachment_count(db: Session, service_id: str) -> int:
@@ -248,7 +266,9 @@ def customer_service_projection(
     )
     if row is None:
         return None
-    summary = _customer_summary(row, _verified_attachment_count(db, row.id))
+    summary = _customer_summary(
+        row, _verified_attachment_count(db, row.id), _delivery_ready(db, row.id)
+    )
     return CustomerServiceDetail(
         summary=summary,
         service_health=summary.lifecycle_label,
