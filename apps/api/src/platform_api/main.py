@@ -13,6 +13,7 @@ from .customer_auth.routes import account_linking_router, password_login_router,
 from .customer_auth.routes import router as customer_auth_router
 from .customer_support_attachments import router as customer_web_support_attachment_router
 from .customer_support_csat import router as customer_web_support_csat_router
+from .customer_support_read_state import router as customer_web_support_read_state_router
 from .customer_support_runtime import router as customer_web_support_runtime_router
 from .delivery import admin_router as admin_delivery_router
 from .delivery import customer_router as customer_delivery_router
@@ -158,6 +159,7 @@ def create_app(settings: Settings) -> FastAPI:
         customer_web_support_runtime_router,
         customer_web_support_attachment_router,
         customer_web_support_csat_router,
+        customer_web_support_read_state_router,
         management_router,
         catalog_router,
         admin_catalog_router,
