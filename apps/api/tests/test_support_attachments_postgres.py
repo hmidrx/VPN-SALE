@@ -103,20 +103,17 @@ def _upload(
     key: str,
     content_type: str = "image/png",
 ) -> dict[str, object]:
-    return cast(
-        dict[str, object],
-        asyncio.run(
-            upload_customer_support_attachment(
-                reference,
-                _request(content, content_type),
-                Response(),
-                None,
-                db,
-                telegram_id,
-                settings,
-                key,
-            )
-        ),
+    return asyncio.run(
+        upload_customer_support_attachment(
+            reference,
+            _request(content, content_type),
+            Response(),
+            None,
+            db,
+            telegram_id,
+            settings,
+            key,
+        )
     )
 
 
