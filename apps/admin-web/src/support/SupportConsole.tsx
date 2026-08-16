@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 
 import {
   addSupportInternalNote,
@@ -10,15 +10,21 @@ import {
   getInternalNotes,
   getSupportConversation,
   listSupportAttachments,
+  listSupportCannedResponses,
   listSupportConversations,
+  listSupportMacros,
+  previewSupportMacro,
+  renderSupportCannedResponse,
   replySupportConversation,
   supportIdempotencyKey,
 } from "./api";
 import styles from "./SupportConsole.module.css";
 import type {
   SupportAttachment,
+  SupportCannedResponse,
   SupportConversationDetail,
   SupportConversationSummary,
+  SupportMacro,
   SupportMessage,
   SupportStatus,
 } from "./types";
@@ -56,6 +62,7 @@ const legalTransitions: Record<SupportStatus, readonly SupportStatus[]> = {
 };
 
 const replyBlockedStatuses = new Set<SupportStatus>(["RESOLVED", "CLOSED", "SPAM", "ARCHIVED"]);
+const cannedBuiltinPlaceholders = new Set(["ticket_reference", "subject", "status", "priority"]);
 
 function faDate(value: string | null): string {
   if (!value) return "—";
@@ -99,6 +106,11 @@ export function SupportConsole(): React.ReactElement {
   const [attachments, setAttachments] = useState<SupportAttachment[]>([]);
   const [notes, setNotes] = useState<SupportMessage[]>([]);
   const [notesNextCursor, setNotesNextCursor] = useState<string | null>(null);
+  const [cannedResponses, setCannedResponses] = useState<SupportCannedResponse[]>([]);
+  const [selectedCannedCode, setSelectedCannedCode] = useState("");
+  const [cannedValues, setCannedValues] = useState<Record<string, string>>({});
+  const [macros, setMacros] = useState<SupportMacro[]>([]);
+  const [selectedMacroCode, setSelectedMacroCode] = useState("");
   const [statusFilter, setStatusFilter] = useState<SupportStatus | "">("");
   const [replyBody, setReplyBody] = useState("");
   const [replyKey, setReplyKey] = useState(() => supportIdempotencyKey());
@@ -127,7 +139,7 @@ export function SupportConsole(): React.ReactElement {
     }
   }, [statusFilter]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     void refreshInbox();
   }, [refreshInbox]);
 
@@ -140,6 +152,7 @@ export function SupportConsole(): React.ReactElement {
       setNoteBody("");
       setNoteKey(supportIdempotencyKey());
       setStatusReason("");
+      setCannedValues({});
     }
     try {
       const conversation = await getSupportConversation(reference);
@@ -160,11 +173,39 @@ export function SupportConsole(): React.ReactElement {
         setNotes([]);
         setNotesNextCursor(null);
       }
+      try {
+        const canned = await listSupportCannedResponses(reference);
+        setCannedResponses(canned.items);
+        setSelectedCannedCode((current) =>
+          canned.items.some((item) => item.code === current)
+            ? current
+            : (canned.items[0]?.code ?? ""),
+        );
+      } catch {
+        setCannedResponses([]);
+        setSelectedCannedCode("");
+      }
+      try {
+        const availableMacros = await listSupportMacros();
+        setMacros(availableMacros.items);
+        setSelectedMacroCode((current) =>
+          availableMacros.items.some((item) => item.code === current)
+            ? current
+            : (availableMacros.items[0]?.code ?? ""),
+        );
+      } catch {
+        setMacros([]);
+        setSelectedMacroCode("");
+      }
     } catch (cause) {
       setDetail(null);
       setAttachments([]);
       setNotes([]);
       setNotesNextCursor(null);
+      setCannedResponses([]);
+      setSelectedCannedCode("");
+      setMacros([]);
+      setSelectedMacroCode("");
       setError(cause instanceof Error ? cause.message : "دریافت تیکت انجام نشد.");
     }
   }, []);
@@ -179,6 +220,18 @@ export function SupportConsole(): React.ReactElement {
     }
     return grouped;
   }, [attachments]);
+  const selectedCanned = useMemo(
+    () => cannedResponses.find((item) => item.code === selectedCannedCode) ?? null,
+    [cannedResponses, selectedCannedCode],
+  );
+  const customCannedPlaceholders = useMemo(
+    () =>
+      selectedCanned?.placeholders.filter((item) => !cannedBuiltinPlaceholders.has(item)) ?? [],
+    [selectedCanned],
+  );
+  const cannedValuesReady = customCannedPlaceholders.every(
+    (item) => Boolean(cannedValues[item]?.trim()),
+  );
   const allowedTargetStatuses = detail ? legalTransitions[detail.status] : [];
   const replyAllowed = detail ? !replyBlockedStatuses.has(detail.status) : false;
   const noteAllowed = detail?.status !== "ARCHIVED";
@@ -280,6 +333,69 @@ export function SupportConsole(): React.ReactElement {
     }
   }
 
+  async function insertCannedResponse(): Promise<void> {
+    if (
+      !detail ||
+      busy ||
+      !replyAllowed ||
+      !selectedCannedCode ||
+      !cannedValuesReady
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const values = Object.fromEntries(
+      customCannedPlaceholders.map((item) => [item, cannedValues[item]?.trim() ?? ""]),
+    );
+    try {
+      const rendered = await renderSupportCannedResponse(
+        detail.reference,
+        selectedCannedCode,
+        values,
+      );
+      setReplyBody(rendered.body);
+      setReplyKey(supportIdempotencyKey());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "درج پاسخ آماده انجام نشد.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyMacroPreview(): Promise<void> {
+    if (!detail || busy || !selectedMacroCode) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await previewSupportMacro(
+        detail.reference,
+        selectedMacroCode,
+        detail.version,
+      );
+      if (result.draft.reply_body !== null) {
+        setReplyBody(result.draft.reply_body);
+        setReplyKey(supportIdempotencyKey());
+      }
+      if (result.draft.internal_note_body !== null) {
+        setNoteBody(result.draft.internal_note_body);
+        setNoteKey(supportIdempotencyKey());
+      }
+      if (
+        result.draft.status !== null &&
+        allowedTargetStatuses.includes(result.draft.status)
+      ) {
+        setTargetStatus(result.draft.status);
+        setStatusReason(result.draft.status_reason ?? "");
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "اعمال ماکرو انجام نشد.");
+      await openTicket(detail.reference, true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function sendReply(): Promise<void> {
     if (!detail || busy || !replyAllowed || !replyBody.trim()) return;
     setBusy(true);
@@ -350,7 +466,7 @@ export function SupportConsole(): React.ReactElement {
       <header className="support-runtime-header">
         <div>
           <h1>کنسول پشتیبانی</h1>
-          <p>Inbox واقعی تیکت‌های مشتری با claim، پاسخ عمومی، تصویر پیوست، یادداشت داخلی و تاریخچه صفحه‌بندی‌شده.</p>
+          <p>Inbox واقعی تیکت‌های مشتری با claim، پاسخ عمومی، پاسخ آماده، ماکرو، تصویر پیوست، یادداشت داخلی و تاریخچه صفحه‌بندی‌شده.</p>
         </div>
         <button type="button" onClick={() => void refreshInbox()} disabled={loading || busy}>
           {loading ? "در حال دریافت…" : "تازه‌سازی"}
@@ -462,6 +578,82 @@ export function SupportConsole(): React.ReactElement {
                   </article>
                 ))}
               </div>
+
+              <section className="support-runtime-actions">
+                <h3>ابزارهای پاسخ سریع</h3>
+                {cannedResponses.length > 0 ? (
+                  <>
+                    <label>
+                      پاسخ آماده
+                      <select
+                        aria-label="پاسخ آماده"
+                        value={selectedCannedCode}
+                        onChange={(event) => {
+                          setSelectedCannedCode(event.target.value);
+                          setCannedValues({});
+                        }}
+                        disabled={busy}
+                      >
+                        {cannedResponses.map((item) => (
+                          <option value={item.code} key={`${item.code}-${item.locale}`}>
+                            {item.title} · v{item.version.toLocaleString("fa-IR")}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {customCannedPlaceholders.map((placeholder) => (
+                      <label key={placeholder}>
+                        مقدار {placeholder}
+                        <input
+                          value={cannedValues[placeholder] ?? ""}
+                          onChange={(event) =>
+                            setCannedValues((current) => ({
+                              ...current,
+                              [placeholder]: event.target.value,
+                            }))
+                          }
+                          maxLength={240}
+                          disabled={busy}
+                        />
+                      </label>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => void insertCannedResponse()}
+                      disabled={busy || !replyAllowed || !selectedCannedCode || !cannedValuesReady}
+                    >
+                      درج پاسخ آماده در متن
+                    </button>
+                  </>
+                ) : (
+                  <p className="muted">پاسخ آماده‌ی قابل استفاده برای این تیکت وجود ندارد یا مجوز آن در دسترس نیست.</p>
+                )}
+
+                {macros.length > 0 ? (
+                  <div className="support-runtime-status-row">
+                    <select
+                      aria-label="ماکرو پشتیبانی"
+                      value={selectedMacroCode}
+                      onChange={(event) => setSelectedMacroCode(event.target.value)}
+                      disabled={busy}
+                    >
+                      {macros.map((item) => (
+                        <option value={item.code} key={item.code}>
+                          {item.title} · v{item.version.toLocaleString("fa-IR")}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="muted">ماکرو فقط فرم‌های زیر را پر می‌کند و چیزی را خودکار ارسال نمی‌کند.</span>
+                    <button
+                      type="button"
+                      onClick={() => void applyMacroPreview()}
+                      disabled={busy || !selectedMacroCode}
+                    >
+                      اعمال ماکرو به فرم‌ها
+                    </button>
+                  </div>
+                ) : null}
+              </section>
 
               <section className="support-runtime-actions">
                 <h3>پاسخ به مشتری</h3>

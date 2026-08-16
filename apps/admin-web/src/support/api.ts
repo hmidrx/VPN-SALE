@@ -1,8 +1,11 @@
 import { getAccessToken } from "../auth/token-store";
 import type {
   SupportAttachment,
+  SupportCannedResponse,
   SupportConversationDetail,
   SupportConversationPage,
+  SupportMacro,
+  SupportMacroPreview,
   SupportMessagePage,
   SupportSlaEscalation,
   SupportStatus,
@@ -25,8 +28,9 @@ function errorForStatus(status: number): Error {
   if (status === 400) return new Error("صفحه درخواستی معتبر نیست؛ اطلاعات را تازه کنید.");
   if (status === 401) return new Error("نشست مدیریت معتبر نیست. دوباره وارد شوید.");
   if (status === 403) return new Error("مجوز لازم برای این عملیات را ندارید.");
-  if (status === 404) return new Error("تیکت، پیوست یا هشدار SLA پیدا نشد.");
-  if (status === 409) return new Error("وضعیت تیکت تغییر کرده است؛ اطلاعات را تازه کنید.");
+  if (status === 404) return new Error("تیکت، پیوست، پاسخ آماده، ماکرو یا هشدار SLA پیدا نشد.");
+  if (status === 409) return new Error("وضعیت تیکت یا منبع پشتیبانی تغییر کرده است؛ اطلاعات را تازه کنید.");
+  if (status === 422) return new Error("مقادیر واردشده برای عملیات پشتیبانی معتبر نیستند.");
   return new Error("عملیات پشتیبانی انجام نشد.");
 }
 
@@ -106,6 +110,48 @@ export async function downloadSupportAttachment(
   );
   if (!response.ok) throw errorForStatus(response.status);
   return response.blob();
+}
+
+export function listSupportCannedResponses(
+  reference: string,
+  locale = "fa",
+): Promise<{ items: SupportCannedResponse[] }> {
+  return call<{ items: SupportCannedResponse[] }>(
+    `/canned-responses${queryString({ reference, locale })}`,
+  );
+}
+
+export function renderSupportCannedResponse(
+  reference: string,
+  code: string,
+  values: Record<string, string>,
+  locale = "fa",
+): Promise<{ code: string; version: number; body: string }> {
+  return call<{ code: string; version: number; body: string }>(
+    `/conversations/${encodeURIComponent(reference)}/canned-responses/${encodeURIComponent(code)}/render`,
+    {
+      method: "POST",
+      body: JSON.stringify({ locale, values }),
+    },
+  );
+}
+
+export function listSupportMacros(): Promise<{ items: SupportMacro[] }> {
+  return call<{ items: SupportMacro[] }>("/macros");
+}
+
+export function previewSupportMacro(
+  reference: string,
+  code: string,
+  expectedVersion: number,
+): Promise<SupportMacroPreview> {
+  return call<SupportMacroPreview>(
+    `/conversations/${encodeURIComponent(reference)}/macros/${encodeURIComponent(code)}/preview`,
+    {
+      method: "POST",
+      body: JSON.stringify({ expected_version: expectedVersion }),
+    },
+  );
 }
 
 export function getConversationSlaEscalations(
