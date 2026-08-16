@@ -12,7 +12,10 @@ from telegram_bot.delivery_api import SubscriptionDelivery
 from telegram_bot.internal_api import AuthoritativePrivateApiError, PrivateApiUnavailable
 from telegram_bot.portal import CustomerContext, CustomerPortalPort
 from telegram_bot.runtime.handlers import HandlerResult, IncomingUser
-from telegram_bot.runtime.purchase_truth import TruthfulPurchaseBotCommandHandler, TruthfulTelegramPollingRuntime
+from telegram_bot.runtime.purchase_truth import (
+    TruthfulPurchaseBotCommandHandler,
+    TruthfulTelegramPollingRuntime,
+)
 from telegram_bot.screens import safe_text
 from telegram_bot.transport.polling import TelegramTransport, UrlLibTelegramTransport
 
@@ -54,7 +57,9 @@ class SecureDeliveryBotCommandHandler(TruthfulPurchaseBotCommandHandler):
     def _delivery_portal(self) -> DeliveryPortal:
         return cast(DeliveryPortal, self.portal)
 
-    def _service_rows(self, service_reference: str, locale: str, ready: bool) -> list[list[dict[str, str]]]:
+    def _service_rows(
+        self, service_reference: str, locale: str, ready: bool
+    ) -> list[list[dict[str, str]]]:
         rows: list[list[dict[str, str]]] = []
         if ready:
             rows.append(
@@ -76,7 +81,9 @@ class SecureDeliveryBotCommandHandler(TruthfulPurchaseBotCommandHandler):
         rows.extend(self.renderer.nav_rows(locale))
         return rows
 
-    def _subscription_rows(self, service_reference: str, locale: str) -> list[list[dict[str, str]]]:
+    def _subscription_rows(
+        self, service_reference: str, locale: str
+    ) -> list[list[dict[str, str]]]:
         return [
             [
                 {
@@ -95,7 +102,9 @@ class SecureDeliveryBotCommandHandler(TruthfulPurchaseBotCommandHandler):
             [
                 {
                     "text": "📋 کانفیگ مستقیم",
-                    "callback_data": BotCallback(CallbackAction.OPEN_CONFIGS, service_reference).pack(),
+                    "callback_data": BotCallback(
+                        CallbackAction.OPEN_CONFIGS, service_reference
+                    ).pack(),
                 }
             ],
             *self.renderer.nav_rows(locale),
@@ -132,7 +141,6 @@ class SecureDeliveryBotCommandHandler(TruthfulPurchaseBotCommandHandler):
     def _route_callback(
         self, user: IncomingUser, locale: str, callback: BotCallback, update_id: int
     ) -> HandlerResult:
-        _ = update_id
         context = self._portal_context(user, locale)
         delivery_portal = self._delivery_portal()
 
@@ -175,8 +183,10 @@ class SecureDeliveryBotCommandHandler(TruthfulPurchaseBotCommandHandler):
                 )
             except PrivateApiUnavailable:
                 return self._callback_message(
-                    "نتیجه صدور لینک مشخص نشد و برای جلوگیری از جابه‌جایی ناخواسته رمز، درخواست خودکار تکرار نشد.\n\n"
-                    "اگر لینکی دریافت نکردید، می‌توانید از «ساخت لینک جدید» برای بازیابی دسترسی استفاده کنید.",
+                    "نتیجه صدور لینک مشخص نشد و برای جلوگیری از جابه‌جایی ناخواسته رمز، "
+                    "درخواست خودکار تکرار نشد.\n\n"
+                    "اگر لینکی دریافت نکردید، می‌توانید از «ساخت لینک جدید» برای بازیابی "
+                    "دسترسی استفاده کنید.",
                     self._subscription_rows(callback.value, locale),
                 )
             return self._callback_message(
@@ -197,8 +207,8 @@ class SecureDeliveryBotCommandHandler(TruthfulPurchaseBotCommandHandler):
                 )
             except PrivateApiUnavailable:
                 return self._callback_message(
-                    "نتیجه تغییر لینک مشخص نشد. درخواست خودکار تکرار نشد تا وضعیت رمز اشتراک مبهم‌تر نشود.\n"
-                    "چند دقیقه بعد وضعیت اشتراک را دوباره باز کنید.",
+                    "نتیجه تغییر لینک مشخص نشد. درخواست خودکار تکرار نشد تا وضعیت رمز اشتراک "
+                    "مبهم‌تر نشود.\nچند دقیقه بعد وضعیت اشتراک را دوباره باز کنید.",
                     self.renderer.nav_rows(locale),
                 )
             return self._callback_message(
@@ -241,7 +251,8 @@ class SecureDeliveryBotCommandHandler(TruthfulPurchaseBotCommandHandler):
                 )
             except PrivateApiUnavailable:
                 return self._callback_message(
-                    "نتیجه لغو مشخص نشد. این عملیات قابل تکرار است؛ دوباره تأیید کنید یا بعداً وضعیت را بررسی کنید.",
+                    "نتیجه لغو مشخص نشد. این عملیات قابل تکرار است؛ دوباره تأیید کنید یا "
+                    "بعداً وضعیت را بررسی کنید.",
                     [
                         [
                             {
@@ -277,6 +288,10 @@ class SecureDeliveryBotCommandHandler(TruthfulPurchaseBotCommandHandler):
         if callback.action == CallbackAction.OPEN_CONFIGS:
             if not callback.value:
                 return self._stale(locale)
+            # OPEN_CONFIGS is legacy-classified as navigation in the base handler. Enforce the
+            # stronger sensitive policy here before revealing any credential material.
+            if not self._allow_callback(user.telegram_user_id, "sensitive"):
+                return self._limited_callback(user.telegram_user_id, "sensitive")
             try:
                 connection_uri = delivery_portal.connection_uri(context, callback.value)
             except (AuthoritativePrivateApiError, PrivateApiUnavailable):
