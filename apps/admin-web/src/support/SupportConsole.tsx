@@ -12,6 +12,7 @@ import {
   replySupportConversation,
   supportIdempotencyKey,
 } from "./api";
+import styles from "./SupportConsole.module.css";
 import type {
   SupportConversationDetail,
   SupportConversationSummary,
@@ -36,6 +37,23 @@ const statusLabels: Record<SupportStatus, string> = {
 
 const statusOptions = Object.keys(statusLabels) as SupportStatus[];
 
+const legalTransitions: Record<SupportStatus, readonly SupportStatus[]> = {
+  NEW: ["OPEN", "ASSIGNED", "SPAM", "CLOSED"],
+  OPEN: ["ASSIGNED", "IN_PROGRESS", "WAITING_FOR_CUSTOMER", "RESOLVED", "ESCALATED", "CLOSED", "SPAM"],
+  ASSIGNED: ["IN_PROGRESS", "WAITING_FOR_CUSTOMER", "RESOLVED", "ESCALATED", "CLOSED"],
+  IN_PROGRESS: ["WAITING_FOR_CUSTOMER", "WAITING_FOR_SUPPORT", "RESOLVED", "ESCALATED", "CLOSED"],
+  WAITING_FOR_CUSTOMER: ["IN_PROGRESS", "RESOLVED", "ESCALATED", "CLOSED"],
+  WAITING_FOR_SUPPORT: ["IN_PROGRESS", "WAITING_FOR_CUSTOMER", "RESOLVED", "ESCALATED", "CLOSED"],
+  ESCALATED: ["IN_PROGRESS", "WAITING_FOR_CUSTOMER", "RESOLVED", "CLOSED"],
+  RESOLVED: ["CLOSED", "REOPENED"],
+  CLOSED: ["REOPENED", "ARCHIVED"],
+  REOPENED: ["IN_PROGRESS", "WAITING_FOR_SUPPORT", "RESOLVED", "ESCALATED"],
+  SPAM: ["ARCHIVED"],
+  ARCHIVED: [],
+};
+
+const replyBlockedStatuses = new Set<SupportStatus>(["RESOLVED", "CLOSED", "SPAM", "ARCHIVED"]);
+
 function faDate(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
@@ -58,8 +76,10 @@ export function SupportConsole(): React.ReactElement {
   const [notes, setNotes] = useState<SupportMessage[]>([]);
   const [statusFilter, setStatusFilter] = useState<SupportStatus | "">("");
   const [replyBody, setReplyBody] = useState("");
+  const [replyKey, setReplyKey] = useState(() => supportIdempotencyKey());
   const [noteBody, setNoteBody] = useState("");
-  const [targetStatus, setTargetStatus] = useState<SupportStatus>("IN_PROGRESS");
+  const [noteKey, setNoteKey] = useState(() => supportIdempotencyKey());
+  const [targetStatus, setTargetStatus] = useState<SupportStatus>("OPEN");
   const [statusReason, setStatusReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -82,13 +102,21 @@ export function SupportConsole(): React.ReactElement {
     void refreshInbox();
   }, [refreshInbox]);
 
-  const openTicket = useCallback(async (reference: string) => {
+  const openTicket = useCallback(async (reference: string, preserveDraft = false) => {
     setSelectedReference(reference);
     setError(null);
+    if (!preserveDraft) {
+      setReplyBody("");
+      setReplyKey(supportIdempotencyKey());
+      setNoteBody("");
+      setNoteKey(supportIdempotencyKey());
+      setStatusReason("");
+    }
     try {
       const conversation = await getSupportConversation(reference);
       setDetail(conversation);
-      setTargetStatus(conversation.status === "NEW" ? "OPEN" : "IN_PROGRESS");
+      const available = legalTransitions[conversation.status];
+      if (available.length > 0) setTargetStatus(available[0]);
       try {
         const internal = await getInternalNotes(reference);
         setNotes(internal.items);
@@ -103,29 +131,34 @@ export function SupportConsole(): React.ReactElement {
   }, []);
 
   const visibleItems = useMemo(() => items, [items]);
+  const allowedTargetStatuses = detail ? legalTransitions[detail.status] : [];
+  const replyAllowed = detail ? !replyBlockedStatuses.has(detail.status) : false;
+  const noteAllowed = detail?.status !== "ARCHIVED";
 
   async function afterMutation(next: SupportConversationDetail): Promise<void> {
     setDetail(next);
     setSelectedReference(next.reference);
+    const available = legalTransitions[next.status];
+    if (available.length > 0) setTargetStatus(available[0]);
     await refreshInbox();
   }
 
   async function claim(): Promise<void> {
-    if (!detail || busy) return;
+    if (!detail || busy || detail.assigned) return;
     setBusy(true);
     setError(null);
     try {
       await afterMutation(await claimSupportConversation(detail.reference, detail.version));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Claim انجام نشد.");
-      await openTicket(detail.reference);
+      await openTicket(detail.reference, true);
     } finally {
       setBusy(false);
     }
   }
 
   async function sendReply(): Promise<void> {
-    if (!detail || busy || !replyBody.trim()) return;
+    if (!detail || busy || !replyAllowed || !replyBody.trim()) return;
     setBusy(true);
     setError(null);
     const body = replyBody.trim();
@@ -134,20 +167,21 @@ export function SupportConsole(): React.ReactElement {
         detail.reference,
         body,
         detail.version,
-        supportIdempotencyKey(),
+        replyKey,
       );
       setReplyBody("");
+      setReplyKey(supportIdempotencyKey());
       await afterMutation(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "ارسال پاسخ انجام نشد.");
-      await openTicket(detail.reference);
+      await openTicket(detail.reference, true);
     } finally {
       setBusy(false);
     }
   }
 
   async function sendInternalNote(): Promise<void> {
-    if (!detail || busy || !noteBody.trim()) return;
+    if (!detail || busy || !noteAllowed || !noteBody.trim()) return;
     setBusy(true);
     setError(null);
     const body = noteBody.trim();
@@ -156,21 +190,29 @@ export function SupportConsole(): React.ReactElement {
         detail.reference,
         body,
         detail.version,
-        supportIdempotencyKey(),
+        noteKey,
       );
       setNoteBody("");
-      await openTicket(detail.reference);
+      setNoteKey(supportIdempotencyKey());
+      await openTicket(detail.reference, true);
       await refreshInbox();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "ثبت یادداشت انجام نشد.");
-      await openTicket(detail.reference);
+      await openTicket(detail.reference, true);
     } finally {
       setBusy(false);
     }
   }
 
   async function setStatus(): Promise<void> {
-    if (!detail || busy || statusReason.trim().length < 3) return;
+    if (
+      !detail ||
+      busy ||
+      !allowedTargetStatuses.includes(targetStatus) ||
+      statusReason.trim().length < 3
+    ) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -184,14 +226,14 @@ export function SupportConsole(): React.ReactElement {
       await afterMutation(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تغییر وضعیت انجام نشد.");
-      await openTicket(detail.reference);
+      await openTicket(detail.reference, true);
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <main dir="rtl" className="support-console support-runtime-console">
+    <main dir="rtl" className={`support-console support-runtime-console ${styles.console}`}>
       <header className="support-runtime-header">
         <div>
           <h1>کنسول پشتیبانی</h1>
@@ -258,9 +300,13 @@ export function SupportConsole(): React.ReactElement {
                 <button
                   type="button"
                   onClick={() => void claim()}
-                  disabled={busy || detail.assigned_to_me}
+                  disabled={busy || detail.assigned}
                 >
-                  {detail.assigned_to_me ? "در اختیار شما" : detail.assigned ? "Claim توسط اپراتور دیگر" : "Claim تیکت"}
+                  {detail.assigned_to_me
+                    ? "در اختیار شما"
+                    : detail.assigned
+                      ? "در اختیار اپراتور دیگر"
+                      : "Claim تیکت"}
                 </button>
               </div>
 
@@ -278,18 +324,22 @@ export function SupportConsole(): React.ReactElement {
 
               <section className="support-runtime-actions">
                 <h3>پاسخ به مشتری</h3>
+                {!replyAllowed ? <p className="muted">در وضعیت فعلی ارسال پاسخ عمومی مجاز نیست.</p> : null}
                 <textarea
                   aria-label="پاسخ عمومی"
                   value={replyBody}
-                  onChange={(event) => setReplyBody(event.target.value)}
+                  onChange={(event) => {
+                    setReplyBody(event.target.value);
+                    setReplyKey(supportIdempotencyKey());
+                  }}
                   maxLength={4000}
                   rows={5}
-                  disabled={busy}
+                  disabled={busy || !replyAllowed}
                 />
                 <button
                   type="button"
                   onClick={() => void sendReply()}
-                  disabled={busy || !replyBody.trim()}
+                  disabled={busy || !replyAllowed || !replyBody.trim()}
                 >
                   ارسال پاسخ عمومی
                 </button>
@@ -309,15 +359,18 @@ export function SupportConsole(): React.ReactElement {
                 <textarea
                   aria-label="یادداشت داخلی"
                   value={noteBody}
-                  onChange={(event) => setNoteBody(event.target.value)}
+                  onChange={(event) => {
+                    setNoteBody(event.target.value);
+                    setNoteKey(supportIdempotencyKey());
+                  }}
                   maxLength={4000}
                   rows={3}
-                  disabled={busy}
+                  disabled={busy || !noteAllowed}
                 />
                 <button
                   type="button"
                   onClick={() => void sendInternalNote()}
-                  disabled={busy || !noteBody.trim()}
+                  disabled={busy || !noteAllowed || !noteBody.trim()}
                 >
                   افزودن یادداشت داخلی
                 </button>
@@ -325,33 +378,37 @@ export function SupportConsole(): React.ReactElement {
 
               <section className="support-runtime-actions">
                 <h3>تغییر وضعیت</h3>
-                <div className="support-runtime-status-row">
-                  <select
-                    aria-label="وضعیت جدید"
-                    value={targetStatus}
-                    onChange={(event) => setTargetStatus(event.target.value as SupportStatus)}
-                    disabled={busy}
-                  >
-                    {statusOptions.map((status) => (
-                      <option value={status} key={status}>{statusLabels[status]}</option>
-                    ))}
-                  </select>
-                  <input
-                    aria-label="دلیل تغییر وضعیت"
-                    value={statusReason}
-                    onChange={(event) => setStatusReason(event.target.value)}
-                    maxLength={500}
-                    placeholder="دلیل تغییر وضعیت"
-                    disabled={busy}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void setStatus()}
-                    disabled={busy || statusReason.trim().length < 3}
-                  >
-                    اعمال وضعیت
-                  </button>
-                </div>
+                {allowedTargetStatuses.length === 0 ? (
+                  <p className="muted">برای این وضعیت انتقال دیگری مجاز نیست.</p>
+                ) : (
+                  <div className="support-runtime-status-row">
+                    <select
+                      aria-label="وضعیت جدید"
+                      value={targetStatus}
+                      onChange={(event) => setTargetStatus(event.target.value as SupportStatus)}
+                      disabled={busy}
+                    >
+                      {allowedTargetStatuses.map((status) => (
+                        <option value={status} key={status}>{statusLabels[status]}</option>
+                      ))}
+                    </select>
+                    <input
+                      aria-label="دلیل تغییر وضعیت"
+                      value={statusReason}
+                      onChange={(event) => setStatusReason(event.target.value)}
+                      maxLength={500}
+                      placeholder="دلیل تغییر وضعیت"
+                      disabled={busy}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void setStatus()}
+                      disabled={busy || statusReason.trim().length < 3}
+                    >
+                      اعمال وضعیت
+                    </button>
+                  </div>
+                )}
               </section>
             </>
           )}
