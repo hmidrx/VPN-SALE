@@ -34,7 +34,9 @@ def test_subscription_urls_are_absolute_and_contain_plaintext_only_in_response_b
 
     assert set(urls) == {"base64", "links", "mihomo", "clash", "sing_box"}
     assert urls["base64"].endswith("/subscriptions/" + token)
-    assert all(value.startswith("https://sub.example.test/subscriptions/") for value in urls.values())
+    assert all(
+        value.startswith("https://sub.example.test/subscriptions/") for value in urls.values()
+    )
     assert all(token in value for value in urls.values())
 
 
@@ -42,7 +44,9 @@ def test_production_subscription_origin_requires_https_and_rejects_credentials()
     token = "opaque-" + ("y" * 48)
     with pytest.raises(ValueError):
         subscription_urls(
-            Settings(environment="production", subscription_public_origin="http://sub.example.test"),
+            Settings(
+                environment="production", subscription_public_origin="http://sub.example.test"
+            ),
             token,
         )
     credential_origin = "https://" + "user" + ":" + "pass" + "@sub.example.test"
