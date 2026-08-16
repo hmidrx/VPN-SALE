@@ -13,12 +13,15 @@ import {
 import {
   createSupportTicket,
   fetchSupportAttachmentBlob,
+  getSupportCsat,
   getSupportTicket,
   listSupportTickets,
   replySupportTicket,
+  submitSupportCsat,
   SupportApiError,
   uploadSupportImage,
   type SupportAttachment,
+  type SupportCsatState,
   type SupportTicket,
   type SupportTicketSummary,
 } from "./api";
@@ -92,10 +95,14 @@ export function CustomerSupportHome(): React.ReactElement {
   const [tickets, setTickets] = React.useState<SupportTicketSummary[]>([]);
   const [selected, setSelected] = React.useState<string | null>(null);
   const [detail, setDetail] = React.useState<SupportTicket | null>(null);
+  const [csat, setCsat] = React.useState<SupportCsatState | null>(null);
+  const [csatScore, setCsatScore] = React.useState<number | null>(null);
+  const [csatFeedback, setCsatFeedback] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [failed, setFailed] = React.useState(false);
   const [pending, setPending] = React.useState(false);
   const [imagePending, setImagePending] = React.useState(false);
+  const [csatPending, setCsatPending] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
 
@@ -127,6 +134,27 @@ export function CustomerSupportHome(): React.ReactElement {
       .catch(() => { if (!controller.signal.aborted) setNotice("دریافت گفت‌وگو ممکن نشد. دوباره تلاش کنید."); });
     return () => controller.abort();
   }, [selected]);
+
+  React.useEffect(() => {
+    if (!detail) {
+      setCsat(null);
+      setCsatScore(null);
+      setCsatFeedback("");
+      return;
+    }
+    const controller = new AbortController();
+    setCsat(null);
+    setCsatScore(null);
+    setCsatFeedback("");
+    void getSupportCsat(detail.reference, controller.signal)
+      .then((value) => { if (!controller.signal.aborted) setCsat(value); })
+      .catch(() => {
+        if (!controller.signal.aborted && ["RESOLVED", "CLOSED"].includes(detail.status)) {
+          setNotice("دریافت وضعیت امتیاز پشتیبانی ممکن نشد.");
+        }
+      });
+    return () => controller.abort();
+  }, [detail]);
 
   async function createTicket(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -211,6 +239,40 @@ export function CustomerSupportHome(): React.ReactElement {
     }
   }
 
+  async function submitCsat(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!detail || csatPending) return;
+    if (csatScore === null) {
+      setNotice("لطفاً یک امتیاز از ۱ تا ۵ انتخاب کنید.");
+      return;
+    }
+    setCsatPending(true);
+    setNotice(null);
+    try {
+      const updated = await submitSupportCsat(
+        detail.reference,
+        csatScore,
+        csatFeedback.trim() || null,
+      );
+      setCsat(updated);
+      setNotice("ممنون؛ امتیاز شما برای این مرحله از پشتیبانی ثبت شد.");
+    } catch (error) {
+      if (error instanceof SupportApiError && error.status === 409) {
+        try {
+          const refreshed = await getSupportCsat(detail.reference);
+          setCsat(refreshed);
+        } catch {
+          // Keep the original conflict message; the next ticket refresh will reconcile state.
+        }
+        setNotice("برای این مرحله از پشتیبانی قبلاً امتیاز ثبت شده است.");
+      } else {
+        setNotice("ثبت امتیاز انجام نشد. دوباره تلاش کنید.");
+      }
+    } finally {
+      setCsatPending(false);
+    }
+  }
+
   return <PageShell labelledBy="page-title">
     <PageHeader
       title="پشتیبانی"
@@ -267,6 +329,47 @@ export function CustomerSupportHome(): React.ReactElement {
               </div>;
             })}
           </div>
+
+          {csat?.eligible ? <PremiumCard>
+            <form className={styles.csatForm} onSubmit={(event) => void submitCsat(event)}>
+              <div>
+                <h3>از پشتیبانی راضی بودید؟</h3>
+                <p className={styles.fileHint}>امتیاز شما به بهتر شدن کیفیت پاسخ‌گویی کمک می‌کند.</p>
+              </div>
+              <div className={styles.ratingRow} role="radiogroup" aria-label="امتیاز پشتیبانی از ۱ تا ۵">
+                {[1, 2, 3, 4, 5].map((score) => <button
+                  key={score}
+                  type="button"
+                  role="radio"
+                  aria-checked={csatScore === score}
+                  className={`${styles.ratingButton} ${csatScore === score ? styles.ratingActive : ""}`}
+                  onClick={() => setCsatScore(score)}
+                >
+                  <span aria-hidden="true">★</span>
+                  <span>{score.toLocaleString("fa-IR")}</span>
+                </button>)}
+              </div>
+              <label htmlFor="support-csat-feedback">نظر شما (اختیاری)</label>
+              <textarea
+                id="support-csat-feedback"
+                maxLength={800}
+                value={csatFeedback}
+                onChange={(event) => setCsatFeedback(event.target.value)}
+                placeholder="اگر نکته‌ای هست که بهتره بدونیم، اینجا بنویسید."
+              />
+              <button className="ui-button" type="submit" disabled={csatPending || csatScore === null}>
+                {csatPending ? "در حال ثبت امتیاز…" : "ثبت امتیاز"}
+              </button>
+            </form>
+          </PremiumCard> : null}
+
+          {csat?.submitted && csat.score ? <PremiumCard>
+            <div className={styles.csatSummary} role="status">
+              <strong>ممنون از بازخورد شما</strong>
+              <span>امتیاز ثبت‌شده برای این مرحله: {csat.score.toLocaleString("fa-IR")} از ۵</span>
+            </div>
+          </PremiumCard> : null}
+
           {!(["SPAM", "ARCHIVED"].includes(detail.status)) ? <PremiumCard>
             <form className={styles.form} onSubmit={(event) => void reply(event)}>
               <label htmlFor="support-reply">پاسخ شما</label>
