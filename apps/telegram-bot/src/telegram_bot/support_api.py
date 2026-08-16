@@ -63,9 +63,7 @@ class NativeSupportPortal(Protocol):
         message: str,
         idempotency_key: str,
     ) -> SupportTicket: ...
-    def support_csat_state(
-        self, context: CustomerContext, reference: str
-    ) -> SupportCsatState: ...
+    def support_csat_state(self, context: CustomerContext, reference: str) -> SupportCsatState: ...
     def submit_support_csat(
         self,
         context: CustomerContext,
@@ -137,7 +135,9 @@ class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeS
         score = data.get("score")
         if not isinstance(eligible, bool) or not isinstance(submitted, bool):
             raise PrivateApiUnavailable("وضعیت رضایت از پشتیبانی قابل استفاده نیست.")
-        if score is not None and (not isinstance(score, int) or isinstance(score, bool) or not 1 <= score <= 5):
+        if score is not None and (
+            not isinstance(score, int) or isinstance(score, bool) or not 1 <= score <= 5
+        ):
             raise PrivateApiUnavailable("وضعیت رضایت از پشتیبانی قابل استفاده نیست.")
         if submitted and score is None:
             raise PrivateApiUnavailable("وضعیت رضایت از پشتیبانی قابل استفاده نیست.")
