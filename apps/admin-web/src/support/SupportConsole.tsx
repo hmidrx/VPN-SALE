@@ -69,11 +69,27 @@ function senderLabel(message: SupportMessage): string {
   return message.sender_type === "CUSTOMER" ? "مشتری" : "پشتیبانی";
 }
 
+function mergeMessages(older: SupportMessage[], newer: SupportMessage[]): SupportMessage[] {
+  const bySequence = new Map<number, SupportMessage>();
+  for (const message of [...older, ...newer]) bySequence.set(message.sequence, message);
+  return Array.from(bySequence.values()).sort((left, right) => left.sequence - right.sequence);
+}
+
+function appendConversations(
+  current: SupportConversationSummary[],
+  next: SupportConversationSummary[],
+): SupportConversationSummary[] {
+  const references = new Set(current.map((item) => item.reference));
+  return [...current, ...next.filter((item) => !references.has(item.reference))];
+}
+
 export function SupportConsole(): React.ReactElement {
   const [items, setItems] = useState<SupportConversationSummary[]>([]);
+  const [inboxNextCursor, setInboxNextCursor] = useState<string | null>(null);
   const [selectedReference, setSelectedReference] = useState<string | null>(null);
   const [detail, setDetail] = useState<SupportConversationDetail | null>(null);
   const [notes, setNotes] = useState<SupportMessage[]>([]);
+  const [notesNextCursor, setNotesNextCursor] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<SupportStatus | "">("");
   const [replyBody, setReplyBody] = useState("");
   const [replyKey, setReplyKey] = useState(() => supportIdempotencyKey());
@@ -83,6 +99,7 @@ export function SupportConsole(): React.ReactElement {
   const [statusReason, setStatusReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState<"inbox" | "messages" | "notes" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refreshInbox = useCallback(async () => {
@@ -91,7 +108,10 @@ export function SupportConsole(): React.ReactElement {
     try {
       const result = await listSupportConversations(statusFilter || undefined);
       setItems(result.items);
+      setInboxNextCursor(result.next_cursor);
     } catch (cause) {
+      setItems([]);
+      setInboxNextCursor(null);
       setError(cause instanceof Error ? cause.message : "دریافت تیکت‌ها انجام نشد.");
     } finally {
       setLoading(false);
@@ -120,12 +140,15 @@ export function SupportConsole(): React.ReactElement {
       try {
         const internal = await getInternalNotes(reference);
         setNotes(internal.items);
+        setNotesNextCursor(internal.next_cursor);
       } catch {
         setNotes([]);
+        setNotesNextCursor(null);
       }
     } catch (cause) {
       setDetail(null);
       setNotes([]);
+      setNotesNextCursor(null);
       setError(cause instanceof Error ? cause.message : "دریافت تیکت انجام نشد.");
     }
   }, []);
@@ -134,6 +157,64 @@ export function SupportConsole(): React.ReactElement {
   const allowedTargetStatuses = detail ? legalTransitions[detail.status] : [];
   const replyAllowed = detail ? !replyBlockedStatuses.has(detail.status) : false;
   const noteAllowed = detail?.status !== "ARCHIVED";
+
+  async function loadMoreInbox(): Promise<void> {
+    if (!inboxNextCursor || loadingMore || loading) return;
+    setLoadingMore("inbox");
+    setError(null);
+    try {
+      const result = await listSupportConversations(
+        statusFilter || undefined,
+        inboxNextCursor,
+      );
+      setItems((current) => appendConversations(current, result.items));
+      setInboxNextCursor(result.next_cursor);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "دریافت تیکت‌های قدیمی‌تر انجام نشد.");
+    } finally {
+      setLoadingMore(null);
+    }
+  }
+
+  async function loadOlderMessages(): Promise<void> {
+    if (!detail?.messages_next_cursor || loadingMore) return;
+    const reference = detail.reference;
+    const cursor = detail.messages_next_cursor;
+    setLoadingMore("messages");
+    setError(null);
+    try {
+      const older = await getSupportConversation(reference, cursor);
+      setDetail((current) => {
+        if (!current || current.reference !== reference) return current;
+        return {
+          ...current,
+          messages: mergeMessages(older.messages, current.messages),
+          messages_next_cursor: older.messages_next_cursor,
+        };
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "دریافت پیام‌های قدیمی‌تر انجام نشد.");
+    } finally {
+      setLoadingMore(null);
+    }
+  }
+
+  async function loadOlderNotes(): Promise<void> {
+    if (!detail || !notesNextCursor || loadingMore) return;
+    const reference = detail.reference;
+    const cursor = notesNextCursor;
+    setLoadingMore("notes");
+    setError(null);
+    try {
+      const older = await getInternalNotes(reference, cursor);
+      setNotes((current) => mergeMessages(older.items, current));
+      setNotesNextCursor(older.next_cursor);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "دریافت یادداشت‌های قدیمی‌تر انجام نشد.");
+    } finally {
+      setLoadingMore(null);
+    }
+  }
 
   async function afterMutation(next: SupportConversationDetail): Promise<void> {
     setDetail(next);
@@ -237,7 +318,7 @@ export function SupportConsole(): React.ReactElement {
       <header className="support-runtime-header">
         <div>
           <h1>کنسول پشتیبانی</h1>
-          <p>Inbox واقعی تیکت‌های مشتری با claim، پاسخ عمومی، یادداشت داخلی و کنترل وضعیت.</p>
+          <p>Inbox واقعی تیکت‌های مشتری با claim، پاسخ عمومی، یادداشت داخلی و تاریخچه صفحه‌بندی‌شده.</p>
         </div>
         <button type="button" onClick={() => void refreshInbox()} disabled={loading || busy}>
           {loading ? "در حال دریافت…" : "تازه‌سازی"}
@@ -277,6 +358,15 @@ export function SupportConsole(): React.ReactElement {
               </button>
             ))}
           </div>
+          {inboxNextCursor ? (
+            <button
+              type="button"
+              onClick={() => void loadMoreInbox()}
+              disabled={loadingMore !== null || loading}
+            >
+              {loadingMore === "inbox" ? "در حال دریافت…" : "نمایش تیکت‌های قدیمی‌تر"}
+            </button>
+          ) : null}
         </aside>
 
         <section className="support-runtime-detail" aria-label="جزئیات مکالمه">
@@ -311,6 +401,15 @@ export function SupportConsole(): React.ReactElement {
               </div>
 
               <div className="support-runtime-messages" aria-label="پیام‌های عمومی">
+                {detail.messages_next_cursor ? (
+                  <button
+                    type="button"
+                    onClick={() => void loadOlderMessages()}
+                    disabled={loadingMore !== null}
+                  >
+                    {loadingMore === "messages" ? "در حال دریافت…" : "نمایش پیام‌های قدیمی‌تر"}
+                  </button>
+                ) : null}
                 {detail.messages.map((message) => (
                   <article key={`${message.sequence}-${message.created_at}`}>
                     <header>
@@ -348,6 +447,15 @@ export function SupportConsole(): React.ReactElement {
               <section className="support-runtime-actions support-runtime-internal">
                 <h3>یادداشت داخلی</h3>
                 <div className="support-runtime-notes">
+                  {notesNextCursor ? (
+                    <button
+                      type="button"
+                      onClick={() => void loadOlderNotes()}
+                      disabled={loadingMore !== null}
+                    >
+                      {loadingMore === "notes" ? "در حال دریافت…" : "نمایش یادداشت‌های قدیمی‌تر"}
+                    </button>
+                  ) : null}
                   {notes.length === 0 ? <p>یادداشت داخلی قابل نمایش نیست یا هنوز ثبت نشده است.</p> : null}
                   {notes.map((note) => (
                     <article key={`${note.sequence}-${note.created_at}`}>
