@@ -1,0 +1,47 @@
+.inbox {
+  margin: 20px auto 0;
+  width: min(1180px, calc(100% - 32px));
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 18px;
+  padding: 18px;
+  background: color-mix(in srgb, Canvas 96%, currentColor 4%);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.card {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 14px;
+  background: Canvas;
+}
+
+.card span,
+.card small {
+  overflow-wrap: anywhere;
+}
+
+.card button {
+  min-height: 44px;
+  margin-top: 4px;
+}
+
+@media (max-width: 700px) {
+  .inbox {
+    width: min(100% - 20px, 1180px);
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
