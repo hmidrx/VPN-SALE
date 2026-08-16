@@ -50,11 +50,7 @@ class BotApiTransport:
 
     @staticmethod
     def _reply_markup(mini_app_url: str) -> dict[str, object]:
-        return {
-            "inline_keyboard": [
-                [{"text": "مشاهده درخواست", "web_app": {"url": mini_app_url}}]
-            ]
-        }
+        return {"inline_keyboard": [[{"text": "مشاهده درخواست", "web_app": {"url": mini_app_url}}]]}
 
     def send(self, telegram_user_id: int, text: str, mini_app_url: str) -> None:
         try:
