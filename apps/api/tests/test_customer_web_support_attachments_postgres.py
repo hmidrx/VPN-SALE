@@ -180,7 +180,9 @@ def test_customer_web_images_are_private_sanitized_owned_and_idempotent() -> Non
             created = cast(
                 dict[str, Any],
                 create_ticket(
-                    CreateTicketRequest(subject="تصویر پشتیبانی", message="نیاز به ارسال اسکرین‌شات دارم."),
+                    CreateTicketRequest(
+                        subject="تصویر پشتیبانی", message="نیاز به ارسال اسکرین‌شات دارم."
+                    ),
                     Response(),
                     owner_session,
                     db,
@@ -286,11 +288,11 @@ def test_customer_web_images_are_private_sanitized_owned_and_idempotent() -> Non
                 )
             assert changed_payload.value.status_code == 409
 
-            detail = cast(
-                dict[str, Any], ticket_detail(reference, Response(), owner_session, db)
-            )
+            detail = cast(dict[str, Any], ticket_detail(reference, Response(), owner_session, db))
             messages = cast(list[dict[str, Any]], detail["messages"])
-            attachment_messages = [item for item in messages if item["message_type"] == "CUSTOMER_ATTACHMENT"]
+            attachment_messages = [
+                item for item in messages if item["message_type"] == "CUSTOMER_ATTACHMENT"
+            ]
             assert len(attachment_messages) == 1
             projected = cast(list[dict[str, Any]], attachment_messages[0]["attachments"])
             assert projected[0]["asset_reference"] == asset_reference
