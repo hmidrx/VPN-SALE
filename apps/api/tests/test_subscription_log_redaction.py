@@ -7,7 +7,7 @@ from platform_api.logging import SubscriptionPathRedactionFilter, redact_subscri
 
 def test_subscription_path_redaction_preserves_format_suffix_and_hides_query() -> None:
     token = "A" * 64
-    raw = f'/subscriptions/{token}/mihomo?client=secret'
+    raw = f"/subscriptions/{token}/mihomo?client=secret"
 
     redacted = redact_subscription_path(raw)
 
