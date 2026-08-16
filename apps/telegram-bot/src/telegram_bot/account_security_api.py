@@ -44,9 +44,17 @@ class AccountSecurityPrivatePlatformClient(DeliveryPrivatePlatformClient):
     def sessions(self, context: CustomerContext) -> list[SessionSummary]:
         data = self._request("GET", "/sessions", context.telegram_user_id)
         raw_items = data.get("items")
-        if not isinstance(raw_items, list) or len(raw_items) > 100:
+        if not isinstance(raw_items, list):
             raise PrivateApiUnavailable("اطلاعات نشست‌های حساب قابل استفاده نیست.")
-        return [self._session(item) for item in cast(list[dict[str, Any]], raw_items)]
+        items = cast(list[object], raw_items)
+        if len(items) > 100:
+            raise PrivateApiUnavailable("اطلاعات نشست‌های حساب قابل استفاده نیست.")
+        sessions: list[SessionSummary] = []
+        for item in items:
+            if not isinstance(item, dict):
+                raise PrivateApiUnavailable("اطلاعات نشست‌های حساب قابل استفاده نیست.")
+            sessions.append(self._session(cast(dict[str, Any], item)))
+        return sessions
 
     def revoke_session(self, context: CustomerContext, session_ref: str) -> bool:
         if _SESSION_REFERENCE.fullmatch(session_ref) is None:
