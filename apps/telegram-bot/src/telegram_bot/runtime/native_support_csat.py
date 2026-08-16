@@ -153,7 +153,8 @@ class NativeSupportCsatBotCommandHandler(NativeSupportBotCommandHandler):
             )
         except SupportOutcomeUnknown:
             return self._callback_message(
-                "نتیجه ثبت امتیاز هنوز مشخص نیست. دوباره همین دکمه را بزنید؛ ثبت تکراری انجام نمی‌شود.",
+                "نتیجه ثبت امتیاز هنوز مشخص نیست. دوباره همین دکمه را بزنید؛ "
+                "ثبت تکراری انجام نمی‌شود.",
                 [
                     [
                         {
@@ -206,7 +207,8 @@ class NativeSupportCsatBotCommandHandler(NativeSupportBotCommandHandler):
             )
         except SupportOutcomeUnknown:
             return self._single(
-                "نتیجه ثبت بازخورد هنوز مشخص نیست. همان متن را دوباره بفرستید؛ شناسه قبلی حفظ شده است.",
+                "نتیجه ثبت بازخورد هنوز مشخص نیست. همان متن را دوباره بفرستید؛ "
+                "شناسه قبلی حفظ شده است.",
                 [],
             )
         except AuthoritativePrivateApiError:
