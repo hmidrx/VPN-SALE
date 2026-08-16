@@ -108,7 +108,10 @@ def unread_summary(
             )
         ).all()
         items = [
-            {"reference": str(reference), "unread_count": counts.get(str(conversation_id), 0)}
+            {
+                "reference": str(reference),
+                "unread_count": counts.get(str(conversation_id), 0),
+            }
             for conversation_id, reference in rows
             if counts.get(str(conversation_id), 0) > 0
         ]
@@ -147,35 +150,31 @@ def mark_ticket_read(
     )
     if message_ids:
         now = datetime.now(UTC)
-        insert_statement = postgresql.insert(support_message_deliveries).values(
-            [
-                {
-                    "id": str(uuid4()),
-                    "message_id": message_id,
-                    "participant_type": "CUSTOMER",
-                    "participant_id": current.user_id,
-                    "delivered_at": now,
-                    "read_at": now,
-                }
-                for message_id in message_ids
-            ]
-        )
-        db.execute(
-            insert_statement.on_conflict_do_update(
-                index_elements=[
-                    support_message_deliveries.c.message_id,
-                    support_message_deliveries.c.participant_type,
-                    support_message_deliveries.c.participant_id,
-                ],
-                set_={
-                    "delivered_at": func.coalesce(
-                        support_message_deliveries.c.delivered_at,
-                        insert_statement.excluded.delivered_at,
-                    ),
-                    "read_at": insert_statement.excluded.read_at,
-                },
+        for message_id in message_ids:
+            insert_statement = postgresql.insert(support_message_deliveries).values(
+                id=str(uuid4()),
+                message_id=message_id,
+                participant_type="CUSTOMER",
+                participant_id=current.user_id,
+                delivered_at=now,
+                read_at=now,
             )
-        )
+            db.execute(
+                insert_statement.on_conflict_do_update(
+                    index_elements=[
+                        support_message_deliveries.c.message_id,
+                        support_message_deliveries.c.participant_type,
+                        support_message_deliveries.c.participant_id,
+                    ],
+                    set_={
+                        "delivered_at": func.coalesce(
+                            support_message_deliveries.c.delivered_at,
+                            insert_statement.excluded.delivered_at,
+                        ),
+                        "read_at": insert_statement.excluded.read_at,
+                    },
+                )
+            )
     db.commit()
 
     remaining = customer_support_unread_counts(db, current.user_id, [conversation_id]).get(
