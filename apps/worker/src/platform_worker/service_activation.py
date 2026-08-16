@@ -176,6 +176,24 @@ class ServiceActivationWorker:
         request.lease_expires_at = None
         request.updated_at = now
 
+    @classmethod
+    def _retry_delivery_drift(
+        cls,
+        request: ServiceActivationRequestModel,
+        code: str,
+        now: datetime,
+    ) -> None:
+        if request.attempt_count >= MAX_TRANSIENT_ATTEMPTS:
+            cls._operator_review(request, "DELIVERY_DRIFT_RETRY_EXHAUSTED", now)
+            return
+        request.status = "RETRY_PENDING"
+        request.failure_category = "DELIVERY_PRECONDITION_DRIFT"
+        request.result_code = code
+        request.next_attempt_at = now + retry_delay(request.attempt_count)
+        request.lease_owner = None
+        request.lease_expires_at = None
+        request.updated_at = now
+
     def _load_work(
         self, request_id: str
     ) -> tuple[ServiceActivationRequestModel, ServiceModel, ServiceAttachmentModel] | None:
@@ -301,7 +319,7 @@ class ServiceActivationWorker:
                     require_verified=True,
                 )
             except (DeliveryError, ValueError):
-                self._operator_review(request, "DELIVERY_PROFILE_CHANGED_OR_INVALID", now)
+                self._retry_delivery_drift(request, "DELIVERY_PROFILE_CHANGED_OR_INVALID", now)
                 db.commit()
                 return
             if (
@@ -309,7 +327,7 @@ class ServiceActivationWorker:
                 or fingerprint != result.credential_fingerprint
                 or not rendered_uri
             ):
-                self._operator_review(request, "DELIVERY_PRECONDITION_CHANGED", now)
+                self._retry_delivery_drift(request, "DELIVERY_PRECONDITION_CHANGED", now)
                 db.commit()
                 return
 
