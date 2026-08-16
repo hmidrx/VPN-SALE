@@ -292,9 +292,10 @@ def test_customer_web_unread_is_owned_filtered_and_sequence_bounded() -> None:
             )
 
             late_public = _agent_message(db, conversation_id, 6)
-            assert cast(dict[str, Any], unread_summary(Response(), owner_session, db))[
-                "total_unread"
-            ] == 1
+            assert (
+                cast(dict[str, Any], unread_summary(Response(), owner_session, db))["total_unread"]
+                == 1
+            )
 
             stale_snapshot = cast(
                 dict[str, Any],
