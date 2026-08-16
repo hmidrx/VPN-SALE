@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from hashlib import sha256
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
@@ -172,8 +172,11 @@ def _audit(
 
 
 def _resume_deadlines(db: Session, row: Any, now: datetime) -> dict[str, datetime | None]:
-    snapshot = row["sla_policy_snapshot"]
-    if not isinstance(snapshot, dict) or snapshot.get("pause_on_customer_wait") is not True:
+    snapshot_value = row["sla_policy_snapshot"]
+    if not isinstance(snapshot_value, dict):
+        return {}
+    snapshot = cast(dict[str, object], snapshot_value)
+    if snapshot.get("pause_on_customer_wait") is not True:
         return {}
     paused_at = db.scalar(
         select(support_status_history.c.created_at)
@@ -386,16 +389,25 @@ def claim_conversation(
                 created_at=now,
             )
         )
+        current_status = SupportStatus(str(row["status"]))
         values: dict[str, object] = {
             "assigned_agent_id": admin.id,
             "updated_at": now,
             "version": support_conversations.c.version + 1,
         }
-        if str(row["status"]) in {
-            SupportStatus.NEW.value,
-            SupportStatus.OPEN.value,
-        }:
+        if current_status in {SupportStatus.NEW, SupportStatus.OPEN}:
             values["status"] = SupportStatus.ASSIGNED.value
+            db.execute(
+                support_status_history.insert().values(
+                    id=str(uuid4()),
+                    conversation_id=row["id"],
+                    from_status=current_status.value,
+                    to_status=SupportStatus.ASSIGNED.value,
+                    reason="Agent claimed conversation",
+                    created_by=admin.id,
+                    created_at=now,
+                )
+            )
         db.execute(
             update(support_conversations)
             .where(support_conversations.c.id == row["id"])
