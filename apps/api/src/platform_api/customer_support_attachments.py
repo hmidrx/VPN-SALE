@@ -6,7 +6,7 @@ import hashlib
 import io
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
@@ -115,11 +115,11 @@ def _attachment_dto(db: Session, conversation_id: str, asset_reference: str) -> 
 
 def _advance_after_customer_attachment(
     db: Session,
-    row: object,
+    row: Any,
     customer_id: str,
     now: datetime,
 ) -> None:
-    current_status = str(row["status"])  # type: ignore[index]
+    current_status = str(row["status"])
     if current_status == SupportStatus.WAITING_FOR_CUSTOMER.value:
         current_status = transition_customer_support(
             db,
