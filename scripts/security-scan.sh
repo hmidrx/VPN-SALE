@@ -67,6 +67,10 @@ is_safe_assigned_secret_line() {
   [[ "$line" == *'`'* ]] && return 0
   [[ "$line" == *'_hash'* || "$line" == *'bot_token = bot_token'* || "$line" == *'# noqa: S105'* ]] && return 0
   [[ "$line" =~ (REDACTED|redacted|MISSING|missing|CHANGEME|change-me|example|placeholder) ]] && return 0
+  # An unquoted Python attribute/method expression is runtime data, not a
+  # committed literal. Keep this language-scoped so shell TOKEN=literal.value
+  # remains detectable.
+  [[ "$line" =~ \.py:.*=[[:space:]]*[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*(\(|[[:space:]]|$) ]] && return 0
   # Prompts and prose are not assignments even when they contain words like "token:".
   [[ "$line" == *'read -r -s -p'* ]] && return 0
   return 1
@@ -91,7 +95,6 @@ report_assigned_secrets() {
 
 report_credential_urls() {
   local tmp files
-  tmp="$(mktemp)"
   while IFS= read -r line; do
     # Match a literal expansion marker in scanned text.
     # shellcheck disable=SC2016
