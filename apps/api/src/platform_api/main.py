@@ -56,9 +56,6 @@ from .services import admin_router as admin_service_router
 from .services import allocation_router as admin_allocation_router
 from .services import customer_router as customer_service_router
 from .services import reconciliation_router as admin_service_reconciliation_router
-from .support import admin_router as admin_support_router
-from .support import customer_router as customer_support_router
-from .support import reseller_router as reseller_support_router
 from .support_admin_runtime import router as admin_support_runtime_router
 from .telegram_account_internal import router as telegram_account_internal_router
 from .telegram_delivery_internal import router as telegram_delivery_internal_router
@@ -174,9 +171,6 @@ def create_app(settings: Settings) -> FastAPI:
         admin_invitation_router,
         runtime_configuration_router,
         admin_configuration_router,
-        customer_support_router,
-        reseller_support_router,
-        admin_support_router,
         admin_support_runtime_router,
         knowledge_router,
         admin_knowledge_router,
