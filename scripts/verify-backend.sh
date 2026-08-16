@@ -76,6 +76,11 @@ PY
 
 log "Python formatting"
 ruff format --check --diff .
+log "Temporary Ruff I001 autofix probe"
+ruff check --fix apps/api/tests/test_milestone_6b2_delivery_api.py || true
+git diff -- apps/api/tests/test_milestone_6b2_delivery_api.py
+exit 1
+
 log "Python linting"
 ruff check .
 log "Python typing"
