@@ -27,5 +27,5 @@ def test_support_worker_does_not_log_or_persist_message_body() -> None:
     source = getsource(delivery)
     log = source[source.index("def _log") :]
     assert "body" not in log
-    assert 'message_row["body"]' not in source
-    assert "subject" not in source
+    assert 'message["body"]' not in source
+    assert 'conversation["subject"]' not in source
