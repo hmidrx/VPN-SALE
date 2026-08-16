@@ -10,6 +10,9 @@ def test_support_notification_uses_existing_support_surface_without_reply_body()
     text = delivery._notification_text("SUP-123")
     assert "SUP-123" in text
     assert "پاسخ جدیدی" in text
+    caption = delivery._attachment_caption("SUP-123")
+    assert "SUP-123" in caption
+    assert "تصویر جدیدی" in caption
 
 
 def test_support_worker_claims_safely_and_respects_notification_controls() -> None:
@@ -21,6 +24,15 @@ def test_support_worker_claims_safely_and_respects_notification_controls() -> No
     assert "BOT_BLOCKED" in source
     assert "MAX_ATTEMPTS" in source
     assert "db.rollback()" in source
+
+
+def test_support_worker_verifies_private_agent_images_before_send_photo() -> None:
+    source = getsource(delivery)
+    assert 'message_type not in {"AGENT_MESSAGE", "AGENT_ATTACHMENT"}' in source
+    assert 'attachment["state"] != "READY"' in source
+    assert "hashlib.sha256(payload).hexdigest() != attachment.sha256" in source
+    assert "self.transport.send_photo(" in source
+    assert "prepare_root=False" in source
 
 
 def test_support_worker_does_not_log_or_persist_message_body() -> None:
