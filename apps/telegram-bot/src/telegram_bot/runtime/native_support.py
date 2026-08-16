@@ -24,11 +24,7 @@ from telegram_bot.runtime.handlers import (
     IncomingUser,
 )
 from telegram_bot.screens import safe_date, safe_text
-from telegram_bot.support_api import (
-    NativeSupportPortal,
-    SupportOutcomeUnknown,
-    SupportTicket,
-)
+from telegram_bot.support_api import NativeSupportPortal, SupportOutcomeUnknown
 from telegram_bot.transport.polling import TelegramTransport
 
 
@@ -57,7 +53,8 @@ class NativeSupportBotCommandHandler(AccountSecurityBotCommandHandler):
     def _support_home(self) -> HandlerResult:
         return self._callback_message(
             "💬 پشتیبانی\n\n"
-            "از همین ربات می‌توانید تیکت ثبت کنید، پاسخ‌های پشتیبانی را ببینید و ادامه گفتگو را ارسال کنید.",
+            "از همین ربات می‌توانید تیکت ثبت کنید، پاسخ‌های پشتیبانی را ببینید "
+            "و ادامه گفتگو را ارسال کنید.",
             [
                 [
                     {
