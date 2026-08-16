@@ -92,9 +92,7 @@ def _item(escalation: Any, conversation: Any) -> dict[str, object]:
         "source": str(escalation["source"]),
         "status": str(escalation["status"]),
         "deadline_at": (
-            escalation["deadline_at"].isoformat()
-            if escalation["deadline_at"] is not None
-            else None
+            escalation["deadline_at"].isoformat() if escalation["deadline_at"] is not None else None
         ),
         "observed_at": escalation["observed_at"].isoformat(),
         "acknowledged_at": (
@@ -289,9 +287,7 @@ def acknowledge_sla_escalation(
         db.commit()
     refreshed = (
         db.execute(
-            select(support_sla_escalations).where(
-                support_sla_escalations.c.id == escalation["id"]
-            )
+            select(support_sla_escalations).where(support_sla_escalations.c.id == escalation["id"])
         )
         .mappings()
         .one()
