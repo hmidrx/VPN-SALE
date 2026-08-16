@@ -125,9 +125,7 @@ class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeS
         if _TICKET_REFERENCE.fullmatch(reference) is None:
             return None
         try:
-            data = self._request(
-                "GET", f"/support/tickets/{reference}", context.telegram_user_id
-            )
+            data = self._request("GET", f"/support/tickets/{reference}", context.telegram_user_id)
         except AuthoritativePrivateApiError as exc:
             if exc.status_code == 404:
                 return None
