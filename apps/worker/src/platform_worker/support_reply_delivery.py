@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Protocol
 from urllib.parse import urlencode
 
 from sqlalchemy import and_, or_, select, update
@@ -12,15 +16,20 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from platform_api.identity.models import TelegramAccountModel
 from platform_api.notification_preferences import CustomerNotificationPreferenceModel
-from platform_api.support_notification_models import support_reply_notification_outbox
-from platform_api.support_runtime_models import support_conversations, support_messages
-
-from .manual_topup_delivery import (
-    DeliverySettings,
-    TelegramDeliveryError,
-    TelegramTransport,
-    retry_delay,
+from platform_api.support_attachment_storage import (
+    ALLOWED_SUPPORT_IMAGE_TYPES,
+    MAX_SUPPORT_ATTACHMENT_BYTES,
+    InvalidSupportAttachment,
+    LocalPrivateSupportAttachmentStorage,
 )
+from platform_api.support_notification_models import support_reply_notification_outbox
+from platform_api.support_runtime_models import (
+    support_attachments,
+    support_conversations,
+    support_messages,
+)
+
+from .manual_topup_delivery import TelegramDeliveryError, retry_delay
 
 logger = logging.getLogger(__name__)
 MAX_ATTEMPTS = 6
@@ -32,6 +41,36 @@ class InvalidSupportNotification(RuntimeError):
     """Persisted identifiers no longer point at a deliverable public support reply."""
 
 
+class SupportTelegramTransport(Protocol):
+    def send(self, telegram_user_id: int, text: str, mini_app_url: str) -> None: ...
+
+    def send_photo(
+        self,
+        telegram_user_id: int,
+        photo: bytes,
+        filename: str,
+        media_type: str,
+        caption: str,
+        mini_app_url: str,
+    ) -> None: ...
+
+
+@dataclass(frozen=True)
+class SupportDeliverySettings:
+    bot_enabled: bool
+    public_app_origin: str
+    support_private_upload_root: str = "/var/lib/vpnsale/private/support"
+
+
+@dataclass(frozen=True)
+class AgentAttachmentPayload:
+    asset_reference: str
+    filename: str
+    content_type: str
+    byte_size: int
+    sha256: str
+
+
 def _support_url(origin: str) -> str:
     query = urlencode({"source": "telegram"})
     return f"{origin.rstrip('/')}/support?{query}"
@@ -41,6 +80,10 @@ def _notification_text(reference: str) -> str:
     # Deliberately exclude reply bodies and ticket subjects from Telegram. The
     # durable support store remains the source of truth for message content.
     return f"پاسخ جدیدی برای درخواست پشتیبانی {reference} ثبت شد."
+
+
+def _attachment_caption(reference: str) -> str:
+    return f"تصویر جدیدی برای درخواست پشتیبانی {reference} ارسال شد."
 
 
 def claim(session: Session, now: datetime, batch_size: int = BATCH_SIZE) -> list[str]:
@@ -87,12 +130,17 @@ class SupportReplyDeliveryWorker:
     def __init__(
         self,
         factory: sessionmaker[Session],
-        transport: TelegramTransport,
-        settings: DeliverySettings,
+        transport: SupportTelegramTransport,
+        settings: SupportDeliverySettings,
     ) -> None:
         self.factory = factory
         self.transport = transport
         self.settings = settings
+        self.storage = LocalPrivateSupportAttachmentStorage(
+            Path(settings.support_private_upload_root),
+            maximum_bytes=MAX_SUPPORT_ATTACHMENT_BYTES,
+            prepare_root=False,
+        )
 
     def run_once(self, now: datetime | None = None) -> int:
         now = now or datetime.now(UTC)
@@ -131,8 +179,21 @@ class SupportReplyDeliveryWorker:
                 .mappings()
                 .one_or_none()
             )
+            attachment = None
+            if message is not None and message["message_type"] == "AGENT_ATTACHMENT":
+                attachment = (
+                    db.execute(
+                        select(support_attachments).where(
+                            support_attachments.c.message_id == event["message_id"]
+                        )
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
             try:
-                reference = self._validate(event, conversation, message)
+                reference, attachment_payload = self._validate(
+                    event, conversation, message, attachment
+                )
             except InvalidSupportNotification:
                 self._finish(
                     db,
@@ -177,13 +238,40 @@ class SupportReplyDeliveryWorker:
             telegram_user_id = telegram.telegram_user_id
             attempt = int(event["attempts"])
             event_reference = str(event["event_reference"])
-            text = _notification_text(reference)
             url = _support_url(self.settings.public_app_origin)
-            # Never hold a database transaction across the Telegram network call.
+            # Never hold a database transaction across filesystem verification
+            # or the Telegram network call.
             db.rollback()
 
+        photo: bytes | None = None
+        if attachment_payload is not None:
+            try:
+                photo = self._read_attachment(attachment_payload)
+            except InvalidSupportNotification:
+                with self.factory.begin() as db:
+                    self._finish(
+                        db,
+                        event_id,
+                        status="FAILED",
+                        error="INVALID_EVENT_DATA",
+                        now=now,
+                    )
+                self._log(event_reference, attempt, "FAILED")
+                return
+
         try:
-            self.transport.send(telegram_user_id, text, url)
+            if attachment_payload is None:
+                self.transport.send(telegram_user_id, _notification_text(reference), url)
+            else:
+                assert photo is not None
+                self.transport.send_photo(
+                    telegram_user_id,
+                    photo,
+                    attachment_payload.filename,
+                    attachment_payload.content_type,
+                    _attachment_caption(reference),
+                    url,
+                )
         except TelegramDeliveryError:
             with self.factory.begin() as db:
                 status = "PENDING" if attempt < MAX_ATTEMPTS else "FAILED"
@@ -205,14 +293,31 @@ class SupportReplyDeliveryWorker:
             self._finish(db, event_id, status="SENT", error=None, now=now)
         self._log(event_reference, attempt, "SENT")
 
+    def _read_attachment(self, attachment: AgentAttachmentPayload) -> bytes:
+        try:
+            with self.storage.open(attachment.asset_reference) as source:
+                payload = source.read(MAX_SUPPORT_ATTACHMENT_BYTES + 1)
+        except (OSError, InvalidSupportAttachment) as exc:
+            raise InvalidSupportNotification from exc
+        if (
+            not payload
+            or len(payload) > MAX_SUPPORT_ATTACHMENT_BYTES
+            or len(payload) != attachment.byte_size
+            or hashlib.sha256(payload).hexdigest() != attachment.sha256
+        ):
+            raise InvalidSupportNotification
+        return payload
+
     @staticmethod
     def _validate(
         event: RowMapping,
         conversation: RowMapping | None,
         message: RowMapping | None,
-    ) -> str:
+        attachment: RowMapping | None,
+    ) -> tuple[str, AgentAttachmentPayload | None]:
         if conversation is None or message is None:
             raise InvalidSupportNotification
+        message_type = str(message["message_type"])
         if (
             str(conversation["id"]) != str(event["conversation_id"])
             or str(conversation["requester_user_id"]) != str(event["customer_id"])
@@ -220,12 +325,37 @@ class SupportReplyDeliveryWorker:
             or str(message["id"]) != str(event["message_id"])
             or str(message["conversation_id"]) != str(event["conversation_id"])
             or message["sender_type"] != "SUPPORT_AGENT"
-            or message["message_type"] != "AGENT_MESSAGE"
+            or message_type not in {"AGENT_MESSAGE", "AGENT_ATTACHMENT"}
             or message["visibility"] != "PUBLIC"
             or message["redacted_at"] is not None
         ):
             raise InvalidSupportNotification
-        return str(conversation["reference"])
+        if message_type == "AGENT_MESSAGE":
+            if attachment is not None:
+                raise InvalidSupportNotification
+            return str(conversation["reference"]), None
+        if attachment is None:
+            raise InvalidSupportNotification
+        content_type = str(attachment["content_type"])
+        byte_size = int(attachment["byte_size"])
+        digest = str(attachment["sha256"])
+        if (
+            str(attachment["conversation_id"]) != str(event["conversation_id"])
+            or str(attachment["message_id"]) != str(event["message_id"])
+            or attachment["state"] != "READY"
+            or content_type not in ALLOWED_SUPPORT_IMAGE_TYPES
+            or byte_size <= 0
+            or byte_size > MAX_SUPPORT_ATTACHMENT_BYTES
+            or len(digest) != 64
+        ):
+            raise InvalidSupportNotification
+        return str(conversation["reference"]), AgentAttachmentPayload(
+            asset_reference=str(attachment["asset_reference"]),
+            filename=str(attachment["normalized_filename"]),
+            content_type=content_type,
+            byte_size=byte_size,
+            sha256=digest,
+        )
 
     @staticmethod
     def _finish(

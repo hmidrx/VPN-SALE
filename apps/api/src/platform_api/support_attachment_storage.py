@@ -1,4 +1,4 @@
-"""Private, metadata-stripping storage for customer support image attachments."""
+"""Private, metadata-stripping storage for support image attachments."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ class StoredSupportAttachment:
 
 
 class LocalPrivateSupportAttachmentStorage:
-    """Store only verified, re-encoded single-frame images under opaque asset references."""
+    """Store or read verified support images under opaque asset references."""
 
     def __init__(
         self,
@@ -44,13 +44,15 @@ class LocalPrivateSupportAttachmentStorage:
         maximum_bytes: int = MAX_SUPPORT_ATTACHMENT_BYTES,
         dimension_limit: int = 8_192,
         pixel_limit: int = 40_000_000,
+        prepare_root: bool = True,
     ) -> None:
         self.root = root.resolve()
         self.maximum_bytes = maximum_bytes
         self.dimension_limit = dimension_limit
         self.pixel_limit = pixel_limit
-        self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.chmod(self.root, 0o700)
+        if prepare_root:
+            self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            os.chmod(self.root, 0o700)
 
     def store(
         self,

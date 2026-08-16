@@ -70,6 +70,9 @@ services:
       VPN_SALE_BOT_ENABLED: "${VPN_SALE_BOT_ENABLED:-false}"
       VPN_SALE_PUBLIC_APP_ORIGIN: "${VPN_SALE_PUBLIC_APP_ORIGIN:-http://localhost:3000}"
       VPN_SALE_PROVIDER_WRITES_ENABLED: "${VPN_SALE_PROVIDER_WRITES_ENABLED:-false}"
+      VPN_SALE_SUPPORT_PRIVATE_UPLOAD_ROOT: /var/lib/vpnsale/private/support
+    volumes:
+      - private_media:/var/lib/vpnsale/private:ro
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

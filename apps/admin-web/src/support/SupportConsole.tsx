@@ -17,6 +17,7 @@ import {
   renderSupportCannedResponse,
   replySupportConversation,
   supportIdempotencyKey,
+  uploadSupportAttachment,
 } from "./api";
 import styles from "./SupportConsole.module.css";
 import type {
@@ -63,6 +64,8 @@ const legalTransitions: Record<SupportStatus, readonly SupportStatus[]> = {
 
 const replyBlockedStatuses = new Set<SupportStatus>(["RESOLVED", "CLOSED", "SPAM", "ARCHIVED"]);
 const cannedBuiltinPlaceholders = new Set(["ticket_reference", "subject", "status", "priority"]);
+const supportImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const supportImageMaxBytes = 5 * 1024 * 1024;
 
 function faDate(value: string | null): string {
   if (!value) return "—";
@@ -114,6 +117,9 @@ export function SupportConsole(): React.ReactElement {
   const [statusFilter, setStatusFilter] = useState<SupportStatus | "">("");
   const [replyBody, setReplyBody] = useState("");
   const [replyKey, setReplyKey] = useState(() => supportIdempotencyKey());
+  const [agentImage, setAgentImage] = useState<File | null>(null);
+  const [agentImageKey, setAgentImageKey] = useState(() => supportIdempotencyKey());
+  const [agentImageInputKey, setAgentImageInputKey] = useState(0);
   const [noteBody, setNoteBody] = useState("");
   const [noteKey, setNoteKey] = useState(() => supportIdempotencyKey());
   const [targetStatus, setTargetStatus] = useState<SupportStatus>("OPEN");
@@ -149,6 +155,9 @@ export function SupportConsole(): React.ReactElement {
     if (!preserveDraft) {
       setReplyBody("");
       setReplyKey(supportIdempotencyKey());
+      setAgentImage(null);
+      setAgentImageKey(supportIdempotencyKey());
+      setAgentImageInputKey((current) => current + 1);
       setNoteBody("");
       setNoteKey(supportIdempotencyKey());
       setStatusReason("");
@@ -408,6 +417,53 @@ export function SupportConsole(): React.ReactElement {
       await afterMutation(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "ارسال پاسخ انجام نشد.");
+      await openTicket(detail.reference, true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function selectAgentImage(file: File | null): void {
+    if (file === null) {
+      setAgentImage(null);
+      setAgentImageKey(supportIdempotencyKey());
+      return;
+    }
+    if (!supportImageTypes.has(file.type)) {
+      setAgentImage(null);
+      setAgentImageInputKey((current) => current + 1);
+      setError("فقط تصویر JPEG، PNG یا WebP قابل ارسال است.");
+      return;
+    }
+    if (file.size <= 0 || file.size > supportImageMaxBytes) {
+      setAgentImage(null);
+      setAgentImageInputKey((current) => current + 1);
+      setError("حجم تصویر باید بیشتر از صفر و حداکثر ۵ مگابایت باشد.");
+      return;
+    }
+    setError(null);
+    setAgentImage(file);
+    setAgentImageKey(supportIdempotencyKey());
+  }
+
+  async function sendAgentImage(): Promise<void> {
+    if (!detail || busy || !replyAllowed || !agentImage) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await uploadSupportAttachment(
+        detail.reference,
+        agentImage,
+        detail.version,
+        agentImageKey,
+      );
+      setAgentImage(null);
+      setAgentImageKey(supportIdempotencyKey());
+      setAgentImageInputKey((current) => current + 1);
+      await openTicket(detail.reference, true);
+      await refreshInbox();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "ارسال تصویر انجام نشد.");
       await openTicket(detail.reference, true);
     } finally {
       setBusy(false);
@@ -675,6 +731,31 @@ export function SupportConsole(): React.ReactElement {
                   disabled={busy || !replyAllowed || !replyBody.trim()}
                 >
                   ارسال پاسخ عمومی
+                </button>
+                <label>
+                  تصویر برای مشتری
+                  <input
+                    key={agentImageInputKey}
+                    aria-label="تصویر برای مشتری"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={busy || !replyAllowed}
+                    onChange={(event) => selectAgentImage(event.target.files?.[0] ?? null)}
+                  />
+                </label>
+                {agentImage ? (
+                  <p className="muted">
+                    {agentImage.name} · {formatBytes(agentImage.size)}
+                  </p>
+                ) : (
+                  <p className="muted">JPEG، PNG یا WebP · حداکثر ۵ مگابایت</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void sendAgentImage()}
+                  disabled={busy || !replyAllowed || !agentImage}
+                >
+                  ارسال تصویر به مشتری
                 </button>
               </section>
 

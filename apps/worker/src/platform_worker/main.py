@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import socket
 import time
@@ -19,7 +20,7 @@ from .order_fulfillment import DisabledProvisioner, OrderFulfillmentWorker
 from .real_activator import DatabaseSanaeiActivator
 from .real_provisioner import DatabaseSanaeiProvisioner
 from .service_activation import DisabledActivator, ServiceActivationWorker
-from .support_reply_delivery import SupportReplyDeliveryWorker
+from .support_reply_delivery import SupportDeliverySettings, SupportReplyDeliveryWorker
 from .support_sla_escalation import SupportSlaEscalationWorker
 
 
@@ -43,22 +44,51 @@ def build_service_activator(
 
 class BotApiTransport:
     def __init__(self, token: str):
-        self._endpoint = f"https://api.telegram.org/bot{token}/sendMessage"
+        base = f"https://api.telegram.org/bot{token}"
+        self._message_endpoint = f"{base}/sendMessage"
+        self._photo_endpoint = f"{base}/sendPhoto"
+
+    @staticmethod
+    def _reply_markup(mini_app_url: str) -> dict[str, object]:
+        return {"inline_keyboard": [[{"text": "مشاهده درخواست", "web_app": {"url": mini_app_url}}]]}
 
     def send(self, telegram_user_id: int, text: str, mini_app_url: str) -> None:
         try:
             response = httpx.post(
-                self._endpoint,
+                self._message_endpoint,
                 json={
                     "chat_id": telegram_user_id,
                     "text": text,
-                    "reply_markup": {
-                        "inline_keyboard": [
-                            [{"text": "مشاهده درخواست", "web_app": {"url": mini_app_url}}]
-                        ]
-                    },
+                    "reply_markup": self._reply_markup(mini_app_url),
                 },
                 timeout=10,
+            )
+            if response.status_code >= 400:
+                raise TelegramDeliveryError("telegram delivery failed")
+        except httpx.HTTPError as exc:
+            raise TelegramDeliveryError("telegram delivery failed") from exc
+
+    def send_photo(
+        self,
+        telegram_user_id: int,
+        photo: bytes,
+        filename: str,
+        media_type: str,
+        caption: str,
+        mini_app_url: str,
+    ) -> None:
+        try:
+            response = httpx.post(
+                self._photo_endpoint,
+                data={
+                    "chat_id": str(telegram_user_id),
+                    "caption": caption,
+                    "reply_markup": json.dumps(
+                        self._reply_markup(mini_app_url), separators=(",", ":")
+                    ),
+                },
+                files={"photo": (filename, photo, media_type)},
+                timeout=15,
             )
             if response.status_code >= 400:
                 raise TelegramDeliveryError("telegram delivery failed")
@@ -74,13 +104,19 @@ def main() -> None:
         raise RuntimeError("enabled notification worker requires a bot token")
     engine = create_engine(sync_database_url(database), pool_pre_ping=True)
     factory = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
-    delivery_settings = DeliverySettings(
+    public_app_origin = os.getenv("VPN_SALE_PUBLIC_APP_ORIGIN", "http://localhost:3000")
+    delivery_settings = DeliverySettings(enabled, public_app_origin)
+    support_delivery_settings = SupportDeliverySettings(
         enabled,
-        os.getenv("VPN_SALE_PUBLIC_APP_ORIGIN", "http://localhost:3000"),
+        public_app_origin,
+        os.getenv(
+            "VPN_SALE_SUPPORT_PRIVATE_UPLOAD_ROOT",
+            "/var/lib/vpnsale/private/support",
+        ),
     )
     transport = BotApiTransport(token)
     manual_topup = ManualTopupDeliveryWorker(factory, transport, delivery_settings)
-    support_reply = SupportReplyDeliveryWorker(factory, transport, delivery_settings)
+    support_reply = SupportReplyDeliveryWorker(factory, transport, support_delivery_settings)
     support_sla = SupportSlaEscalationWorker(factory)
     provider_writes_enabled = (
         os.getenv("VPN_SALE_PROVIDER_WRITES_ENABLED", "false").lower() == "true"
