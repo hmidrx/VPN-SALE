@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from alembic import op
 
-revision: str = "0042_support_agent_image_delivery"
+revision: str = "0042_support_agent_image"
 down_revision: str = "0041_support_sla_escalations"
 branch_labels = None
 depends_on = None
