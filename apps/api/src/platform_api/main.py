@@ -11,6 +11,7 @@ from .configuration import public_router as runtime_configuration_router
 from .customer_admin import router as admin_customer_router
 from .customer_auth.routes import account_linking_router, password_login_router, registration_router
 from .customer_auth.routes import router as customer_auth_router
+from .customer_support_runtime import router as customer_support_router
 from .delivery import admin_router as admin_delivery_router
 from .delivery import customer_router as customer_delivery_router
 from .delivery import public_router as subscription_router
@@ -152,6 +153,7 @@ def create_app(settings: Settings) -> FastAPI:
     routers = [
         admin_auth_router,
         customer_auth_router,
+        customer_support_router,
         management_router,
         catalog_router,
         admin_catalog_router,
