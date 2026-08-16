@@ -9,13 +9,11 @@ down_revision: str = "0041_support_sla_escalations"
 branch_labels = None
 depends_on = None
 
-FUNCTION = "enqueue_support_reply_notification"
-
 
 def _replace_function(message_types: str) -> None:
     op.execute(
         f"""
-        CREATE OR REPLACE FUNCTION {FUNCTION}() RETURNS trigger
+        CREATE OR REPLACE FUNCTION enqueue_support_reply_notification() RETURNS trigger
         LANGUAGE plpgsql
         AS $$
         BEGIN
@@ -56,7 +54,7 @@ def _replace_function(message_types: str) -> None:
             END IF;
             RETURN NEW;
         END;
-        $$
+        $$;
         """
     )
 
