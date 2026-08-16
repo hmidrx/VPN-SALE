@@ -234,11 +234,14 @@ def test_support_image_attachment_is_private_sanitized_owned_and_idempotent() ->
             assert row[0] is not None
             assert len(str(row[1])) == 64
             assert row[2] == "READY"
-            assert db.scalar(
-                select(support_conversations.c.status).where(
-                    support_conversations.c.id == conversation_id
+            assert (
+                db.scalar(
+                    select(support_conversations.c.status).where(
+                        support_conversations.c.id == conversation_id
+                    )
                 )
-            ) == "WAITING_FOR_SUPPORT"
+                == "WAITING_FOR_SUPPORT"
+            )
 
             replay = _upload(
                 db,
@@ -249,19 +252,25 @@ def test_support_image_attachment_is_private_sanitized_owned_and_idempotent() ->
                 "support-attachment-upload-1",
             )
             assert replay["asset_reference"] == asset_reference
-            assert db.scalar(
-                select(func.count())
-                .select_from(support_attachments)
-                .where(support_attachments.c.conversation_id == conversation_id)
-            ) == 1
-            assert db.scalar(
-                select(func.count())
-                .select_from(support_messages)
-                .where(
-                    support_messages.c.conversation_id == conversation_id,
-                    support_messages.c.message_type == "CUSTOMER_ATTACHMENT",
+            assert (
+                db.scalar(
+                    select(func.count())
+                    .select_from(support_attachments)
+                    .where(support_attachments.c.conversation_id == conversation_id)
                 )
-            ) == 1
+                == 1
+            )
+            assert (
+                db.scalar(
+                    select(func.count())
+                    .select_from(support_messages)
+                    .where(
+                        support_messages.c.conversation_id == conversation_id,
+                        support_messages.c.message_type == "CUSTOMER_ATTACHMENT",
+                    )
+                )
+                == 1
+            )
 
             with pytest.raises(HTTPException) as conflict:
                 _upload(
