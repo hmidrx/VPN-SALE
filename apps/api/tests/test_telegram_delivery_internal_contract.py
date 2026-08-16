@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from platform_api import config, main, telegram_delivery_internal
 
 
