@@ -74,11 +74,12 @@ def _application(
     application.include_router(telegram_account_internal.router)
     application.dependency_overrides[get_settings] = lambda: settings
     application.dependency_overrides[get_db_session] = lambda: database
-    monkeypatch.setattr(
-        telegram_account_internal,
-        "_customer_id",
-        lambda db, telegram_id: "customer-1",
-    )
+
+    def customer_id_override(db: object, telegram_id: int) -> str:
+        del db, telegram_id
+        return "customer-1"
+
+    monkeypatch.setattr(telegram_account_internal, "_customer_id", customer_id_override)
     return application, settings, credential
 
 
