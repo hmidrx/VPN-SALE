@@ -15,6 +15,7 @@ from telegram_bot.support_api import (
     SupportOutcomeUnknown,
     SupportTicket,
     SupportTicketMessage,
+    SupportTicketPage,
 )
 
 REFERENCE = "SUP-0123456789abcdef01234567"
@@ -36,12 +37,23 @@ class _CsatPortal(InMemoryCustomerPortal):
         self.submissions: list[tuple[int, str | None, str]] = []
         self.fail_next = False
 
-    def support_tickets(self, context: CustomerContext) -> list[SupportTicket]:
-        del context
-        return [self.ticket]
+    def support_tickets(
+        self,
+        context: CustomerContext,
+        cursor: str | None = None,
+        limit: int = 10,
+    ) -> SupportTicketPage:
+        del context, cursor, limit
+        return SupportTicketPage((self.ticket,), None)
 
-    def support_ticket(self, context: CustomerContext, reference: str) -> SupportTicket | None:
-        del context
+    def support_ticket(
+        self,
+        context: CustomerContext,
+        reference: str,
+        cursor: str | None = None,
+        limit: int = 8,
+    ) -> SupportTicket | None:
+        del context, cursor, limit
         return self.ticket if reference == REFERENCE else None
 
     def support_csat_state(self, context: CustomerContext, reference: str) -> SupportCsatState:
