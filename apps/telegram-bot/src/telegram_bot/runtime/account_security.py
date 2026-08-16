@@ -65,7 +65,8 @@ class AccountSecurityBotCommandHandler(SecureDeliveryBotCommandHandler):
         for session in sessions[:20]:
             suffix = " — نشست فعلی" if session.current else ""
             lines.append(
-                f"• {safe_text(session.label)} — آخرین فعالیت: {safe_date(session.last_seen_at)}{suffix}"
+                f"• {safe_text(session.label)} — آخرین فعالیت: "
+                f"{safe_date(session.last_seen_at)}{suffix}"
             )
             if not session.current:
                 rows.append(
