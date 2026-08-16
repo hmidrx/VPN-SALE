@@ -201,7 +201,7 @@ class NativeSupportAttachmentTelegramPollingRuntime(NativeSupportCsatTelegramPol
         update: dict[str, Any],
         receipt: tuple[IncomingUser, str, str, int | None],
     ) -> None:
-        handler = cast(NativeSupportAttachmentBotCommandHandler, self.handler)
+        handler = self.handler
         user, file_id, content_type, file_size = receipt
         if handler.expected_support_attachment_reference(user) is None:
             await super()._dispatch_receipt(update, receipt)
