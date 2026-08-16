@@ -24,6 +24,7 @@ from platform_api.support_attachment_storage import (
     ALLOWED_SUPPORT_IMAGE_TYPES,
     InvalidSupportAttachment,
     LocalPrivateSupportAttachmentStorage,
+    StoredSupportAttachment,
 )
 from platform_api.support_runtime_models import (
     support_attachments,
@@ -279,7 +280,7 @@ def _store_image(
     asset_reference: str,
     raw: bytes,
     content_type: str,
-) -> tuple[LocalPrivateSupportAttachmentStorage, object]:
+) -> tuple[LocalPrivateSupportAttachmentStorage, StoredSupportAttachment]:
     storage = LocalPrivateSupportAttachmentStorage(
         Path(settings.support_private_upload_root),
         maximum_bytes=settings.support_max_attachment_bytes,
