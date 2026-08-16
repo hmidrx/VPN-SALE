@@ -176,7 +176,8 @@ def test_customer_web_support_enforces_csrf_ownership_and_idempotency() -> None:
                 )
             )
             assert isinstance(supported_channels, list)
-            assert {"TELEGRAM_BOT", "CUSTOMER_WEB"}.issubset(set(supported_channels))
+            typed_channels = cast(list[str], supported_channels)
+            assert {"TELEGRAM_BOT", "CUSTOMER_WEB"}.issubset(set(typed_channels))
             assert (
                 db.scalar(
                     select(func.count())
