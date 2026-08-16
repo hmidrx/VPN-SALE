@@ -8,7 +8,12 @@ from telegram_bot.config import BotMode, BotSettings
 from telegram_bot.internal_api import PrivateApiUnavailable
 from telegram_bot.portal import CustomerContext, InMemoryCustomerPortal
 from telegram_bot.runtime.account_security import AccountSecurityBotCommandHandler
-from telegram_bot.runtime.handlers import IncomingCallback, IncomingCommand, IncomingUser
+from telegram_bot.runtime.handlers import (
+    HandlerResult,
+    IncomingCallback,
+    IncomingCommand,
+    IncomingUser,
+)
 
 
 def _settings() -> BotSettings:
@@ -43,10 +48,9 @@ def _handler(portal: InMemoryCustomerPortal | None = None) -> AccountSecurityBot
     )
 
 
-def _actions(result: object) -> set[CallbackAction]:
+def _actions(result: HandlerResult) -> set[CallbackAction]:
     values: set[CallbackAction] = set()
-    messages = getattr(result, "messages")
-    for row in messages[0].rows:
+    for row in result.messages[0].rows:
         for button in row:
             data = button.get("callback_data")
             if data:
