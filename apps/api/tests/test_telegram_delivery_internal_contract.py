@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import pytest
 from fastapi.routing import APIRoute
+import pytest
 
 from platform_api.config import Settings
 from platform_api.main import create_app
