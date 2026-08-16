@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from fastapi.routing import APIRoute
-
 from platform_api.config import Settings
 from platform_api.main import create_app
 from platform_api.telegram_delivery_internal import router, subscription_urls
@@ -16,12 +14,12 @@ EXPECTED_PATHS = {
 
 
 def test_private_delivery_routes_are_hidden_and_registered() -> None:
-    routes = [route for route in router.routes if isinstance(route, APIRoute)]
-    assert {route.path for route in routes} == EXPECTED_PATHS
-    assert all(route.include_in_schema is False for route in routes)
+    routes = list(router.routes)
+    assert {getattr(route, "path", "") for route in routes} == EXPECTED_PATHS
+    assert all(getattr(route, "include_in_schema", None) is False for route in routes)
 
     app = create_app(Settings(environment="test"))
-    app_paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
+    app_paths = {getattr(route, "path", "") for route in app.routes}
     assert EXPECTED_PATHS <= app_paths
 
 
