@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import Any, cast
 from uuid import uuid4
 
@@ -69,11 +70,15 @@ def _identity(db: Session) -> tuple[str, int]:
     return user_id, telegram_id
 
 
+def _test_password_hash() -> str:
+    return sha256(b"support-admin-test-fixture").hexdigest()
+
+
 def _admin(db: Session) -> AdminModel:
     admin = AdminModel(
         id=str(uuid4()),
         normalized_email=f"support-{uuid4().hex}@example.test",
-        password_hash="test-only-password-hash",
+        password_hash=_test_password_hash(),
         status="ACTIVE",
         failed_login_count=0,
     )
