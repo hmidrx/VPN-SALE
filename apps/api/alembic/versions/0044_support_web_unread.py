@@ -9,15 +9,10 @@ down_revision: str = "0043_customer_web_support"
 branch_labels = None
 depends_on = None
 
-_BASELINE_ID = (
-    "md5('web-unread-baseline:' || message.id::text || ':' || "
-    "conversation.requester_user_id::text)::uuid"
-)
-
 
 def upgrade() -> None:
     op.execute(
-        f"""
+        """
         INSERT INTO support_message_deliveries (
             id,
             message_id,
@@ -27,7 +22,10 @@ def upgrade() -> None:
             read_at
         )
         SELECT
-            {_BASELINE_ID},
+            md5(
+                'web-unread-baseline:' || message.id::text || ':' ||
+                conversation.requester_user_id::text
+            )::uuid,
             message.id,
             'CUSTOMER',
             conversation.requester_user_id,
@@ -48,7 +46,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(
-        f"""
+        """
         DELETE FROM support_message_deliveries AS delivery
         USING support_messages AS message, support_conversations AS conversation
         WHERE message.id = delivery.message_id
@@ -57,6 +55,9 @@ def downgrade() -> None:
           AND conversation.requester_user_id IS NOT NULL
           AND delivery.participant_type = 'CUSTOMER'
           AND delivery.participant_id = conversation.requester_user_id
-          AND delivery.id = {_BASELINE_ID}
+          AND delivery.id = md5(
+              'web-unread-baseline:' || message.id::text || ':' ||
+              conversation.requester_user_id::text
+          )::uuid
         """
     )
