@@ -93,12 +93,30 @@ def unread_summary(
     response: Response,
     current: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
     db: Annotated[Session, Depends(get_db_session)],
-) -> dict[str, int]:
+) -> dict[str, object]:
     counts = customer_support_unread_counts(db, current.user_id)
+    items: list[dict[str, object]] = []
+    if counts:
+        rows = db.execute(
+            select(
+                support_conversations.c.id,
+                support_conversations.c.reference,
+            ).where(
+                support_conversations.c.requester_type == "CUSTOMER",
+                support_conversations.c.requester_user_id == current.user_id,
+                support_conversations.c.id.in_(list(counts)),
+            )
+        ).all()
+        items = [
+            {"reference": str(reference), "unread_count": counts.get(str(conversation_id), 0)}
+            for conversation_id, reference in rows
+            if counts.get(str(conversation_id), 0) > 0
+        ]
     _no_store(response)
     return {
         "total_unread": sum(counts.values()),
-        "tickets_with_unread": sum(1 for count in counts.values() if count > 0),
+        "tickets_with_unread": len(items),
+        "items": items,
     }
 
 
