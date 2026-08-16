@@ -47,6 +47,13 @@ for (const value of [
   "نمایش پیام‌های قدیمی‌تر",
   "نمایش یادداشت‌های قدیمی‌تر",
   "URLSearchParams",
+  "listSupportAttachments",
+  "downloadSupportAttachment",
+  "/attachments",
+  "asset_reference",
+  "message_sequence",
+  "URL.createObjectURL",
+  "دانلود تصویر",
 ]) {
   if (!combined.includes(value)) throw new Error(`missing ${value}`);
 }
@@ -59,6 +66,8 @@ for (const forbidden of [
   "assigned_agent_id",
   "atob(",
   "JSON.parse(cursor",
+  "support_private_upload_root",
+  "/var/lib/vpnsale/private/support",
 ]) {
   if (combined.includes(forbidden)) throw new Error(`unsafe or internal ${forbidden}`);
 }
