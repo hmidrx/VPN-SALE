@@ -235,7 +235,7 @@ def _conversation_page(
         .all()
     )
     has_more = len(raw) > limit
-    rows = raw[:limit]
+    rows: list[Any] = list(raw[:limit])
     next_cursor = None
     if has_more and rows:
         tail = rows[-1]
@@ -285,7 +285,7 @@ def _message_page(
     next_cursor = None
     if has_more and selected:
         next_cursor = _encode_cursor(secret, kind, {"s": int(selected[-1]["sequence"])})
-    items = [
+    items: list[dict[str, object]] = [
         {
             "sequence": int(message["sequence"]),
             "sender_type": str(message["sender_type"]),
