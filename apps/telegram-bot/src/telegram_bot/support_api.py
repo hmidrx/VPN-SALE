@@ -83,10 +83,13 @@ class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeS
         except ValueError as exc:
             raise PrivateApiUnavailable("اطلاعات تیکت پشتیبانی قابل استفاده نیست.") from exc
         raw_messages = data.get("messages", [])
-        if not isinstance(raw_messages, list) or len(raw_messages) > 100:
+        if not isinstance(raw_messages, list):
+            raise PrivateApiUnavailable("اطلاعات تیکت پشتیبانی قابل استفاده نیست.")
+        message_items = cast(list[object], raw_messages)
+        if len(message_items) > 100:
             raise PrivateApiUnavailable("اطلاعات تیکت پشتیبانی قابل استفاده نیست.")
         messages: list[SupportTicketMessage] = []
-        for item in cast(list[object], raw_messages):
+        for item in message_items:
             if not isinstance(item, dict):
                 raise PrivateApiUnavailable("اطلاعات تیکت پشتیبانی قابل استفاده نیست.")
             values = cast(dict[str, Any], item)
@@ -112,10 +115,13 @@ class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeS
     def support_tickets(self, context: CustomerContext) -> list[SupportTicket]:
         data = self._request("GET", "/support/tickets", context.telegram_user_id)
         raw_items = data.get("items")
-        if not isinstance(raw_items, list) or len(raw_items) > 20:
+        if not isinstance(raw_items, list):
+            raise PrivateApiUnavailable("فهرست تیکت‌ها قابل استفاده نیست.")
+        item_values = cast(list[object], raw_items)
+        if len(item_values) > 20:
             raise PrivateApiUnavailable("فهرست تیکت‌ها قابل استفاده نیست.")
         tickets: list[SupportTicket] = []
-        for item in cast(list[object], raw_items):
+        for item in item_values:
             if not isinstance(item, dict):
                 raise PrivateApiUnavailable("فهرست تیکت‌ها قابل استفاده نیست.")
             tickets.append(self._ticket(cast(dict[str, Any], item)))
