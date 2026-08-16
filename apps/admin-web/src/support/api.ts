@@ -1,8 +1,8 @@
 import { getAccessToken } from "../auth/token-store";
 import type {
   SupportConversationDetail,
-  SupportConversationSummary,
-  SupportMessage,
+  SupportConversationPage,
+  SupportMessagePage,
   SupportSlaEscalation,
   SupportStatus,
 } from "./types";
@@ -28,6 +28,7 @@ async function call<T>(path: string, init: RequestInit = {}, idempotencyKey?: st
     cache: "no-store",
   });
   if (!response.ok) {
+    if (response.status === 400) throw new Error("صفحه درخواستی معتبر نیست؛ اطلاعات را تازه کنید.");
     if (response.status === 401) throw new Error("نشست مدیریت معتبر نیست. دوباره وارد شوید.");
     if (response.status === 403) throw new Error("مجوز لازم برای این عملیات را ندارید.");
     if (response.status === 404) throw new Error("تیکت یا هشدار SLA پیدا نشد.");
@@ -37,22 +38,46 @@ async function call<T>(path: string, init: RequestInit = {}, idempotencyKey?: st
   return response.json() as Promise<T>;
 }
 
+function queryString(values: Record<string, string | number | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined && value !== "") query.set(key, String(value));
+  }
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
 export function supportIdempotencyKey(): string {
   return crypto.randomUUID();
 }
 
-export function listSupportConversations(status?: SupportStatus): Promise<{ items: SupportConversationSummary[] }> {
-  const query = status ? `?status_filter=${encodeURIComponent(status)}` : "";
-  return call<{ items: SupportConversationSummary[] }>(`/conversations${query}`);
+export function listSupportConversations(
+  status?: SupportStatus,
+  cursor?: string,
+  limit = 50,
+): Promise<SupportConversationPage> {
+  return call<SupportConversationPage>(
+    `/conversations-page${queryString({ status_filter: status, cursor, limit })}`,
+  );
 }
 
-export function getSupportConversation(reference: string): Promise<SupportConversationDetail> {
-  return call<SupportConversationDetail>(`/conversations/${encodeURIComponent(reference)}`);
+export function getSupportConversation(
+  reference: string,
+  cursor?: string,
+  limit = 50,
+): Promise<SupportConversationDetail> {
+  return call<SupportConversationDetail>(
+    `/conversations/${encodeURIComponent(reference)}/paged${queryString({ cursor, limit })}`,
+  );
 }
 
-export function getInternalNotes(reference: string): Promise<{ items: SupportMessage[] }> {
-  return call<{ items: SupportMessage[] }>(
-    `/conversations/${encodeURIComponent(reference)}/internal-notes`,
+export function getInternalNotes(
+  reference: string,
+  cursor?: string,
+  limit = 50,
+): Promise<SupportMessagePage> {
+  return call<SupportMessagePage>(
+    `/conversations/${encodeURIComponent(reference)}/internal-notes-page${queryString({ cursor, limit })}`,
   );
 }
 
@@ -92,23 +117,24 @@ export function acknowledgeSupportSlaEscalation(
   );
 }
 
-export function claimSupportConversation(
+export async function claimSupportConversation(
   reference: string,
   expectedVersion: number,
 ): Promise<SupportConversationDetail> {
-  return call<SupportConversationDetail>(
+  await call<unknown>(
     `/conversations/${encodeURIComponent(reference)}/claim`,
     { method: "POST", body: JSON.stringify({ expected_version: expectedVersion }) },
   );
+  return getSupportConversation(reference);
 }
 
-export function replySupportConversation(
+export async function replySupportConversation(
   reference: string,
   body: string,
   expectedVersion: number,
   idempotencyKey: string,
 ): Promise<SupportConversationDetail> {
-  return call<SupportConversationDetail>(
+  await call<unknown>(
     `/conversations/${encodeURIComponent(reference)}/reply`,
     {
       method: "POST",
@@ -116,15 +142,16 @@ export function replySupportConversation(
     },
     idempotencyKey,
   );
+  return getSupportConversation(reference);
 }
 
-export function addSupportInternalNote(
+export async function addSupportInternalNote(
   reference: string,
   body: string,
   expectedVersion: number,
   idempotencyKey: string,
-): Promise<{ items: SupportMessage[] }> {
-  return call<{ items: SupportMessage[] }>(
+): Promise<SupportMessagePage> {
+  await call<unknown>(
     `/conversations/${encodeURIComponent(reference)}/internal-notes`,
     {
       method: "POST",
@@ -132,19 +159,21 @@ export function addSupportInternalNote(
     },
     idempotencyKey,
   );
+  return getInternalNotes(reference);
 }
 
-export function changeSupportStatus(
+export async function changeSupportStatus(
   reference: string,
   status: SupportStatus,
   reason: string,
   expectedVersion: number,
 ): Promise<SupportConversationDetail> {
-  return call<SupportConversationDetail>(
+  await call<unknown>(
     `/conversations/${encodeURIComponent(reference)}/status`,
     {
       method: "POST",
       body: JSON.stringify({ status, reason, expected_version: expectedVersion }),
     },
   );
+  return getSupportConversation(reference);
 }

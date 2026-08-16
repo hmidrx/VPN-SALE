@@ -11,7 +11,30 @@ from redis import Redis
 from telegram_bot.screens import ScreenId
 
 MAX_STACK = 8
+MAX_SUPPORT_PAGE_STACK = 8
+MAX_SUPPORT_CURSOR_LENGTH = 1024
 STATE_TTL_SECONDS = 60 * 60 * 24
+
+
+def _cursor_value(value: object) -> str | None:
+    if not isinstance(value, str) or not value or len(value) > MAX_SUPPORT_CURSOR_LENGTH:
+        return None
+    return value
+
+
+def _cursor_stack(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    items = cast(list[object], value)
+    result: list[str] = []
+    for item in items[-MAX_SUPPORT_PAGE_STACK:]:
+        if item == "":
+            result.append("")
+            continue
+        cursor = _cursor_value(item)
+        if cursor is not None:
+            result.append(cursor)
+    return tuple(result)
 
 
 @dataclass(frozen=True)
@@ -28,6 +51,13 @@ class ConversationStateV2:
     selected_plan_reference: str | None = None
     selected_options: str | None = None
     active_order_reference: str | None = None
+    support_ticket_cursor: str | None = None
+    support_ticket_next_cursor: str | None = None
+    support_ticket_previous_cursors: tuple[str, ...] = ()
+    active_support_reference: str | None = None
+    support_message_cursor: str | None = None
+    support_message_next_cursor: str | None = None
+    support_message_previous_cursors: tuple[str, ...] = ()
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = field(
         default_factory=lambda: datetime.now(UTC) + timedelta(seconds=STATE_TTL_SECONDS)
@@ -169,6 +199,7 @@ class RedisConversationStore(ConversationStoreV2):
             stack_items = cast(list[object], stack_value)
             stack = tuple(ScreenId(str(item)) for item in stack_items[-MAX_STACK:])
             menu_message = value.get("menu_message")
+            active_support_reference = value.get("active_support_reference")
             state = ConversationStateV2(
                 current_screen=ScreenId(str(value["screen"])),
                 navigation_stack=stack,
@@ -206,6 +237,22 @@ class RedisConversationStore(ConversationStoreV2):
                     if value.get("active_order_reference")
                     else None
                 ),
+                support_ticket_cursor=_cursor_value(value.get("support_ticket_cursor")),
+                support_ticket_next_cursor=_cursor_value(value.get("support_ticket_next_cursor")),
+                support_ticket_previous_cursors=_cursor_stack(
+                    value.get("support_ticket_previous_cursors")
+                ),
+                active_support_reference=(
+                    str(active_support_reference)
+                    if isinstance(active_support_reference, str)
+                    and 0 < len(active_support_reference) <= 64
+                    else None
+                ),
+                support_message_cursor=_cursor_value(value.get("support_message_cursor")),
+                support_message_next_cursor=_cursor_value(value.get("support_message_next_cursor")),
+                support_message_previous_cursors=_cursor_stack(
+                    value.get("support_message_previous_cursors")
+                ),
                 updated_at=datetime.fromisoformat(str(value["updated_at"])),
                 expires_at=datetime.fromisoformat(str(value["expires_at"])),
             )
@@ -232,6 +279,17 @@ class RedisConversationStore(ConversationStoreV2):
                 "selected_plan_reference": state.selected_plan_reference,
                 "selected_options": state.selected_options,
                 "active_order_reference": state.active_order_reference,
+                "support_ticket_cursor": state.support_ticket_cursor,
+                "support_ticket_next_cursor": state.support_ticket_next_cursor,
+                "support_ticket_previous_cursors": list(
+                    state.support_ticket_previous_cursors[-MAX_SUPPORT_PAGE_STACK:]
+                ),
+                "active_support_reference": state.active_support_reference,
+                "support_message_cursor": state.support_message_cursor,
+                "support_message_next_cursor": state.support_message_next_cursor,
+                "support_message_previous_cursors": list(
+                    state.support_message_previous_cursors[-MAX_SUPPORT_PAGE_STACK:]
+                ),
                 "updated_at": state.updated_at.isoformat(),
                 "expires_at": state.expires_at.isoformat(),
             }

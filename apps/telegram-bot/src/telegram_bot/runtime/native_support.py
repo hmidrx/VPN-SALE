@@ -8,7 +8,7 @@ from typing import cast
 from telegram_bot.application.identity import TelegramIdentityPort, now_utc
 from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.config import BotSettings
-from telegram_bot.conversation import ConversationStoreV2
+from telegram_bot.conversation import MAX_SUPPORT_PAGE_STACK, ConversationStoreV2
 from telegram_bot.internal_api import AuthoritativePrivateApiError, PrivateApiUnavailable
 from telegram_bot.localization import t
 from telegram_bot.portal import CustomerPortalPort
@@ -75,9 +75,17 @@ class NativeSupportBotCommandHandler(AccountSecurityBotCommandHandler):
             ],
         )
 
-    def _ticket_list(self, user: IncomingUser, locale: str) -> HandlerResult:
+    def _ticket_list(
+        self,
+        user: IncomingUser,
+        locale: str,
+        cursor: str | None = None,
+        previous_cursors: tuple[str, ...] = (),
+    ) -> HandlerResult:
         try:
-            tickets = self.support_portal.support_tickets(self._portal_context(user, locale))
+            page = self.support_portal.support_tickets(
+                self._portal_context(user, locale), cursor=cursor, limit=10
+            )
         except Exception:  # noqa: BLE001 - private API boundary
             return self._callback_message(
                 "⚠️ دریافت تیکت‌ها ممکن نشد. کمی بعد دوباره تلاش کنید.",
@@ -96,27 +104,43 @@ class NativeSupportBotCommandHandler(AccountSecurityBotCommandHandler):
                     ],
                 ],
             )
-        if not tickets:
-            return self._callback_message(
-                "هنوز تیکتی ثبت نکرده‌اید.",
-                [
+
+        key = self._conversation_key(user)
+        state = self.conversations.get(key, now_utc())
+        self.conversations.save(
+            key,
+            replace(
+                state,
+                support_ticket_cursor=cursor,
+                support_ticket_next_cursor=page.next_cursor,
+                support_ticket_previous_cursors=previous_cursors[-MAX_SUPPORT_PAGE_STACK:],
+            ),
+        )
+
+        if not page.items:
+            if cursor is None:
+                return self._callback_message(
+                    "هنوز تیکتی ثبت نکرده‌اید.",
                     [
-                        {
-                            "text": "📝 ثبت تیکت",
-                            "callback_data": BotCallback(CallbackAction.SUPPORT_NEW).pack(),
-                        }
+                        [
+                            {
+                                "text": "📝 ثبت تیکت",
+                                "callback_data": BotCallback(CallbackAction.SUPPORT_NEW).pack(),
+                            }
+                        ],
+                        [
+                            {
+                                "text": "◀️ پشتیبانی",
+                                "callback_data": BotCallback(CallbackAction.SUPPORT).pack(),
+                            }
+                        ],
                     ],
-                    [
-                        {
-                            "text": "◀️ پشتیبانی",
-                            "callback_data": BotCallback(CallbackAction.SUPPORT).pack(),
-                        }
-                    ],
-                ],
-            )
+                )
+            return self._stale(locale)
+
         lines = ["📋 تیکت‌های من"]
         rows: list[list[dict[str, str]]] = []
-        for ticket in tickets[:10]:
+        for ticket in page.items:
             lines.append(
                 f"\n• {safe_text(ticket.subject[:80])}\n"
                 f"وضعیت: {self._status(ticket.status)} | {safe_date(ticket.updated_at)}"
@@ -131,6 +155,25 @@ class NativeSupportBotCommandHandler(AccountSecurityBotCommandHandler):
                     }
                 ]
             )
+
+        pagination: list[dict[str, str]] = []
+        if previous_cursors:
+            pagination.append(
+                {
+                    "text": "◀️ جدیدترها",
+                    "callback_data": BotCallback(CallbackAction.SUPPORT_TICKETS_PREV).pack(),
+                }
+            )
+        if page.next_cursor:
+            pagination.append(
+                {
+                    "text": "قدیمی‌ترها ▶️",
+                    "callback_data": BotCallback(CallbackAction.SUPPORT_TICKETS_NEXT).pack(),
+                }
+            )
+        if pagination:
+            rows.append(pagination)
+
         rows.append(
             [
                 {
@@ -145,10 +188,17 @@ class NativeSupportBotCommandHandler(AccountSecurityBotCommandHandler):
         )
         return self._callback_message("\n".join(lines), rows)
 
-    def _ticket_detail(self, user: IncomingUser, locale: str, reference: str) -> HandlerResult:
+    def _ticket_detail(
+        self,
+        user: IncomingUser,
+        locale: str,
+        reference: str,
+        cursor: str | None = None,
+        previous_cursors: tuple[str, ...] = (),
+    ) -> HandlerResult:
         try:
             ticket = self.support_portal.support_ticket(
-                self._portal_context(user, locale), reference
+                self._portal_context(user, locale), reference, cursor=cursor, limit=8
             )
         except Exception:  # noqa: BLE001
             ticket = None
@@ -164,16 +214,51 @@ class NativeSupportBotCommandHandler(AccountSecurityBotCommandHandler):
                     ]
                 ],
             )
+
+        key = self._conversation_key(user)
+        state = self.conversations.get(key, now_utc())
+        self.conversations.save(
+            key,
+            replace(
+                state,
+                active_support_reference=reference,
+                support_message_cursor=cursor,
+                support_message_next_cursor=ticket.messages_next_cursor,
+                support_message_previous_cursors=previous_cursors[-MAX_SUPPORT_PAGE_STACK:],
+            ),
+        )
+
         lines = [
             f"🎫 {safe_text(ticket.subject)}",
             f"وضعیت: {self._status(ticket.status)}",
             f"شناسه: {ticket.reference[-8:]}",
         ]
-        for message in ticket.messages[-8:]:
+        if cursor is not None:
+            lines.append("نمایش بخش قدیمی‌تر گفتگو")
+        for message in ticket.messages:
             sender = "شما" if message.sender_type == "CUSTOMER" else "پشتیبانی"
             body = safe_text(message.body[:600])
             lines.extend(["", f"{sender} — {safe_date(message.created_at)}", body])
+
         rows: list[list[dict[str, str]]] = []
+        message_pagination: list[dict[str, str]] = []
+        if previous_cursors:
+            message_pagination.append(
+                {
+                    "text": "◀️ پیام‌های جدیدتر",
+                    "callback_data": BotCallback(CallbackAction.SUPPORT_MESSAGES_NEWER).pack(),
+                }
+            )
+        if ticket.messages_next_cursor:
+            message_pagination.append(
+                {
+                    "text": "پیام‌های قدیمی‌تر ▶️",
+                    "callback_data": BotCallback(CallbackAction.SUPPORT_MESSAGES_OLDER).pack(),
+                }
+            )
+        if message_pagination:
+            rows.append(message_pagination)
+
         if ticket.status not in {"SPAM", "ARCHIVED"}:
             rows.append(
                 [
@@ -198,6 +283,57 @@ class NativeSupportBotCommandHandler(AccountSecurityBotCommandHandler):
             ]
         )
         return self._callback_message("\n".join(lines)[:3900], rows)
+
+    def _ticket_list_next(self, user: IncomingUser, locale: str) -> HandlerResult:
+        key = self._conversation_key(user)
+        state = self.conversations.get(key, now_utc())
+        if not state.support_ticket_next_cursor:
+            return self._stale(locale)
+        marker = state.support_ticket_cursor or ""
+        previous = (*state.support_ticket_previous_cursors, marker)[-MAX_SUPPORT_PAGE_STACK:]
+        return self._ticket_list(user, locale, state.support_ticket_next_cursor, previous)
+
+    def _ticket_list_previous(self, user: IncomingUser, locale: str) -> HandlerResult:
+        key = self._conversation_key(user)
+        state = self.conversations.get(key, now_utc())
+        if not state.support_ticket_previous_cursors:
+            return self._stale(locale)
+        marker = state.support_ticket_previous_cursors[-1]
+        return self._ticket_list(
+            user,
+            locale,
+            marker or None,
+            state.support_ticket_previous_cursors[:-1],
+        )
+
+    def _messages_older(self, user: IncomingUser, locale: str) -> HandlerResult:
+        key = self._conversation_key(user)
+        state = self.conversations.get(key, now_utc())
+        if not state.active_support_reference or not state.support_message_next_cursor:
+            return self._stale(locale)
+        marker = state.support_message_cursor or ""
+        previous = (*state.support_message_previous_cursors, marker)[-MAX_SUPPORT_PAGE_STACK:]
+        return self._ticket_detail(
+            user,
+            locale,
+            state.active_support_reference,
+            state.support_message_next_cursor,
+            previous,
+        )
+
+    def _messages_newer(self, user: IncomingUser, locale: str) -> HandlerResult:
+        key = self._conversation_key(user)
+        state = self.conversations.get(key, now_utc())
+        if not state.active_support_reference or not state.support_message_previous_cursors:
+            return self._stale(locale)
+        marker = state.support_message_previous_cursors[-1]
+        return self._ticket_detail(
+            user,
+            locale,
+            state.active_support_reference,
+            marker or None,
+            state.support_message_previous_cursors[:-1],
+        )
 
     def _start_new_ticket(self, user: IncomingUser, update_id: int) -> HandlerResult:
         key = self._conversation_key(user)
@@ -330,6 +466,9 @@ class NativeSupportBotCommandHandler(AccountSecurityBotCommandHandler):
                 conversation_kind=None,
                 expected_input=None,
                 idempotency_key=None,
+                support_message_cursor=None,
+                support_message_next_cursor=None,
+                support_message_previous_cursors=(),
             ),
         )
         return self._ticket_detail(message.user, "fa", ticket.reference)
@@ -341,12 +480,20 @@ class NativeSupportBotCommandHandler(AccountSecurityBotCommandHandler):
             return self._support_home()
         if callback.action == CallbackAction.SUPPORT_TICKETS:
             return self._ticket_list(user, locale)
+        if callback.action == CallbackAction.SUPPORT_TICKETS_NEXT:
+            return self._ticket_list_next(user, locale)
+        if callback.action == CallbackAction.SUPPORT_TICKETS_PREV:
+            return self._ticket_list_previous(user, locale)
         if callback.action == CallbackAction.SUPPORT_NEW:
             return self._start_new_ticket(user, update_id)
         if callback.action == CallbackAction.SUPPORT_OPEN:
             if not callback.value:
                 return self._stale(locale)
             return self._ticket_detail(user, locale, callback.value)
+        if callback.action == CallbackAction.SUPPORT_MESSAGES_OLDER:
+            return self._messages_older(user, locale)
+        if callback.action == CallbackAction.SUPPORT_MESSAGES_NEWER:
+            return self._messages_newer(user, locale)
         if callback.action == CallbackAction.SUPPORT_REPLY:
             if not callback.value:
                 return self._stale(locale)

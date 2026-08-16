@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, cast
+from urllib.parse import urlencode
 
 from telegram_bot.account_security_api import AccountSecurityPrivatePlatformClient
 from telegram_bot.internal_api import (
@@ -15,6 +16,7 @@ from telegram_bot.internal_api import (
 from telegram_bot.portal import CustomerContext
 
 _TICKET_REFERENCE = re.compile(r"^SUP-[0-9a-f]{24}$")
+_MAX_CURSOR_LENGTH = 1024
 
 
 class SupportOutcomeUnknown(PrivateApiUnavailable):
@@ -37,6 +39,13 @@ class SupportTicket:
     created_at: datetime
     updated_at: datetime
     messages: tuple[SupportTicketMessage, ...] = ()
+    messages_next_cursor: str | None = None
+
+
+@dataclass(frozen=True)
+class SupportTicketPage:
+    items: tuple[SupportTicket, ...]
+    next_cursor: str | None = None
 
 
 @dataclass(frozen=True)
@@ -47,8 +56,19 @@ class SupportCsatState:
 
 
 class NativeSupportPortal(Protocol):
-    def support_tickets(self, context: CustomerContext) -> list[SupportTicket]: ...
-    def support_ticket(self, context: CustomerContext, reference: str) -> SupportTicket | None: ...
+    def support_tickets(
+        self,
+        context: CustomerContext,
+        cursor: str | None = None,
+        limit: int = 10,
+    ) -> SupportTicketPage: ...
+    def support_ticket(
+        self,
+        context: CustomerContext,
+        reference: str,
+        cursor: str | None = None,
+        limit: int = 8,
+    ) -> SupportTicket | None: ...
     def create_support_ticket(
         self,
         context: CustomerContext,
@@ -75,6 +95,14 @@ class NativeSupportPortal(Protocol):
 
 
 class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeSupportPortal):
+    @staticmethod
+    def _cursor(value: object) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value or len(value) > _MAX_CURSOR_LENGTH:
+            raise PrivateApiUnavailable("نشانگر صفحه پشتیبانی قابل استفاده نیست.")
+        return value
+
     @staticmethod
     def _ticket(data: dict[str, Any]) -> SupportTicket:
         reference = data.get("reference")
@@ -118,6 +146,8 @@ class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeS
                 or len(body) > 4000
                 or not isinstance(sender, str)
                 or not isinstance(sequence, int)
+                or isinstance(sequence, bool)
+                or sequence <= 0
                 or not isinstance(timestamp, str)
             ):
                 raise PrivateApiUnavailable("اطلاعات پیام پشتیبانی قابل استفاده نیست.")
@@ -126,7 +156,15 @@ class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeS
             except ValueError as exc:
                 raise PrivateApiUnavailable("اطلاعات پیام پشتیبانی قابل استفاده نیست.") from exc
             messages.append(SupportTicketMessage(sequence, sender, body, created_message))
-        return SupportTicket(reference, subject, status, created, updated, tuple(messages))
+        return SupportTicket(
+            reference,
+            subject,
+            status,
+            created,
+            updated,
+            tuple(messages),
+            SupportPrivatePlatformClient._cursor(data.get("messages_next_cursor")),
+        )
 
     @staticmethod
     def _csat(data: dict[str, Any]) -> SupportCsatState:
@@ -145,26 +183,51 @@ class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeS
             raise PrivateApiUnavailable("وضعیت رضایت از پشتیبانی قابل استفاده نیست.")
         return SupportCsatState(eligible=eligible, submitted=submitted, score=score)
 
-    def support_tickets(self, context: CustomerContext) -> list[SupportTicket]:
-        data = self._request("GET", "/support/tickets", context.telegram_user_id)
+    def support_tickets(
+        self,
+        context: CustomerContext,
+        cursor: str | None = None,
+        limit: int = 10,
+    ) -> SupportTicketPage:
+        bounded_limit = min(max(limit, 1), 20)
+        query: dict[str, str | int] = {"limit": bounded_limit}
+        if cursor:
+            if len(cursor) > _MAX_CURSOR_LENGTH:
+                raise PrivateApiUnavailable("نشانگر صفحه پشتیبانی قابل استفاده نیست.")
+            query["cursor"] = cursor
+        path = f"/support/paged/tickets?{urlencode(query)}"
+        data = self._request("GET", path, context.telegram_user_id)
         raw_items = data.get("items")
         if not isinstance(raw_items, list):
             raise PrivateApiUnavailable("فهرست تیکت‌ها قابل استفاده نیست.")
         item_values = cast(list[object], raw_items)
-        if len(item_values) > 20:
+        if len(item_values) > bounded_limit:
             raise PrivateApiUnavailable("فهرست تیکت‌ها قابل استفاده نیست.")
         tickets: list[SupportTicket] = []
         for item in item_values:
             if not isinstance(item, dict):
                 raise PrivateApiUnavailable("فهرست تیکت‌ها قابل استفاده نیست.")
             tickets.append(self._ticket(cast(dict[str, Any], item)))
-        return tickets
+        return SupportTicketPage(tuple(tickets), self._cursor(data.get("next_cursor")))
 
-    def support_ticket(self, context: CustomerContext, reference: str) -> SupportTicket | None:
+    def support_ticket(
+        self,
+        context: CustomerContext,
+        reference: str,
+        cursor: str | None = None,
+        limit: int = 8,
+    ) -> SupportTicket | None:
         if _TICKET_REFERENCE.fullmatch(reference) is None:
             return None
+        bounded_limit = min(max(limit, 1), 20)
+        query: dict[str, str | int] = {"limit": bounded_limit}
+        if cursor:
+            if len(cursor) > _MAX_CURSOR_LENGTH:
+                raise PrivateApiUnavailable("نشانگر صفحه پشتیبانی قابل استفاده نیست.")
+            query["cursor"] = cursor
+        path = f"/support/paged/tickets/{reference}?{urlencode(query)}"
         try:
-            data = self._request("GET", f"/support/tickets/{reference}", context.telegram_user_id)
+            data = self._request("GET", path, context.telegram_user_id)
         except AuthoritativePrivateApiError as exc:
             if exc.status_code == 404:
                 return None
