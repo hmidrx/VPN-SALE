@@ -119,6 +119,14 @@ def test_worker_deduplicates_response_debts_and_pauses_customer_wait() -> None:
             conversation_id = str(row["id"])
             now = datetime.now(UTC)
             db.execute(
+                update(support_messages)
+                .where(
+                    support_messages.c.conversation_id == conversation_id,
+                    support_messages.c.sequence == 1,
+                )
+                .values(created_at=now - timedelta(minutes=40))
+            )
+            db.execute(
                 update(support_conversations)
                 .where(support_conversations.c.id == conversation_id)
                 .values(first_response_deadline=now - timedelta(minutes=1))
