@@ -182,6 +182,4 @@ def downgrade() -> None:
             sa.column("id", uuid),
             sa.column("code", sa.String),
         )
-        bind.execute(
-            sa.delete(table).where(table.c.id == identifier, table.c.code == code)
-        )
+        bind.execute(sa.delete(table).where(table.c.id == identifier, table.c.code == code))
