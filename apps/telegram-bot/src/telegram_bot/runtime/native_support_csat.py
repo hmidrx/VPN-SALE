@@ -78,7 +78,9 @@ class NativeSupportCsatBotCommandHandler(NativeSupportBotCommandHandler):
                 for score in range(1, 6)
             ]
             rows.insert(max(len(rows) - 1, 0), rating_row)
-        return replace(result, messages=(replace(message, text=text[:4000], rows=rows), *result.messages[1:]))
+        return replace(
+            result, messages=(replace(message, text=text[:4000], rows=rows), *result.messages[1:])
+        )
 
     def _start_csat(self, user: IncomingUser, value: str, update_id: int) -> HandlerResult:
         parsed = self._parse_rate_value(value)
