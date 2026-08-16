@@ -14,6 +14,7 @@ import {
   formatBytes,
 } from "../service-metrics";
 import { operationLabels, serviceStatus } from "../service-status";
+import { ServiceConnectionPanel } from "./ServiceConnection";
 
 const filters = [
   ["all", "همه"],
@@ -604,10 +605,7 @@ export function ServiceDetailPage({
               </div>
             </>
           ) : (
-            <p>
-              فرمت‌های تحویل معتبر پس از دریافت امن از سرور اینجا نمایش داده
-              می‌شوند.
-            </p>
+            <ServiceConnectionPanel serviceReference={serviceReference} />
           )}
         </article>
       )}
