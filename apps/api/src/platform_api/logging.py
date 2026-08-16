@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import cast
 
 import structlog
 
@@ -27,15 +27,18 @@ class SubscriptionPathRedactionFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.msg, str):
             record.msg = redact_subscription_path(record.msg)
-        args: Any = record.args
-        if isinstance(args, tuple):
+        raw_args: object = record.args
+        if isinstance(raw_args, tuple):
+            tuple_args = cast(tuple[object, ...], raw_args)
             record.args = tuple(
-                redact_subscription_path(item) if isinstance(item, str) else item for item in args
+                redact_subscription_path(item) if isinstance(item, str) else item
+                for item in tuple_args
             )
-        elif isinstance(args, dict):
+        elif isinstance(raw_args, dict):
+            dict_args = cast(dict[str, object], raw_args)
             record.args = {
                 key: redact_subscription_path(item) if isinstance(item, str) else item
-                for key, item in args.items()
+                for key, item in dict_args.items()
             }
         return True
 
