@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Never
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from vpnsale_domain.delivery import DeliveryError, DeliveryErrorCode, render_plain_links
@@ -88,6 +88,16 @@ def subscription_urls(settings: Settings, token: str) -> dict[str, str]:
     }
 
 
+def _validated_origin(settings: Settings) -> None:
+    try:
+        _subscription_origin(settings)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="delivery_unavailable",
+        ) from exc
+
+
 def _mutation_response(
     response: Response,
     *,
@@ -109,9 +119,98 @@ def issue_subscription(
     response: Response,
     _: InternalAuth,
     db: Database,
-    x_telegram_subject: Annotated[int, Depends()],
+    x_telegram_subject: Annotated[int, Header(gt=0)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, object]:
-    # The header dependency is injected below explicitly by FastAPI through the alias helper.
-    del x_telegram_subject
-    raise AssertionError("header dependency replacement missing")
+    _validated_origin(settings)
+    service = _owned_service(db, _customer_id(db, x_telegram_subject), service_reference)
+    try:
+        result = issue_service_subscription(db, service.id, datetime.now(UTC))
+        payload = _mutation_response(
+            response,
+            status_value=result.status,
+            token=result.token,
+            settings=settings,
+        )
+        db.commit()
+        return payload
+    except DeliveryError as exc:
+        db.rollback()
+        _raise_delivery_error(exc)
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/services/{service_reference}/subscription/rotate")
+def rotate_subscription(
+    service_reference: str,
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, object]:
+    _validated_origin(settings)
+    service = _owned_service(db, _customer_id(db, x_telegram_subject), service_reference)
+    try:
+        result = rotate_service_subscription(db, service.id, datetime.now(UTC))
+        payload = _mutation_response(
+            response,
+            status_value=result.status,
+            token=result.token,
+            settings=settings,
+        )
+        db.commit()
+        return payload
+    except DeliveryError as exc:
+        db.rollback()
+        _raise_delivery_error(exc)
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/services/{service_reference}/subscription/revoke")
+def revoke_subscription(
+    service_reference: str,
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+) -> dict[str, object]:
+    service = _owned_service(db, _customer_id(db, x_telegram_subject), service_reference)
+    try:
+        result = revoke_service_subscription(db, service.id, datetime.now(UTC))
+        db.commit()
+    except DeliveryError as exc:
+        db.rollback()
+        _raise_delivery_error(exc)
+    except Exception:
+        db.rollback()
+        raise
+    _no_store(response)
+    return {"status": result.status}
+
+
+@router.get("/services/{service_reference}/connection")
+def direct_connection(
+    service_reference: str,
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+) -> dict[str, str]:
+    service = _owned_service(db, _customer_id(db, x_telegram_subject), service_reference)
+    try:
+        connection = active_revision_connection(db, service)
+        rendered = render_plain_links((connection,)).strip()
+    except DeliveryError as exc:
+        _raise_delivery_error(exc)
+    if not rendered or "\n" in rendered:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="delivery_unavailable",
+        )
+    _no_store(response)
+    return {"connection_uri": rendered}
