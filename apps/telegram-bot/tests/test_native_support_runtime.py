@@ -67,7 +67,10 @@ class _SupportPortal(InMemoryCustomerPortal):
             "WAITING_FOR_SUPPORT",
             current.created_at,
             now,
-            (*current.messages, SupportTicketMessage(len(current.messages) + 1, "CUSTOMER", message, now)),
+            (
+                *current.messages,
+                SupportTicketMessage(len(current.messages) + 1, "CUSTOMER", message, now),
+            ),
         )
         self.support[reference] = updated
         return updated
@@ -99,7 +102,9 @@ def _callback(action: CallbackAction, value: str = "", update_id: int = 1) -> In
     )
 
 
-def _handler() -> tuple[NativeSupportBotCommandHandler, _SupportPortal, DurableMemoryConversationStore]:
+def _handler() -> (
+    tuple[NativeSupportBotCommandHandler, _SupportPortal, DurableMemoryConversationStore]
+):
     portal = _SupportPortal()
     store = DurableMemoryConversationStore()
     handler = NativeSupportBotCommandHandler(
@@ -132,7 +137,9 @@ def test_new_ticket_text_is_not_persisted_in_conversation_state() -> None:
 def test_ticket_list_detail_and_reply_are_native() -> None:
     handler, portal, store = _handler()
     handler.handle_callback(_callback(CallbackAction.SUPPORT_NEW, update_id=20))
-    created = handler.handle_text(IncomingText(21, "private", _user(), "صورتحساب\nنیاز به بررسی دارد."))
+    created = handler.handle_text(
+        IncomingText(21, "private", _user(), "صورتحساب\nنیاز به بررسی دارد.")
+    )
     reference = next(iter(portal.support))
     assert reference[-8:] in created.messages[0].text
 
