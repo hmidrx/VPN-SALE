@@ -7,21 +7,26 @@ export function clampPercentage(value: number): number {
   return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
 }
 export function calculateTimeMetric(
-  startsAt: string,
+  startsAt: string | null,
   expiresAt: string | null,
   now = Date.now(),
 ): TimeMetric {
   if (!expiresAt)
     return { percentage: null, remainingDays: null, unlimited: true };
-  const start = Date.parse(startsAt),
-    expiry = Date.parse(expiresAt),
-    total = expiry - start;
-  if (!Number.isFinite(start) || !Number.isFinite(expiry) || total <= 0)
+  const expiry = Date.parse(expiresAt);
+  if (!Number.isFinite(expiry))
     return { percentage: null, remainingDays: null, unlimited: false };
   const remaining = Math.max(0, expiry - now);
+  const remainingDays = Math.ceil(remaining / 86_400_000);
+  if (!startsAt)
+    return { percentage: null, remainingDays, unlimited: false };
+  const start = Date.parse(startsAt),
+    total = expiry - start;
+  if (!Number.isFinite(start) || total <= 0)
+    return { percentage: null, remainingDays, unlimited: false };
   return {
     percentage: clampPercentage((remaining / total) * 100),
-    remainingDays: Math.ceil(remaining / 86_400_000),
+    remainingDays,
     unlimited: false,
   };
 }
