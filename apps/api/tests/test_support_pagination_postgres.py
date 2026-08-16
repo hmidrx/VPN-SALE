@@ -38,7 +38,7 @@ def _postgres_url() -> str:
 def _settings() -> Settings:
     return Settings(
         environment="test",
-        customer_access_token_signing_key="test-support-cursor-signing-key-with-sufficient-entropy",
+        customer_access_token_signing_key=sha256(b"support-pagination-settings-fixture").hexdigest(),
     )
 
 
@@ -96,12 +96,12 @@ def _cleanup(db: Session, user_ids: list[str]) -> None:
 
 
 def test_cursor_is_signed_and_bound_to_its_read_surface() -> None:
-    secret = "cursor-contract-secret"
+    secret = sha256(b"support-pagination-cursor-contract").hexdigest()
     cursor = _encode_cursor(secret, "tickets", {"s": 42})
     assert _decode_cursor(secret, "tickets", cursor) == {"s": 42}
 
     encoded, signature = cursor.split(".", 1)
-    tampered_signature = ("A" if signature[-1] != "A" else "B")
+    tampered_signature = "A" if signature[-1] != "A" else "B"
     tampered = f"{encoded}.{signature[:-1]}{tampered_signature}"
     with pytest.raises(ValueError, match="invalid cursor"):
         _decode_cursor(secret, "tickets", tampered)
