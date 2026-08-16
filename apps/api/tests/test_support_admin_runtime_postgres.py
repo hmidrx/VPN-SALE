@@ -2,14 +2,21 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
 from fastapi import Request, Response
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session
+from vpnsale_domain.support import SupportStatus
 
-from platform_api.identity.models import AdminModel, AuditLogModel, TelegramAccountModel, UserModel
+from platform_api.identity.models import (
+    AdminModel,
+    AuditLogModel,
+    TelegramAccountModel,
+    UserModel,
+)
 from platform_api.support_admin_runtime import (
     AgentMessageRequest,
     ClaimRequest,
@@ -140,71 +147,95 @@ def test_telegram_ticket_round_trips_through_durable_admin_inbox() -> None:
             )
             assert conversation_id
 
-            queue = inbox(Response(), admin, db, None, 50)
-            items = queue["items"]
-            assert isinstance(items, list)
+            queue = cast(dict[str, Any], inbox(Response(), admin, db, None, 50))
+            items = cast(list[dict[str, Any]], queue["items"])
             assert any(item["reference"] == reference for item in items)
 
-            detail = conversation_detail(reference, Response(), admin, db)
+            detail = cast(
+                dict[str, Any], conversation_detail(reference, Response(), admin, db)
+            )
             assert detail["status"] == "NEW"
-            assert detail["messages"][0]["body"] == "سرویس از چند دقیقه قبل متصل نمی‌شود."
+            messages = cast(list[dict[str, Any]], detail["messages"])
+            assert messages[0]["body"] == "سرویس از چند دقیقه قبل متصل نمی‌شود."
 
-            claimed = claim_conversation(
-                reference,
-                ClaimRequest(expected_version=int(detail["version"])),
-                _request(),
-                admin,
-                db,
+            claimed = cast(
+                dict[str, Any],
+                claim_conversation(
+                    reference,
+                    ClaimRequest(expected_version=int(detail["version"])),
+                    _request(),
+                    admin,
+                    db,
+                ),
             )
             assert claimed["assigned_to_me"] is True
             assert claimed["status"] == "ASSIGNED"
 
-            notes_result = add_internal_note(
-                reference,
-                AgentMessageRequest(
-                    body="لاگ داخلی بررسی شد؛ این متن نباید به مشتری برسد.",
-                    expected_version=int(claimed["version"]),
+            notes_result = cast(
+                dict[str, Any],
+                add_internal_note(
+                    reference,
+                    AgentMessageRequest(
+                        body="لاگ داخلی بررسی شد؛ این متن نباید به مشتری برسد.",
+                        expected_version=int(claimed["version"]),
+                    ),
+                    _request(),
+                    admin,
+                    db,
+                    "admin-support-note-fixed",
                 ),
-                _request(),
-                admin,
-                db,
-                "admin-support-note-fixed",
             )
-            assert notes_result["items"][-1]["message_type"] == "INTERNAL_NOTE"
+            note_items = cast(list[dict[str, Any]], notes_result["items"])
+            assert note_items[-1]["message_type"] == "INTERNAL_NOTE"
 
-            after_note = conversation_detail(reference, Response(), admin, db)
+            after_note = cast(
+                dict[str, Any], conversation_detail(reference, Response(), admin, db)
+            )
             public_repr = repr(after_note["messages"])
             assert "این متن نباید به مشتری برسد" not in public_repr
-            private = internal_notes(reference, Response(), admin, db)
+            private = cast(
+                dict[str, Any], internal_notes(reference, Response(), admin, db)
+            )
             assert "این متن نباید به مشتری برسد" in repr(private["items"])
 
-            replied = reply_conversation(
-                reference,
-                AgentMessageRequest(
-                    body="بررسی انجام شد. لطفاً اکنون اتصال را دوباره امتحان کنید.",
-                    expected_version=int(after_note["version"]),
+            replied = cast(
+                dict[str, Any],
+                reply_conversation(
+                    reference,
+                    AgentMessageRequest(
+                        body="بررسی انجام شد. لطفاً اکنون اتصال را دوباره امتحان کنید.",
+                        expected_version=int(after_note["version"]),
+                    ),
+                    _request(),
+                    admin,
+                    db,
+                    "admin-support-reply-fixed",
                 ),
-                _request(),
-                admin,
-                db,
-                "admin-support-reply-fixed",
             )
-            assert replied["messages"][-1]["sender_type"] == "SUPPORT_AGENT"
+            replied_messages = cast(list[dict[str, Any]], replied["messages"])
+            assert replied_messages[-1]["sender_type"] == "SUPPORT_AGENT"
 
-            customer_view = ticket_detail(reference, Response(), None, db, telegram_id)
-            assert "لطفاً اکنون اتصال را دوباره امتحان کنید" in repr(customer_view["messages"])
+            customer_view = cast(
+                dict[str, Any], ticket_detail(reference, Response(), None, db, telegram_id)
+            )
+            assert "لطفاً اکنون اتصال را دوباره امتحان کنید" in repr(
+                customer_view["messages"]
+            )
             assert "این متن نباید به مشتری برسد" not in repr(customer_view["messages"])
 
-            status_changed = change_status(
-                reference,
-                StatusChangeRequest(
-                    status="IN_PROGRESS",
-                    reason="Agent started active investigation",
-                    expected_version=int(replied["version"]),
+            status_changed = cast(
+                dict[str, Any],
+                change_status(
+                    reference,
+                    StatusChangeRequest(
+                        status=SupportStatus.IN_PROGRESS,
+                        reason="Agent started active investigation",
+                        expected_version=int(replied["version"]),
+                    ),
+                    _request(),
+                    admin,
+                    db,
                 ),
-                _request(),
-                admin,
-                db,
             )
             assert status_changed["status"] == "IN_PROGRESS"
             history = [
