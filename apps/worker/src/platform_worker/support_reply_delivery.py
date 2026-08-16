@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from typing import Any
 from urllib.parse import urlencode
 
 from sqlalchemy import and_, or_, select, update
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session, sessionmaker
 
 from platform_api.identity.models import TelegramAccountModel
@@ -208,9 +207,9 @@ class SupportReplyDeliveryWorker:
 
     @staticmethod
     def _validate(
-        event: Mapping[str, Any],
-        conversation: Mapping[str, Any] | None,
-        message: Mapping[str, Any] | None,
+        event: RowMapping,
+        conversation: RowMapping | None,
+        message: RowMapping | None,
     ) -> str:
         if conversation is None or message is None:
             raise InvalidSupportNotification
