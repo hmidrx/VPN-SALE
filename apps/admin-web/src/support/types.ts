@@ -74,3 +74,41 @@ export type SupportSlaEscalation = {
   acknowledged_at: string | null;
   created_at: string;
 };
+
+export type SupportCannedResponse = {
+  code: string;
+  title: string;
+  locale: string;
+  queue_id: string | null;
+  category_id: string | null;
+  placeholders: string[];
+  active: boolean;
+  version: number;
+  usage_count: number;
+};
+
+export type SupportMacroAction =
+  | { type: "reply_draft"; body: string }
+  | { type: "internal_note_draft"; body: string }
+  | { type: "status_draft"; status: SupportStatus; reason: string };
+
+export type SupportMacro = {
+  code: string;
+  title: string;
+  actions: SupportMacroAction[];
+  active: boolean;
+  version: number;
+};
+
+export type SupportMacroPreview = {
+  code: string;
+  title: string;
+  version: number;
+  ticket_version: number;
+  draft: {
+    reply_body: string | null;
+    internal_note_body: string | null;
+    status: SupportStatus | null;
+    status_reason: string | null;
+  };
+};
