@@ -80,6 +80,8 @@ class LocalPrivateSupportAttachmentStorage:
                 sanitized = self._sanitize(image, media_type)
         except (KeyError, OSError, UnidentifiedImageError, Image.DecompressionBombError) as exc:
             raise InvalidSupportAttachment("invalid support attachment") from exc
+        if len(sanitized) > self.maximum_bytes:
+            raise InvalidSupportAttachment("invalid support attachment")
 
         destination = self.root / asset_reference
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
@@ -111,7 +113,10 @@ class LocalPrivateSupportAttachmentStorage:
 
     @staticmethod
     def _validate_reference(asset_reference: str) -> None:
-        if _ASSET_REFERENCE.fullmatch(asset_reference) is None or Path(asset_reference).name != asset_reference:
+        if (
+            _ASSET_REFERENCE.fullmatch(asset_reference) is None
+            or Path(asset_reference).name != asset_reference
+        ):
             raise InvalidSupportAttachment("invalid support attachment")
 
     def _read_bounded(self, source: BinaryIO) -> bytes:
