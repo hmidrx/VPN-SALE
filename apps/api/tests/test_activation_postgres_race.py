@@ -346,7 +346,7 @@ def _seed(factory: sessionmaker[Session]) -> None:
                 ) VALUES (
                     :id, :service_id, :target_id, true, 'PROVISIONED', 'PENDING_DELIVERY',
                     :fulfillment_id, :remote_id, NULL, '{}'::jsonb,
-                    '{"provider_verified":true,"delivery_verified":false}'::jsonb,
+                    jsonb_build_object('provider_verified', true, 'delivery_verified', false),
                     :now, 1
                 )
                 """
