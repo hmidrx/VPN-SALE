@@ -179,7 +179,7 @@ def _validate_macro_action_set(actions: list[MacroAction]) -> None:
         raise ValueError("macro action types must be unique")
     for action in actions:
         texts: list[str] = []
-        if isinstance(action, (ReplyDraftAction, InternalNoteDraftAction)):
+        if isinstance(action, ReplyDraftAction | InternalNoteDraftAction):
             texts.append(action.body)
         elif isinstance(action, StatusDraftAction):
             texts.append(action.reason)
