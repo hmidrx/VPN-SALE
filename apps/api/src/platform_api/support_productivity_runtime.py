@@ -12,7 +12,12 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from vpnsale_domain.identity import sanitize_metadata
-from vpnsale_domain.support import LEGAL_TRANSITIONS, SupportDomainError, SupportStatus, sanitize_message
+from vpnsale_domain.support import (
+    LEGAL_TRANSITIONS,
+    SupportDomainError,
+    SupportStatus,
+    sanitize_message,
+)
 
 from platform_api.database import get_db_session
 from platform_api.identity.models import AdminModel, AuditLogModel
@@ -195,9 +200,13 @@ def _clean(value: str, limit: int) -> str:
 
 
 def _conversation(db: Session, reference: str) -> Any:
-    row = db.execute(
-        select(support_conversations).where(support_conversations.c.reference == reference)
-    ).mappings().one_or_none()
+    row = (
+        db.execute(
+            select(support_conversations).where(support_conversations.c.reference == reference)
+        )
+        .mappings()
+        .one_or_none()
+    )
     if row is None:
         raise HTTPException(status_code=404, detail="ticket_not_found")
     return row
@@ -217,13 +226,17 @@ def _render_text(template: str, values: dict[str, str]) -> str:
 
 
 def _latest_canned_rows(db: Session) -> list[Any]:
-    rows = db.execute(
-        select(support_canned_responses).order_by(
-            support_canned_responses.c.code.asc(),
-            support_canned_responses.c.locale.asc(),
-            support_canned_responses.c.version.desc(),
+    rows = (
+        db.execute(
+            select(support_canned_responses).order_by(
+                support_canned_responses.c.code.asc(),
+                support_canned_responses.c.locale.asc(),
+                support_canned_responses.c.version.desc(),
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     latest: list[Any] = []
     seen: set[tuple[str, str]] = set()
     for row in rows:
@@ -251,11 +264,15 @@ def _latest_canned(db: Session, code: str, locale: str, *, lock: bool = False) -
 
 
 def _latest_macro_rows(db: Session) -> list[Any]:
-    rows = db.execute(
-        select(support_macros).order_by(
-            support_macros.c.code.asc(), support_macros.c.version.desc()
+    rows = (
+        db.execute(
+            select(support_macros).order_by(
+                support_macros.c.code.asc(), support_macros.c.version.desc()
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     latest: list[Any] = []
     seen: set[str] = set()
     for row in rows:
@@ -379,16 +396,20 @@ def _insert_canned_revision(
             body=body,
             locale=definition.locale,
             queue_id=str(definition.queue_id) if definition.queue_id is not None else None,
-            category_id=(str(definition.category_id) if definition.category_id is not None else None),
+            category_id=(
+                str(definition.category_id) if definition.category_id is not None else None
+            ),
             placeholders=list(definition.placeholders),
             active=definition.active,
             version=version,
             usage_count=0,
         )
     )
-    return db.execute(
-        select(support_canned_responses).where(support_canned_responses.c.id == row_id)
-    ).mappings().one()
+    return (
+        db.execute(select(support_canned_responses).where(support_canned_responses.c.id == row_id))
+        .mappings()
+        .one()
+    )
 
 
 def _serialize_actions(actions: list[MacroAction]) -> list[dict[str, object]]:
