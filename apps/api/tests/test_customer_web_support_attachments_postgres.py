@@ -12,7 +12,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException, Response
 from PIL import Image
-from sqlalchemy import create_engine, delete, func, select
+from sqlalchemy import create_engine, delete, func, select, update
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
@@ -308,6 +308,18 @@ def test_customer_web_images_are_private_sanitized_owned_and_idempotent() -> Non
                     reference, asset_reference, other_session, db, settings
                 )
             assert hidden_from_other.value.status_code == 404
+
+            db.execute(
+                update(support_messages)
+                .where(support_messages.c.id == attachment["message_id"])
+                .values(visibility="AGENT_ONLY")
+            )
+            db.commit()
+            with pytest.raises(HTTPException) as hidden_when_internal:
+                download_customer_support_attachment(
+                    reference, asset_reference, owner_session, db, settings
+                )
+            assert hidden_when_internal.value.status_code == 404
         finally:
             if owner_id or other_id:
                 _cleanup(db, [value for value in (owner_id, other_id) if value])
