@@ -5,7 +5,7 @@
   "scripts": {
     "lint": "node ../../scripts/lint-workspace.mjs .",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "npm run typecheck && vitest run src/tests/telegram-bridge.test.ts src/tests/service-metrics.test.ts src/tests/service-delivery-api.test.ts src/tests/wallet-format.test.ts src/tests/wallet-topup-api.test.ts src/tests/manual-topups.test.ts && node --experimental-strip-types src/tests/public-config.test.mjs && node src/tests/customer-static.test.mjs && node src/tests/runtime-configuration.test.mjs",
+    "test": "npm run typecheck && vitest run src/tests/telegram-bridge.test.ts src/tests/service-metrics.test.ts src/tests/service-delivery-api.test.ts src/tests/wallet-format.test.ts src/tests/wallet-topup-api.test.ts src/tests/manual-topups.test.ts && node --experimental-strip-types src/tests/public-config.test.mjs && node src/tests/customer-static.test.mjs && node src/tests/service-delivery-static.test.mjs && node src/tests/runtime-configuration.test.mjs",
     "test:public-config": "node --experimental-strip-types src/tests/public-config.test.mjs",
     "test:public-config-build": "node src/tests/public-config-build.test.mjs",
     "build": "next build && node src/tests/telegram-bridge-build.test.mjs",
