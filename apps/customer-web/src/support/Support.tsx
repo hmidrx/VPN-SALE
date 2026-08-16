@@ -15,7 +15,9 @@ import {
   fetchSupportAttachmentBlob,
   getSupportCsat,
   getSupportTicket,
+  getSupportUnreadSummary,
   listSupportTickets,
+  markSupportTicketRead,
   replySupportTicket,
   submitSupportCsat,
   SupportApiError,
@@ -93,6 +95,7 @@ function AttachmentPreview({ reference, attachment }: { reference: string; attac
 export function CustomerSupportHome(): React.ReactElement {
   const botUsername = loadCustomerConfig().botUsername;
   const [tickets, setTickets] = React.useState<SupportTicketSummary[]>([]);
+  const [unreadByReference, setUnreadByReference] = React.useState<Record<string, number>>({});
   const [selected, setSelected] = React.useState<string | null>(null);
   const [detail, setDetail] = React.useState<SupportTicket | null>(null);
   const [csat, setCsat] = React.useState<SupportCsatState | null>(null);
@@ -106,21 +109,69 @@ export function CustomerSupportHome(): React.ReactElement {
   const [notice, setNotice] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
 
-  const loadTickets = React.useCallback(async (): Promise<void> => {
-    setLoading(true);
+  const applyUnreadSummary = React.useCallback((items: { reference: string; unread_count: number }[]): void => {
+    setUnreadByReference(Object.fromEntries(items.map((item) => [item.reference, item.unread_count])));
+  }, []);
+
+  const loadTickets = React.useCallback(async (showLoading = true, signal?: AbortSignal): Promise<void> => {
+    if (showLoading) setLoading(true);
     setFailed(false);
     try {
-      const items = await listSupportTickets();
+      const [items, unread] = await Promise.all([
+        listSupportTickets(signal),
+        getSupportUnreadSummary(signal),
+      ]);
       setTickets(items);
-      if (!selected && items[0]) setSelected(items[0].reference);
+      applyUnreadSummary(unread.items);
+      setSelected((current) => current ?? items[0]?.reference ?? null);
     } catch {
-      setFailed(true);
+      if (!signal?.aborted && showLoading) setFailed(true);
     } finally {
-      setLoading(false);
+      if (showLoading && !signal?.aborted) setLoading(false);
     }
-  }, [selected]);
+  }, [applyUnreadSummary]);
 
-  React.useEffect(() => { void loadTickets(); }, [loadTickets]);
+  const refreshUnread = React.useCallback(async (signal?: AbortSignal): Promise<void> => {
+    try {
+      const unread = await getSupportUnreadSummary(signal);
+      if (!signal?.aborted) applyUnreadSummary(unread.items);
+    } catch {
+      // A transient unread refresh failure should not replace otherwise usable ticket content.
+    }
+  }, [applyUnreadSummary]);
+
+  const loadDetail = React.useCallback(async (reference: string, signal?: AbortSignal): Promise<void> => {
+    const value = await getSupportTicket(reference, signal);
+    if (signal?.aborted) return;
+    setDetail(value);
+    const throughSequence = value.messages.at(-1)?.sequence;
+    if (!throughSequence) return;
+    try {
+      const read = await markSupportTicketRead(reference, throughSequence);
+      if (!signal?.aborted) {
+        setUnreadByReference((current) => ({ ...current, [reference]: read.unread_count }));
+      }
+    } catch {
+      // Keep the unread badge if read acknowledgement could not be persisted.
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const controller = new AbortController();
+    void loadTickets(true, controller.signal);
+    return () => controller.abort();
+  }, [loadTickets]);
+
+  React.useEffect(() => {
+    const controller = new AbortController();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refreshUnread(controller.signal);
+    }, 30_000);
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, [refreshUnread]);
 
   React.useEffect(() => {
     if (!selected) {
@@ -129,11 +180,23 @@ export function CustomerSupportHome(): React.ReactElement {
     }
     const controller = new AbortController();
     setDetail(null);
-    void getSupportTicket(selected, controller.signal)
-      .then((value) => { if (!controller.signal.aborted) setDetail(value); })
+    void loadDetail(selected, controller.signal)
       .catch(() => { if (!controller.signal.aborted) setNotice("دریافت گفت‌وگو ممکن نشد. دوباره تلاش کنید."); });
     return () => controller.abort();
-  }, [selected]);
+  }, [loadDetail, selected]);
+
+  React.useEffect(() => {
+    if (!selected) return;
+    const controller = new AbortController();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void loadDetail(selected, controller.signal).catch(() => undefined);
+    }, 30_000);
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, [loadDetail, selected]);
 
   React.useEffect(() => {
     if (!detail) {
@@ -173,7 +236,7 @@ export function CustomerSupportHome(): React.ReactElement {
       setSelected(created.reference);
       setDetail(created);
       setNotice("درخواست شما ثبت شد و در صف پشتیبانی قرار گرفت.");
-      await loadTickets();
+      await loadTickets(false);
     } catch {
       setNotice("ثبت درخواست انجام نشد. متن را بررسی کنید و دوباره تلاش کنید.");
     } finally {
@@ -195,7 +258,7 @@ export function CustomerSupportHome(): React.ReactElement {
       form.reset();
       setDetail(updated);
       setNotice("پاسخ شما ارسال شد.");
-      await loadTickets();
+      await loadTickets(false);
     } catch {
       setNotice("ارسال پاسخ انجام نشد. دوباره تلاش کنید.");
     } finally {
@@ -225,7 +288,7 @@ export function CustomerSupportHome(): React.ReactElement {
       form.reset();
       setDetail(refreshed);
       setNotice("تصویر با موفقیت و به‌صورت امن ارسال شد.");
-      await loadTickets();
+      await loadTickets(false);
     } catch (error) {
       if (error instanceof SupportApiError && error.status === 413) {
         setNotice("حجم تصویر بیشتر از حد مجاز است.");
@@ -273,10 +336,15 @@ export function CustomerSupportHome(): React.ReactElement {
     }
   }
 
+  const totalUnread = Object.values(unreadByReference).reduce((sum, count) => sum + count, 0);
+  const subtitle = totalUnread > 0
+    ? `تیکت را مستقیم از سایت پیگیری کنید؛ ${totalUnread.toLocaleString("fa-IR")} پاسخ جدید دارید.`
+    : "تیکت را مستقیم از سایت ثبت و پیگیری کنید؛ تلگرام فقط یک راه ارتباطی اختیاری است.";
+
   return <PageShell labelledBy="page-title">
     <PageHeader
       title="پشتیبانی"
-      subtitle="تیکت را مستقیم از سایت ثبت و پیگیری کنید؛ تلگرام فقط یک راه ارتباطی اختیاری است."
+      subtitle={subtitle}
       action={<button className="ui-button" type="button" onClick={() => setCreating((value) => !value)}>{creating ? "بستن فرم" : "درخواست جدید"}</button>}
     />
 
@@ -298,15 +366,21 @@ export function CustomerSupportHome(): React.ReactElement {
 
     {loading ? <p role="status">در حال دریافت درخواست‌های پشتیبانی…</p> : failed ? <ErrorState onRetry={() => void loadTickets()} /> : tickets.length === 0 ? <EmptyState title="هنوز تیکتی ندارید" description="برای پرسش، مشکل سرویس یا پیگیری خرید، یک درخواست جدید ثبت کنید." action={<button className="ui-button" type="button" onClick={() => setCreating(true)}>ساخت اولین تیکت</button>} /> : <div className={styles.layout}>
       <aside className={styles.sidebar} aria-label="درخواست‌های پشتیبانی">
-        {tickets.map((ticket) => <PremiumCard key={ticket.reference}>
-          <button className={styles.ticketButton} type="button" onClick={() => setSelected(ticket.reference)} aria-current={selected === ticket.reference ? "true" : undefined}>
-            <strong>{ticket.subject}</strong>
-            <div className={styles.ticketMeta}>
-              <StatusBadge tone={tone(ticket.status)}>{statusText[ticket.status] ?? ticket.status}</StatusBadge>
-              <small>{faDate(ticket.updated_at)}</small>
-            </div>
-          </button>
-        </PremiumCard>)}
+        {tickets.map((ticket) => {
+          const unread = unreadByReference[ticket.reference] ?? 0;
+          return <PremiumCard key={ticket.reference}>
+            <button className={styles.ticketButton} type="button" onClick={() => setSelected(ticket.reference)} aria-current={selected === ticket.reference ? "true" : undefined}>
+              <div className={styles.ticketTitleRow}>
+                <strong>{ticket.subject}</strong>
+                {unread > 0 ? <span className={styles.unreadPill} aria-label={`${unread.toLocaleString("fa-IR")} پاسخ جدید`}>{unread.toLocaleString("fa-IR")} جدید</span> : null}
+              </div>
+              <div className={styles.ticketMeta}>
+                <StatusBadge tone={tone(ticket.status)}>{statusText[ticket.status] ?? ticket.status}</StatusBadge>
+                <small>{faDate(ticket.updated_at)}</small>
+              </div>
+            </button>
+          </PremiumCard>;
+        })}
         {botUsername ? <a href={`https://t.me/${botUsername}`} rel="noreferrer">ارتباط اختیاری از طریق تلگرام</a> : null}
       </aside>
 
