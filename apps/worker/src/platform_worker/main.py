@@ -19,6 +19,7 @@ from .order_fulfillment import DisabledProvisioner, OrderFulfillmentWorker
 from .real_activator import DatabaseSanaeiActivator
 from .real_provisioner import DatabaseSanaeiProvisioner
 from .service_activation import DisabledActivator, ServiceActivationWorker
+from .support_reply_delivery import SupportReplyDeliveryWorker
 
 
 def build_order_provisioner(
@@ -72,11 +73,13 @@ def main() -> None:
         raise RuntimeError("enabled notification worker requires a bot token")
     engine = create_engine(sync_database_url(database), pool_pre_ping=True)
     factory = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
-    worker = ManualTopupDeliveryWorker(
-        factory,
-        BotApiTransport(token),
-        DeliverySettings(enabled, os.getenv("VPN_SALE_PUBLIC_APP_ORIGIN", "http://localhost:3000")),
+    delivery_settings = DeliverySettings(
+        enabled,
+        os.getenv("VPN_SALE_PUBLIC_APP_ORIGIN", "http://localhost:3000"),
     )
+    transport = BotApiTransport(token)
+    manual_topup = ManualTopupDeliveryWorker(factory, transport, delivery_settings)
+    support_reply = SupportReplyDeliveryWorker(factory, transport, delivery_settings)
     provider_writes_enabled = (
         os.getenv("VPN_SALE_PROVIDER_WRITES_ENABLED", "false").lower() == "true"
     )
@@ -91,9 +94,13 @@ def main() -> None:
     while True:
         processed = 0
         try:
-            processed += worker.run_once()
+            processed += manual_topup.run_once()
         except Exception:
             print("manual_topup_worker_cycle_failed", flush=True)
+        try:
+            processed += support_reply.run_once()
+        except Exception:
+            print("support_reply_worker_cycle_failed", flush=True)
         try:
             processed += fulfillment.run_once()
         except Exception:
