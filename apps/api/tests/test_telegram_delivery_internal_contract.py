@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from fastapi.routing import APIRoute
 
 from platform_api.config import Settings
@@ -15,14 +13,6 @@ EXPECTED_PATHS = {
     "/api/v1/internal/telegram/services/{service_reference}/subscription/revoke",
     "/api/v1/internal/telegram/services/{service_reference}/connection",
 }
-
-
-def _assert_value_error(callable_: Callable[[], object]) -> None:
-    try:
-        callable_()
-    except ValueError:
-        return
-    raise AssertionError("expected ValueError")
 
 
 def test_private_delivery_routes_are_hidden_and_registered() -> None:
@@ -51,17 +41,24 @@ def test_subscription_urls_are_absolute_and_contain_plaintext_only_in_response_b
 
 def test_production_subscription_origin_requires_https_and_rejects_credentials() -> None:
     token = "opaque-" + ("y" * 48)
-    _assert_value_error(
-        lambda: subscription_urls(
+    try:
+        subscription_urls(
             Settings(
                 environment="production", subscription_public_origin="http://sub.example.test"
             ),
             token,
         )
-    )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("production HTTP origin must be rejected")
+
     credential_origin = "https://" + "user" + ":" + "pass" + "@sub.example.test"
-    _assert_value_error(
-        lambda: subscription_urls(
+    try:
+        subscription_urls(
             Settings(environment="test", subscription_public_origin=credential_origin), token
         )
-    )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("credential-bearing origin must be rejected")
