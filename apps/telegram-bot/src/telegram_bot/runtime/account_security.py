@@ -198,7 +198,9 @@ class AccountSecurityBotCommandHandler(SecureDeliveryBotCommandHandler):
                 # Revocation is idempotent. Reconcile with a safe GET rather than repeating the
                 # mutation after an ambiguous transport failure.
                 try:
-                    revoked = self._find_session(self.portal.sessions(context), callback.value) is None
+                    revoked = (
+                        self._find_session(self.portal.sessions(context), callback.value) is None
+                    )
                 except Exception:  # noqa: BLE001
                     return self._callback_message(
                         "نتیجه خروج از نشست هنوز مشخص نیست. درخواست خودکار تکرار نشد.\n"
