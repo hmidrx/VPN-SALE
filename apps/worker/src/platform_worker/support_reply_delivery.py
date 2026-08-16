@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from urllib.parse import urlencode
 
 from sqlalchemy import and_, or_, select, update
@@ -37,8 +39,8 @@ def _support_url(origin: str) -> str:
 
 
 def _notification_text(reference: str) -> str:
-    # Deliberately exclude reply bodies and ticket subjects from Telegram.  The
-    # authenticated support surface remains the source of truth for message content.
+    # Deliberately exclude reply bodies and ticket subjects from Telegram. The
+    # durable support store remains the source of truth for message content.
     return f"پاسخ جدیدی برای درخواست پشتیبانی {reference} ثبت شد."
 
 
@@ -205,27 +207,26 @@ class SupportReplyDeliveryWorker:
         self._log(event_reference, attempt, "SENT")
 
     @staticmethod
-    def _validate(event: object, conversation: object, message: object) -> str:
-        if not hasattr(event, "__getitem__") or not hasattr(conversation, "__getitem__"):
+    def _validate(
+        event: Mapping[str, Any],
+        conversation: Mapping[str, Any] | None,
+        message: Mapping[str, Any] | None,
+    ) -> str:
+        if conversation is None or message is None:
             raise InvalidSupportNotification
-        if not hasattr(message, "__getitem__"):
-            raise InvalidSupportNotification
-        event_row = event  # type: ignore[assignment]
-        conversation_row = conversation  # type: ignore[assignment]
-        message_row = message  # type: ignore[assignment]
         if (
-            str(conversation_row["id"]) != str(event_row["conversation_id"])
-            or str(conversation_row["requester_user_id"]) != str(event_row["customer_id"])
-            or conversation_row["requester_type"] != "CUSTOMER"
-            or str(message_row["id"]) != str(event_row["message_id"])
-            or str(message_row["conversation_id"]) != str(event_row["conversation_id"])
-            or message_row["sender_type"] != "SUPPORT_AGENT"
-            or message_row["message_type"] != "AGENT_MESSAGE"
-            or message_row["visibility"] != "PUBLIC"
-            or message_row["redacted_at"] is not None
+            str(conversation["id"]) != str(event["conversation_id"])
+            or str(conversation["requester_user_id"]) != str(event["customer_id"])
+            or conversation["requester_type"] != "CUSTOMER"
+            or str(message["id"]) != str(event["message_id"])
+            or str(message["conversation_id"]) != str(event["conversation_id"])
+            or message["sender_type"] != "SUPPORT_AGENT"
+            or message["message_type"] != "AGENT_MESSAGE"
+            or message["visibility"] != "PUBLIC"
+            or message["redacted_at"] is not None
         ):
             raise InvalidSupportNotification
-        return str(conversation_row["reference"])
+        return str(conversation["reference"])
 
     @staticmethod
     def _finish(
