@@ -169,7 +169,9 @@ def _transition(
     return to_status.value
 
 
-def _advance_after_customer_attachment(db: Session, row: Any, customer_id: str, now: datetime) -> None:
+def _advance_after_customer_attachment(
+    db: Session, row: Any, customer_id: str, now: datetime
+) -> None:
     current_status = str(row["status"])
     if current_status == SupportStatus.WAITING_FOR_CUSTOMER.value:
         current_status = _transition(
