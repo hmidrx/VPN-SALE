@@ -107,12 +107,18 @@ def upgrade() -> None:
         )
         .on_conflict_do_nothing(index_elements=[calendars.c.code])
     )
+    calendar_id = bind.scalar(
+        sa.select(calendars.c.id).where(calendars.c.code == "telegram_always_open")
+    )
+    if calendar_id is None:
+        raise RuntimeError("telegram support calendar seed is unavailable")
+
     bind.execute(
         postgresql.insert(policies)
         .values(
             id=SLA_ID,
             code="telegram_normal",
-            calendar_id=CALENDAR_ID,
+            calendar_id=calendar_id,
             priority="NORMAL",
             first_response_minutes=240,
             next_response_minutes=480,
@@ -123,19 +129,31 @@ def upgrade() -> None:
         )
         .on_conflict_do_nothing(index_elements=[policies.c.code, policies.c.version])
     )
+    policy_id = bind.scalar(
+        sa.select(policies.c.id).where(
+            policies.c.code == "telegram_normal", policies.c.version == 1
+        )
+    )
+    if policy_id is None:
+        raise RuntimeError("telegram support SLA seed is unavailable")
+
     bind.execute(
         postgresql.insert(teams)
         .values(id=TEAM_ID, code="telegram_support", name="Telegram Support", active=True)
         .on_conflict_do_nothing(index_elements=[teams.c.code])
     )
+    team_id = bind.scalar(sa.select(teams.c.id).where(teams.c.code == "telegram_support"))
+    if team_id is None:
+        raise RuntimeError("telegram support team seed is unavailable")
+
     bind.execute(
         postgresql.insert(queues)
         .values(
             id=QUEUE_ID,
             code="telegram_customer",
             name="Telegram Customer Support",
-            team_id=TEAM_ID,
-            sla_policy_id=SLA_ID,
+            team_id=team_id,
+            sla_policy_id=policy_id,
             allowed_requester_types=["CUSTOMER"],
             supported_channels=["TELEGRAM_BOT"],
             default_priority="NORMAL",
@@ -150,13 +168,20 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
+    uuid = postgresql.UUID(as_uuid=True)
     targets = (
-        ("support_queues", "telegram_customer"),
-        ("support_teams", "telegram_support"),
-        ("support_sla_policies", "telegram_normal"),
-        ("support_business_calendars", "telegram_always_open"),
-        ("support_categories", "telegram_general"),
+        ("support_queues", "telegram_customer", QUEUE_ID),
+        ("support_teams", "telegram_support", TEAM_ID),
+        ("support_sla_policies", "telegram_normal", SLA_ID),
+        ("support_business_calendars", "telegram_always_open", CALENDAR_ID),
+        ("support_categories", "telegram_general", CATEGORY_ID),
     )
-    for table_name, code in targets:
-        table = sa.table(table_name, sa.column("code", sa.String))
-        bind.execute(sa.delete(table).where(table.c.code == code))
+    for table_name, code, identifier in targets:
+        table = sa.table(
+            table_name,
+            sa.column("id", uuid),
+            sa.column("code", sa.String),
+        )
+        bind.execute(
+            sa.delete(table).where(table.c.id == identifier, table.c.code == code)
+        )
