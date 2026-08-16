@@ -94,11 +94,13 @@ def _callback(action: CallbackAction, value: str = "", update_id: int = 1) -> In
     )
 
 
-def _handler() -> tuple[
-    NativeSupportCsatBotCommandHandler,
-    _CsatPortal,
-    DurableMemoryConversationStore,
-]:
+def _handler() -> (
+    tuple[
+        NativeSupportCsatBotCommandHandler,
+        _CsatPortal,
+        DurableMemoryConversationStore,
+    ]
+):
     portal = _CsatPortal()
     store = DurableMemoryConversationStore()
     handler = NativeSupportCsatBotCommandHandler(
@@ -109,7 +111,9 @@ def _handler() -> tuple[
 
 def test_resolved_ticket_offers_rating_and_feedback_is_not_persisted_in_state() -> None:
     handler, portal, store = _handler()
-    detail = handler.handle_callback(_callback(CallbackAction.SUPPORT_OPEN, REFERENCE, update_id=10))
+    detail = handler.handle_callback(
+        _callback(CallbackAction.SUPPORT_OPEN, REFERENCE, update_id=10)
+    )
     assert "از پاسخ پشتیبانی راضی بودید" in detail.messages[0].text
     rate_values = {
         BotCallback.parse(button["callback_data"]).value
