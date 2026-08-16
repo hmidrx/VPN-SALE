@@ -22,8 +22,6 @@ for (const value of [
   "legalTransitions",
   "replyKey",
   "noteKey",
-  "detail.version,\n        replyKey,",
-  "detail.version,\n        noteKey,",
   "SupportConsole.module.css",
   "support-runtime-layout",
   "@media (max-width: 700px)",
