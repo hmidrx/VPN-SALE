@@ -45,9 +45,7 @@ def privacy_safe_telegram_payload(method: str, payload: dict[str, object]) -> di
 
 
 class PrivacyAwareTelegramTransport(UrlLibTelegramTransport):
-    async def call(
-        self, method: str, payload: dict[str, object] | None = None
-    ) -> dict[str, Any]:
+    async def call(self, method: str, payload: dict[str, object] | None = None) -> dict[str, Any]:
         return await super().call(method, privacy_safe_telegram_payload(method, payload or {}))
 
 
@@ -81,9 +79,7 @@ class SecureDeliveryBotCommandHandler(TruthfulPurchaseBotCommandHandler):
         rows.extend(self.renderer.nav_rows(locale))
         return rows
 
-    def _subscription_rows(
-        self, service_reference: str, locale: str
-    ) -> list[list[dict[str, str]]]:
+    def _subscription_rows(self, service_reference: str, locale: str) -> list[list[dict[str, str]]]:
         return [
             [
                 {
@@ -167,9 +163,7 @@ class SecureDeliveryBotCommandHandler(TruthfulPurchaseBotCommandHandler):
             text = f"{safe_text(service.plan_name)}\nوضعیت: {status_label}"
             if service.status.casefold() == "active" and not ready:
                 text += "\n\nتحویل کانفیگ در حال حاضر قابل تأیید نیست؛ کمی بعد دوباره بررسی کنید."
-            return self._callback_message(
-                text, self._service_rows(callback.value, locale, ready)
-            )
+            return self._callback_message(text, self._service_rows(callback.value, locale, ready))
 
         if callback.action == CallbackAction.OPEN_SUBSCRIPTION:
             if not callback.value:
