@@ -150,7 +150,9 @@ class NativeSupportBotCommandHandler(AccountSecurityBotCommandHandler):
 
     def _ticket_detail(self, user: IncomingUser, locale: str, reference: str) -> HandlerResult:
         try:
-            ticket = self.support_portal.support_ticket(self._portal_context(user, locale), reference)
+            ticket = self.support_portal.support_ticket(
+                self._portal_context(user, locale), reference
+            )
         except Exception:  # noqa: BLE001
             ticket = None
         if ticket is None:
