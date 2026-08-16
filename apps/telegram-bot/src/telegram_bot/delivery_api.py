@@ -57,8 +57,7 @@ class DeliveryPrivatePlatformClient(PrivatePlatformClient):
     def service_delivery_ready(self, context: CustomerContext, service_reference: str) -> bool:
         data = self._request("GET", f"/services/{service_reference}", context.telegram_user_id)
         return (
-            str(data.get("status") or "").upper() == "ACTIVE"
-            and data.get("delivery_ready") is True
+            str(data.get("status") or "").upper() == "ACTIVE" and data.get("delivery_ready") is True
         )
 
     def issue_subscription(
