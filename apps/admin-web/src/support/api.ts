@@ -1,5 +1,6 @@
 import { getAccessToken } from "../auth/token-store";
 import type {
+  SupportAttachment,
   SupportConversationDetail,
   SupportConversationPage,
   SupportMessagePage,
@@ -20,6 +21,15 @@ function headers(idempotencyKey?: string): Headers {
   return result;
 }
 
+function errorForStatus(status: number): Error {
+  if (status === 400) return new Error("صفحه درخواستی معتبر نیست؛ اطلاعات را تازه کنید.");
+  if (status === 401) return new Error("نشست مدیریت معتبر نیست. دوباره وارد شوید.");
+  if (status === 403) return new Error("مجوز لازم برای این عملیات را ندارید.");
+  if (status === 404) return new Error("تیکت، پیوست یا هشدار SLA پیدا نشد.");
+  if (status === 409) return new Error("وضعیت تیکت تغییر کرده است؛ اطلاعات را تازه کنید.");
+  return new Error("عملیات پشتیبانی انجام نشد.");
+}
+
 async function call<T>(path: string, init: RequestInit = {}, idempotencyKey?: string): Promise<T> {
   const response = await fetch(`${base}${path}`, {
     ...init,
@@ -27,14 +37,7 @@ async function call<T>(path: string, init: RequestInit = {}, idempotencyKey?: st
     credentials: "include",
     cache: "no-store",
   });
-  if (!response.ok) {
-    if (response.status === 400) throw new Error("صفحه درخواستی معتبر نیست؛ اطلاعات را تازه کنید.");
-    if (response.status === 401) throw new Error("نشست مدیریت معتبر نیست. دوباره وارد شوید.");
-    if (response.status === 403) throw new Error("مجوز لازم برای این عملیات را ندارید.");
-    if (response.status === 404) throw new Error("تیکت یا هشدار SLA پیدا نشد.");
-    if (response.status === 409) throw new Error("وضعیت تیکت تغییر کرده است؛ اطلاعات را تازه کنید.");
-    throw new Error("عملیات پشتیبانی انجام نشد.");
-  }
+  if (!response.ok) throw errorForStatus(response.status);
   return response.json() as Promise<T>;
 }
 
@@ -79,6 +82,30 @@ export function getInternalNotes(
   return call<SupportMessagePage>(
     `/conversations/${encodeURIComponent(reference)}/internal-notes-page${queryString({ cursor, limit })}`,
   );
+}
+
+export function listSupportAttachments(
+  reference: string,
+): Promise<{ items: SupportAttachment[] }> {
+  return call<{ items: SupportAttachment[] }>(
+    `/conversations/${encodeURIComponent(reference)}/attachments`,
+  );
+}
+
+export async function downloadSupportAttachment(
+  reference: string,
+  assetReference: string,
+): Promise<Blob> {
+  const response = await fetch(
+    `${base}/conversations/${encodeURIComponent(reference)}/attachments/${encodeURIComponent(assetReference)}`,
+    {
+      headers: headers(),
+      credentials: "include",
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) throw errorForStatus(response.status);
+  return response.blob();
 }
 
 export function getConversationSlaEscalations(
