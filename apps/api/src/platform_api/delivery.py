@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hmac
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Never
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -265,7 +265,7 @@ def customer_service_delivery(
     )
 
 
-def _raise_subscription_management_error(exc: DeliveryError) -> None:
+def _raise_subscription_management_error(exc: DeliveryError) -> Never:
     if exc.code in {
         DeliveryErrorCode.IDEMPOTENCY_CONFLICT,
         DeliveryErrorCode.SUBSCRIPTION_NOT_FOUND,
@@ -278,7 +278,9 @@ def _raise_subscription_management_error(exc: DeliveryError) -> None:
     raise HTTPException(status_code, detail={"code": exc.code.value}) from exc
 
 
-def _subscription_status(service: ServiceModel, token: str | None, result_status: str) -> SubscriptionStatus:
+def _subscription_status(
+    service: ServiceModel, token: str | None, result_status: str
+) -> SubscriptionStatus:
     return SubscriptionStatus(
         service_reference=service.public_reference,
         status=result_status,
