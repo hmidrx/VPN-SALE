@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 
 from platform_api.main import app
 
-
 TELEGRAM_DELIVERY_PATHS = {
     "/api/v1/internal/telegram/services/{service_reference}/subscription/issue",
     "/api/v1/internal/telegram/services/{service_reference}/subscription/rotate",
