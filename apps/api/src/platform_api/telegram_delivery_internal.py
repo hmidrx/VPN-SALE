@@ -70,7 +70,10 @@ def _subscription_origin(settings: Settings) -> str:
         or parsed.fragment
     ):
         raise ValueError("invalid subscription public origin")
-    if settings.environment.casefold() in {"production", "prod", "staging"} and parsed.scheme != "https":
+    if (
+        settings.environment.casefold() in {"production", "prod", "staging"}
+        and parsed.scheme != "https"
+    ):
         raise ValueError("subscription public origin must use HTTPS")
     return raw
 
