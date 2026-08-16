@@ -3,6 +3,7 @@ import type {
   SupportConversationDetail,
   SupportConversationSummary,
   SupportMessage,
+  SupportSlaEscalation,
   SupportStatus,
 } from "./types";
 
@@ -29,7 +30,7 @@ async function call<T>(path: string, init: RequestInit = {}, idempotencyKey?: st
   if (!response.ok) {
     if (response.status === 401) throw new Error("نشست مدیریت معتبر نیست. دوباره وارد شوید.");
     if (response.status === 403) throw new Error("مجوز لازم برای این عملیات را ندارید.");
-    if (response.status === 404) throw new Error("تیکت پیدا نشد.");
+    if (response.status === 404) throw new Error("تیکت یا هشدار SLA پیدا نشد.");
     if (response.status === 409) throw new Error("وضعیت تیکت تغییر کرده است؛ اطلاعات را تازه کنید.");
     throw new Error("عملیات پشتیبانی انجام نشد.");
   }
@@ -52,6 +53,42 @@ export function getSupportConversation(reference: string): Promise<SupportConver
 export function getInternalNotes(reference: string): Promise<{ items: SupportMessage[] }> {
   return call<{ items: SupportMessage[] }>(
     `/conversations/${encodeURIComponent(reference)}/internal-notes`,
+  );
+}
+
+export function getConversationSlaEscalations(
+  reference: string,
+): Promise<{ items: SupportSlaEscalation[] }> {
+  return call<{ items: SupportSlaEscalation[] }>(
+    `/conversations/${encodeURIComponent(reference)}/sla/escalations`,
+  );
+}
+
+export function listOpenSlaEscalations(): Promise<{ items: SupportSlaEscalation[] }> {
+  return call<{ items: SupportSlaEscalation[] }>("/sla/escalations?status_filter=OPEN&limit=100");
+}
+
+export function manuallyEscalateSupportConversation(
+  reference: string,
+  reason: string,
+  expectedVersion: number,
+): Promise<SupportSlaEscalation> {
+  return call<SupportSlaEscalation>(
+    `/conversations/${encodeURIComponent(reference)}/escalate`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason, expected_version: expectedVersion }),
+    },
+  );
+}
+
+export function acknowledgeSupportSlaEscalation(
+  reference: string,
+  note?: string,
+): Promise<SupportSlaEscalation> {
+  return call<SupportSlaEscalation>(
+    `/sla/escalations/${encodeURIComponent(reference)}/acknowledge`,
+    { method: "POST", body: JSON.stringify({ note: note?.trim() || null }) },
   );
 }
 
