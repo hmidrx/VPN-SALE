@@ -16,14 +16,32 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy import select
 
 from .config import Settings, get_settings
-from .identity.models import CustomerSessionModel
-from .telegram_internal import Database, InternalAuth, _customer_id, _no_store
+from .identity.models import CustomerSessionModel, TelegramAccountModel, UserModel
+from .telegram_internal import Database, InternalAuth
 
 router = APIRouter(
     prefix="/api/v1/internal/telegram",
     tags=["internal-telegram-account-security"],
     include_in_schema=False,
 )
+
+
+def _no_store(response: Response) -> None:
+    response.headers["Cache-Control"] = "private, no-store"
+
+
+def _customer_id(db: Database, telegram_id: int) -> str:
+    row = db.execute(
+        select(TelegramAccountModel, UserModel)
+        .join(UserModel, TelegramAccountModel.user_id == UserModel.id)
+        .where(TelegramAccountModel.telegram_user_id == telegram_id)
+    ).one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="account_unlinked")
+    user = row[1]
+    if user.status not in {"ACTIVE", "PENDING"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="account_restricted")
+    return user.id
 
 
 def _aware(value: datetime) -> datetime:
