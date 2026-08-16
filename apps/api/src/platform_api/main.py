@@ -59,9 +59,11 @@ from .services import reconciliation_router as admin_service_reconciliation_rout
 from .support import admin_router as admin_support_router
 from .support import customer_router as customer_support_router
 from .support import reseller_router as reseller_support_router
+from .support_admin_runtime import router as admin_support_runtime_router
 from .telegram_account_internal import router as telegram_account_internal_router
 from .telegram_delivery_internal import router as telegram_delivery_internal_router
 from .telegram_internal import router as telegram_internal_router
+from .telegram_support_internal import router as telegram_support_internal_router
 from .usage import admin_router as admin_usage_router
 from .usage import anomaly_router as admin_usage_anomaly_router
 from .usage import automation_router as admin_lifecycle_automation_router
@@ -175,6 +177,7 @@ def create_app(settings: Settings) -> FastAPI:
         customer_support_router,
         reseller_support_router,
         admin_support_router,
+        admin_support_runtime_router,
         knowledge_router,
         admin_knowledge_router,
         status_router,
@@ -208,6 +211,7 @@ def create_app(settings: Settings) -> FastAPI:
         telegram_internal_router,
         telegram_delivery_internal_router,
         telegram_account_internal_router,
+        telegram_support_internal_router,
     ]
     for api_router in routers:
         application.include_router(api_router)
