@@ -50,9 +50,16 @@ class NativeSupportCsatBotCommandHandler(NativeSupportBotCommandHandler):
             return None
         return parts[1], score
 
-    def _ticket_detail(self, user: IncomingUser, locale: str, reference: str) -> HandlerResult:
-        result = super()._ticket_detail(user, locale, reference)
-        if not result.messages:
+    def _ticket_detail(
+        self,
+        user: IncomingUser,
+        locale: str,
+        reference: str,
+        cursor: str | None = None,
+        previous_cursors: tuple[str, ...] = (),
+    ) -> HandlerResult:
+        result = super()._ticket_detail(user, locale, reference, cursor, previous_cursors)
+        if cursor is not None or not result.messages:
             return result
         try:
             csat = self.support_portal.support_csat_state(
