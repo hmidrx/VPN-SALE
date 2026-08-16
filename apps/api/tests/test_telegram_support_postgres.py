@@ -67,9 +67,7 @@ def _cleanup(db: Session, user_ids: list[str]) -> None:
             )
         )
         db.execute(
-            delete(support_messages).where(
-                support_messages.c.conversation_id.in_(conversation_ids)
-            )
+            delete(support_messages).where(support_messages.c.conversation_id.in_(conversation_ids))
         )
         db.execute(
             delete(support_conversations).where(support_conversations.c.id.in_(conversation_ids))
@@ -112,26 +110,36 @@ def test_native_support_is_idempotent_owned_and_hides_internal_notes() -> None:
             )
             reference = str(first["reference"])
             assert repeated["reference"] == reference
-            conversation = db.execute(
-                select(support_conversations).where(
-                    support_conversations.c.reference == reference
+            conversation = (
+                db.execute(
+                    select(support_conversations).where(
+                        support_conversations.c.reference == reference
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             conversation_id = str(conversation["id"])
             snapshot = conversation["sla_policy_snapshot"]
             assert isinstance(snapshot, dict)
             assert snapshot["code"] == "telegram_normal"
             assert snapshot["first_response_minutes"] == 240
-            assert db.scalar(
-                select(func.count()).select_from(support_conversations).where(
-                    support_conversations.c.reference == reference
+            assert (
+                db.scalar(
+                    select(func.count())
+                    .select_from(support_conversations)
+                    .where(support_conversations.c.reference == reference)
                 )
-            ) == 1
-            assert db.scalar(
-                select(func.count()).select_from(support_messages).where(
-                    support_messages.c.conversation_id == conversation_id
+                == 1
+            )
+            assert (
+                db.scalar(
+                    select(func.count())
+                    .select_from(support_messages)
+                    .where(support_messages.c.conversation_id == conversation_id)
                 )
-            ) == 1
+                == 1
+            )
 
             with pytest.raises(HTTPException) as create_conflict:
                 create_ticket(
