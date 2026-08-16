@@ -24,12 +24,23 @@ function headers(idempotencyKey?: string): Headers {
   return result;
 }
 
+function binaryHeaders(contentType: string, idempotencyKey: string): Headers {
+  const result = new Headers();
+  const accessToken = getAccessToken();
+  if (accessToken) result.set("authorization", `Bearer ${accessToken}`);
+  result.set("Idempotency-Key", idempotencyKey);
+  result.set("content-type", contentType);
+  return result;
+}
+
 function errorForStatus(status: number): Error {
   if (status === 400) return new Error("صفحه درخواستی معتبر نیست؛ اطلاعات را تازه کنید.");
   if (status === 401) return new Error("نشست مدیریت معتبر نیست. دوباره وارد شوید.");
   if (status === 403) return new Error("مجوز لازم برای این عملیات را ندارید.");
   if (status === 404) return new Error("تیکت، پیوست، پاسخ آماده، ماکرو یا هشدار SLA پیدا نشد.");
   if (status === 409) return new Error("وضعیت تیکت یا منبع پشتیبانی تغییر کرده است؛ اطلاعات را تازه کنید.");
+  if (status === 413) return new Error("حجم تصویر از سقف مجاز بیشتر است.");
+  if (status === 415) return new Error("فقط تصویر JPEG، PNG یا WebP قابل ارسال است.");
   if (status === 422) return new Error("مقادیر واردشده برای عملیات پشتیبانی معتبر نیستند.");
   return new Error("عملیات پشتیبانی انجام نشد.");
 }
@@ -94,6 +105,26 @@ export function listSupportAttachments(
   return call<{ items: SupportAttachment[] }>(
     `/conversations/${encodeURIComponent(reference)}/attachments`,
   );
+}
+
+export async function uploadSupportAttachment(
+  reference: string,
+  file: File,
+  expectedVersion: number,
+  idempotencyKey: string,
+): Promise<SupportAttachment> {
+  const response = await fetch(
+    `${base}/conversations/${encodeURIComponent(reference)}/attachments${queryString({ expected_version: expectedVersion })}`,
+    {
+      method: "POST",
+      headers: binaryHeaders(file.type, idempotencyKey),
+      credentials: "include",
+      cache: "no-store",
+      body: file,
+    },
+  );
+  if (!response.ok) throw errorForStatus(response.status);
+  return response.json() as Promise<SupportAttachment>;
 }
 
 export async function downloadSupportAttachment(
