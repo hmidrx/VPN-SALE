@@ -11,6 +11,9 @@ def test_delivery_safe_actions_are_opaque_and_bounded() -> None:
         CallbackAction.OPEN_SERVICE,
         CallbackAction.OPEN_CONFIGS,
         CallbackAction.OPEN_SUBSCRIPTION,
+        CallbackAction.ROTATE_SUBSCRIPTION,
+        CallbackAction.REVOKE_SUBSCRIPTION,
+        CallbackAction.CONFIRM_REVOKE_SUBSCRIPTION,
         CallbackAction.OPEN_SERVICE_GUIDE,
     ):
         data = BotCallback(action, "opaque-ref").pack()
