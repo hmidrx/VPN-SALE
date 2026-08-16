@@ -57,7 +57,9 @@ class NativeSupportAttachmentBotCommandHandler(NativeSupportCsatBotCommandHandle
         rows.insert(max(len(rows) - 1, 0), attachment_row)
         return replace(result, messages=(replace(message, rows=rows), *result.messages[1:]))
 
-    def _start_attachment(self, user: IncomingUser, reference: str, update_id: int) -> HandlerResult:
+    def _start_attachment(
+        self, user: IncomingUser, reference: str, update_id: int
+    ) -> HandlerResult:
         ticket = self.support_portal.support_ticket(self._portal_context(user, "fa"), reference)
         if ticket is None or ticket.status in {"SPAM", "ARCHIVED"}:
             return self._stale("fa")
