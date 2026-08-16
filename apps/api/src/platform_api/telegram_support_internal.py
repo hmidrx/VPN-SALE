@@ -12,7 +12,12 @@ from fastapi import APIRouter, Header, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects import postgresql
-from vpnsale_domain.support import LEGAL_TRANSITIONS, SupportStatus, sanitize_message
+from vpnsale_domain.support import (
+    LEGAL_TRANSITIONS,
+    SupportDomainError,
+    SupportStatus,
+    sanitize_message,
+)
 
 from .identity.models import TelegramAccountModel, UserModel
 from .support_runtime_models import (
@@ -77,7 +82,7 @@ def _customer_id(db: Database, telegram_id: int) -> str:
 def _clean_text(value: str, *, limit: int) -> str:
     try:
         cleaned = sanitize_message(value, limit)
-    except ValueError as exc:
+    except (SupportDomainError, ValueError) as exc:
         raise HTTPException(status_code=422, detail="support_text_invalid") from exc
     if not cleaned:
         raise HTTPException(status_code=422, detail="support_text_invalid")
@@ -163,22 +168,26 @@ def _summary(row: Any) -> dict[str, object]:
 
 def _detail(db: Database, customer_id: str, reference: str) -> dict[str, object]:
     row = _conversation(db, customer_id, reference)
-    newest = db.execute(
-        select(
-            support_messages.c.sequence,
-            support_messages.c.sender_type,
-            support_messages.c.message_type,
-            support_messages.c.body,
-            support_messages.c.created_at,
+    newest = (
+        db.execute(
+            select(
+                support_messages.c.sequence,
+                support_messages.c.sender_type,
+                support_messages.c.message_type,
+                support_messages.c.body,
+                support_messages.c.created_at,
+            )
+            .where(
+                support_messages.c.conversation_id == row["id"],
+                support_messages.c.visibility == "PUBLIC",
+                support_messages.c.redacted_at.is_(None),
+            )
+            .order_by(support_messages.c.sequence.desc())
+            .limit(100)
         )
-        .where(
-            support_messages.c.conversation_id == row["id"],
-            support_messages.c.visibility == "PUBLIC",
-            support_messages.c.redacted_at.is_(None),
-        )
-        .order_by(support_messages.c.sequence.desc())
-        .limit(100)
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     messages = list(reversed(newest))
     return {
         **_summary(row),
@@ -256,9 +265,7 @@ def _resume_deadlines_after_customer_wait(
             else None
         ),
         "resolution_deadline": (
-            row["resolution_deadline"] + delta
-            if row["resolution_deadline"] is not None
-            else None
+            row["resolution_deadline"] + delta if row["resolution_deadline"] is not None else None
         ),
     }
 
@@ -317,15 +324,19 @@ def list_tickets(
     x_telegram_subject: Annotated[int, Header(gt=0)],
 ) -> dict[str, object]:
     customer_id = _customer_id(db, x_telegram_subject)
-    rows = db.execute(
-        select(support_conversations)
-        .where(
-            support_conversations.c.requester_type == "CUSTOMER",
-            support_conversations.c.requester_user_id == customer_id,
+    rows = (
+        db.execute(
+            select(support_conversations)
+            .where(
+                support_conversations.c.requester_type == "CUSTOMER",
+                support_conversations.c.requester_user_id == customer_id,
+            )
+            .order_by(support_conversations.c.updated_at.desc())
+            .limit(20)
         )
-        .order_by(support_conversations.c.updated_at.desc())
-        .limit(20)
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     _no_store(response)
     return {"items": [_summary(row) for row in rows]}
 
