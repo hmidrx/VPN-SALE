@@ -32,6 +32,12 @@ export type SupportMessage = {
 
 export type SupportTicket = SupportTicketSummary & { messages: SupportMessage[] };
 
+export type SupportCsatState = {
+  eligible: boolean;
+  submitted: boolean;
+  score: number | null;
+};
+
 export class SupportApiError extends Error {
   constructor(public readonly status: number, public readonly code: string) {
     super(code);
@@ -120,6 +126,21 @@ function ticket(value: unknown): SupportTicket {
   return { ...base, messages: item.messages.map(message) };
 }
 
+function csatState(value: unknown): SupportCsatState {
+  const item = object(value);
+  if (typeof item.eligible !== "boolean" || typeof item.submitted !== "boolean") {
+    throw new Error("invalid_csat_state");
+  }
+  if (item.score !== null && (typeof item.score !== "number" || !Number.isInteger(item.score) || item.score < 1 || item.score > 5)) {
+    throw new Error("invalid_csat_score");
+  }
+  return {
+    eligible: item.eligible,
+    submitted: item.submitted,
+    score: item.score as number | null,
+  };
+}
+
 async function parseError(response: Response): Promise<never> {
   let code = response.status === 401 ? "AUTH_REQUIRED" : response.status === 403 ? "CSRF_FAILED" : response.status === 404 ? "NOT_FOUND" : response.status === 409 ? "CONFLICT" : response.status === 413 ? "TOO_LARGE" : response.status === 415 ? "UNSUPPORTED_TYPE" : response.status === 422 ? "VALIDATION" : response.status >= 500 ? "UNAVAILABLE" : "SUPPORT_ERROR";
   const payload = await response.json().catch(() => null) as { detail?: string } | null;
@@ -198,3 +219,22 @@ export async function fetchSupportAttachmentBlob(
   if (!response.ok) await parseError(response);
   return response.blob();
 }
+
+export const getSupportCsat = (
+  reference: string,
+  signal?: AbortSignal,
+  fetcher: Fetcher = fetch,
+): Promise<SupportCsatState> =>
+  request(`/tickets/${encodeURIComponent(reference)}/csat`, csatState, { signal }, fetcher);
+
+export const submitSupportCsat = (
+  reference: string,
+  score: number,
+  feedback: string | null,
+  fetcher: Fetcher = fetch,
+): Promise<SupportCsatState> =>
+  request(`/tickets/${encodeURIComponent(reference)}/csat`, csatState, {
+    method: "POST",
+    headers: headers(true, idempotencyKey("web-csat")),
+    body: JSON.stringify({ score, feedback }),
+  }, fetcher);
