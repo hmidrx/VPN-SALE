@@ -42,6 +42,8 @@ class CallbackAction(StrEnum):
     SUPPORT_NEW = "sup_new"
     SUPPORT_OPEN = "sup_open"
     SUPPORT_REPLY = "sup_reply"
+    SUPPORT_CSAT_RATE = "sup_rate"
+    SUPPORT_CSAT_SKIP = "sup_rate_skip"
     STATUS = "status"
     DISCOUNTS = "discounts"
     ANNOUNCEMENTS = "announcements"
