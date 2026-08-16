@@ -24,6 +24,7 @@ from vpnsale_domain.support import (
 )
 
 from .support_runtime_models import (
+    support_attachments,
     support_categories,
     support_conversations,
     support_messages,
@@ -147,6 +148,7 @@ def customer_support_detail(
     newest = (
         db.execute(
             select(
+                support_messages.c.id,
                 support_messages.c.sequence,
                 support_messages.c.sender_type,
                 support_messages.c.message_type,
@@ -165,6 +167,38 @@ def customer_support_detail(
         .all()
     )
     messages = list(reversed(newest))
+    message_ids = [message["id"] for message in messages]
+    attachments_by_message: dict[str, list[dict[str, object]]] = {}
+    if message_ids:
+        attachments = (
+            db.execute(
+                select(
+                    support_attachments.c.message_id,
+                    support_attachments.c.asset_reference,
+                    support_attachments.c.normalized_filename,
+                    support_attachments.c.content_type,
+                    support_attachments.c.byte_size,
+                    support_attachments.c.created_at,
+                ).where(
+                    support_attachments.c.conversation_id == row["id"],
+                    support_attachments.c.message_id.in_(message_ids),
+                    support_attachments.c.state == "READY",
+                )
+            )
+            .mappings()
+            .all()
+        )
+        for attachment in attachments:
+            message_id = str(attachment["message_id"])
+            attachments_by_message.setdefault(message_id, []).append(
+                {
+                    "asset_reference": str(attachment["asset_reference"]),
+                    "filename": str(attachment["normalized_filename"]),
+                    "content_type": str(attachment["content_type"]),
+                    "byte_size": int(attachment["byte_size"]),
+                    "created_at": attachment["created_at"].isoformat(),
+                }
+            )
     return {
         **customer_support_summary(row),
         "messages": [
@@ -174,6 +208,7 @@ def customer_support_detail(
                 "message_type": str(message["message_type"]),
                 "body": str(message["body"]),
                 "created_at": message["created_at"].isoformat(),
+                "attachments": attachments_by_message.get(str(message["id"]), []),
             }
             for message in messages
         ],
