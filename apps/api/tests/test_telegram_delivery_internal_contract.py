@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from fastapi.routing import APIRoute
-import pytest
 
 from platform_api.config import Settings
 from platform_api.main import create_app
@@ -14,6 +13,14 @@ EXPECTED_PATHS = {
     "/api/v1/internal/telegram/services/{service_reference}/subscription/revoke",
     "/api/v1/internal/telegram/services/{service_reference}/connection",
 }
+
+
+def _assert_value_error(callable_: object) -> None:
+    try:
+        callable_()  # type: ignore[operator]
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError")
 
 
 def test_private_delivery_routes_are_hidden_and_registered() -> None:
@@ -42,15 +49,17 @@ def test_subscription_urls_are_absolute_and_contain_plaintext_only_in_response_b
 
 def test_production_subscription_origin_requires_https_and_rejects_credentials() -> None:
     token = "opaque-" + ("y" * 48)
-    with pytest.raises(ValueError):
-        subscription_urls(
+    _assert_value_error(
+        lambda: subscription_urls(
             Settings(
                 environment="production", subscription_public_origin="http://sub.example.test"
             ),
             token,
         )
+    )
     credential_origin = "https://" + "user" + ":" + "pass" + "@sub.example.test"
-    with pytest.raises(ValueError):
-        subscription_urls(
+    _assert_value_error(
+        lambda: subscription_urls(
             Settings(environment="test", subscription_public_origin=credential_origin), token
         )
+    )
