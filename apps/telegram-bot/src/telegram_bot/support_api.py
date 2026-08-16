@@ -39,6 +39,13 @@ class SupportTicket:
     messages: tuple[SupportTicketMessage, ...] = ()
 
 
+@dataclass(frozen=True)
+class SupportCsatState:
+    eligible: bool
+    submitted: bool
+    score: int | None = None
+
+
 class NativeSupportPortal(Protocol):
     def support_tickets(self, context: CustomerContext) -> list[SupportTicket]: ...
     def support_ticket(self, context: CustomerContext, reference: str) -> SupportTicket | None: ...
@@ -56,6 +63,17 @@ class NativeSupportPortal(Protocol):
         message: str,
         idempotency_key: str,
     ) -> SupportTicket: ...
+    def support_csat_state(
+        self, context: CustomerContext, reference: str
+    ) -> SupportCsatState: ...
+    def submit_support_csat(
+        self,
+        context: CustomerContext,
+        reference: str,
+        score: int,
+        feedback: str | None,
+        idempotency_key: str,
+    ) -> SupportCsatState: ...
 
 
 class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeSupportPortal):
@@ -112,6 +130,21 @@ class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeS
             messages.append(SupportTicketMessage(sequence, sender, body, created_message))
         return SupportTicket(reference, subject, status, created, updated, tuple(messages))
 
+    @staticmethod
+    def _csat(data: dict[str, Any]) -> SupportCsatState:
+        eligible = data.get("eligible")
+        submitted = data.get("submitted")
+        score = data.get("score")
+        if not isinstance(eligible, bool) or not isinstance(submitted, bool):
+            raise PrivateApiUnavailable("وضعیت رضایت از پشتیبانی قابل استفاده نیست.")
+        if score is not None and (not isinstance(score, int) or isinstance(score, bool) or not 1 <= score <= 5):
+            raise PrivateApiUnavailable("وضعیت رضایت از پشتیبانی قابل استفاده نیست.")
+        if submitted and score is None:
+            raise PrivateApiUnavailable("وضعیت رضایت از پشتیبانی قابل استفاده نیست.")
+        if eligible and submitted:
+            raise PrivateApiUnavailable("وضعیت رضایت از پشتیبانی قابل استفاده نیست.")
+        return SupportCsatState(eligible=eligible, submitted=submitted, score=score)
+
     def support_tickets(self, context: CustomerContext) -> list[SupportTicket]:
         data = self._request("GET", "/support/tickets", context.telegram_user_id)
         raw_items = data.get("items")
@@ -137,6 +170,12 @@ class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeS
                 return None
             raise
         return self._ticket(data)
+
+    def support_csat_state(self, context: CustomerContext, reference: str) -> SupportCsatState:
+        if _TICKET_REFERENCE.fullmatch(reference) is None:
+            raise PrivateApiUnavailable("تیکت معتبر نیست.")
+        data = self._request("GET", f"/support/tickets/{reference}/csat", context.telegram_user_id)
+        return self._csat(data)
 
     def _support_mutation(
         self,
@@ -192,3 +231,28 @@ class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeS
             {"message": message},
             idempotency_key,
         )
+
+    def submit_support_csat(
+        self,
+        context: CustomerContext,
+        reference: str,
+        score: int,
+        feedback: str | None,
+        idempotency_key: str,
+    ) -> SupportCsatState:
+        if _TICKET_REFERENCE.fullmatch(reference) is None or not 1 <= score <= 5:
+            raise PrivateApiUnavailable("امتیاز پشتیبانی معتبر نیست.")
+        body: dict[str, object] = {"score": score, "feedback": feedback}
+        path = f"/support/tickets/{reference}/csat"
+        try:
+            data = self._request("POST", path, context.telegram_user_id, body, idempotency_key)
+        except AuthoritativePrivateApiError:
+            raise
+        except PrivateApiUnavailable:
+            try:
+                data = self._request("POST", path, context.telegram_user_id, body, idempotency_key)
+            except AuthoritativePrivateApiError:
+                raise
+            except PrivateApiUnavailable as exc:
+                raise SupportOutcomeUnknown("نتیجه ثبت رضایت هنوز مشخص نیست.") from exc
+        return self._csat(data)
