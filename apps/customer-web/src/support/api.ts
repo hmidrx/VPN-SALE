@@ -13,12 +13,21 @@ export type SupportTicketSummary = {
   updated_at: string;
 };
 
+export type SupportAttachment = {
+  asset_reference: string;
+  filename: string;
+  content_type: string;
+  byte_size: number;
+  created_at: string;
+};
+
 export type SupportMessage = {
   sequence: number;
   sender_type: string;
   message_type: string;
   body: string;
   created_at: string;
+  attachments: SupportAttachment[];
 };
 
 export type SupportTicket = SupportTicketSummary & { messages: SupportMessage[] };
@@ -29,9 +38,13 @@ export class SupportApiError extends Error {
   }
 }
 
-function headers(mutating = false, idempotencyKey?: string): Headers {
+function headers(
+  mutating = false,
+  idempotencyKey?: string,
+  contentType: string | null = "application/json",
+): Headers {
   const value = new Headers();
-  value.set("content-type", "application/json");
+  if (contentType) value.set("content-type", contentType);
   value.set("x-request-id", correlationId());
   const access = getAccessToken();
   if (access) value.set("authorization", `Bearer ${access}`);
@@ -70,17 +83,33 @@ function summary(value: unknown): SupportTicketSummary {
   };
 }
 
+function attachment(value: unknown): SupportAttachment {
+  const item = object(value);
+  if (typeof item.byte_size !== "number" || !Number.isFinite(item.byte_size) || item.byte_size < 0) {
+    throw new Error("invalid_byte_size");
+  }
+  return {
+    asset_reference: string(item.asset_reference, "asset_reference"),
+    filename: string(item.filename, "filename"),
+    content_type: string(item.content_type, "content_type"),
+    byte_size: item.byte_size,
+    created_at: date(item.created_at, "created_at"),
+  };
+}
+
 function message(value: unknown): SupportMessage {
   const item = object(value);
   if (typeof item.sequence !== "number" || !Number.isInteger(item.sequence) || item.sequence < 1) {
     throw new Error("invalid_sequence");
   }
+  if (!Array.isArray(item.attachments)) throw new Error("invalid_attachments");
   return {
     sequence: item.sequence,
     sender_type: string(item.sender_type, "sender_type"),
     message_type: string(item.message_type, "message_type"),
     body: string(item.body, "body"),
     created_at: date(item.created_at, "created_at"),
+    attachments: item.attachments.map(attachment),
   };
 }
 
@@ -92,7 +121,7 @@ function ticket(value: unknown): SupportTicket {
 }
 
 async function parseError(response: Response): Promise<never> {
-  let code = response.status === 401 ? "AUTH_REQUIRED" : response.status === 403 ? "CSRF_FAILED" : response.status === 404 ? "NOT_FOUND" : response.status === 409 ? "CONFLICT" : response.status === 422 ? "VALIDATION" : response.status >= 500 ? "UNAVAILABLE" : "SUPPORT_ERROR";
+  let code = response.status === 401 ? "AUTH_REQUIRED" : response.status === 403 ? "CSRF_FAILED" : response.status === 404 ? "NOT_FOUND" : response.status === 409 ? "CONFLICT" : response.status === 413 ? "TOO_LARGE" : response.status === 415 ? "UNSUPPORTED_TYPE" : response.status === 422 ? "VALIDATION" : response.status >= 500 ? "UNAVAILABLE" : "SUPPORT_ERROR";
   const payload = await response.json().catch(() => null) as { detail?: string } | null;
   if (typeof payload?.detail === "string") code = payload.detail;
   throw new SupportApiError(response.status, code);
@@ -138,3 +167,34 @@ export const replySupportTicket = (reference: string, body: string, fetcher: Fet
     headers: headers(true, idempotencyKey("web-reply")),
     body: JSON.stringify({ message: body }),
   }, fetcher);
+
+export const uploadSupportImage = (
+  reference: string,
+  file: File,
+  fetcher: Fetcher = fetch,
+): Promise<SupportAttachment> =>
+  request(`/tickets/${encodeURIComponent(reference)}/attachments`, attachment, {
+    method: "POST",
+    headers: headers(true, idempotencyKey("web-image"), file.type),
+    body: file,
+  }, fetcher);
+
+export async function fetchSupportAttachmentBlob(
+  reference: string,
+  assetReference: string,
+  signal?: AbortSignal,
+  fetcher: Fetcher = fetch,
+): Promise<Blob> {
+  const response = await fetcher(
+    `${config.apiBaseUrl}/api/v1/customer/support/tickets/${encodeURIComponent(reference)}/attachments/${encodeURIComponent(assetReference)}`,
+    {
+      method: "GET",
+      headers: headers(false, undefined, null),
+      credentials: "include",
+      cache: "no-store",
+      signal,
+    },
+  );
+  if (!response.ok) await parseError(response);
+  return response.blob();
+}
