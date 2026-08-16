@@ -29,9 +29,7 @@ def test_private_media_is_persistent_and_test_server_support_media_is_isolated()
     assert "private_media:/var/lib/vpnsale/private" in base_compose
     assert "private_media:" in base_compose
     assert "VPN_SALE_SUPPORT_PRIVATE_UPLOAD_ROOT: /var/lib/vpnsale/private/support" in test_compose
-    assert (
-        "test_server_support_attachments:/var/lib/vpnsale/private/support" in test_compose
-    )
+    assert "test_server_support_attachments:/var/lib/vpnsale/private/support" in test_compose
     assert "test_server_support_attachments:" in test_compose
     assert "-m 0700 /var/lib/vpnsale/private/support" in api_dockerfile
     assert "test -w /var/lib/vpnsale/private/support" in api_dockerfile
