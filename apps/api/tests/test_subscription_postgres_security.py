@@ -353,15 +353,10 @@ def test_postgres_subscription_issue_render_rotate_and_revoke_are_hash_only() ->
             assert first_credential not in credential_row.token_hash
             assert subscription.active_token_hash == credential_row.token_hash
 
-            repeated = issue_service_subscription(
-                db, SERVICE_ID, issued_at + timedelta(seconds=1)
-            )
+            repeated = issue_service_subscription(db, SERVICE_ID, issued_at + timedelta(seconds=1))
             db.commit()
             assert repeated.token is None
-            assert (
-                db.scalar(select(func.count()).select_from(DeliverySubscriptionTokenModel))
-                == 1
-            )
+            assert db.scalar(select(func.count()).select_from(DeliverySubscriptionTokenModel)) == 1
 
             plain = render_public_subscription(
                 db,
@@ -412,17 +407,12 @@ def test_postgres_subscription_issue_render_rotate_and_revoke_are_hash_only() ->
             }
             db.rollback()
 
-            rotated = rotate_service_subscription(
-                db, SERVICE_ID, issued_at + timedelta(minutes=2)
-            )
+            rotated = rotate_service_subscription(db, SERVICE_ID, issued_at + timedelta(minutes=2))
             db.commit()
             assert rotated.token is not None
             second_credential = rotated.token
             assert second_credential != first_credential
-            assert (
-                db.scalar(select(func.count()).select_from(DeliverySubscriptionTokenModel))
-                == 2
-            )
+            assert db.scalar(select(func.count()).select_from(DeliverySubscriptionTokenModel)) == 2
 
             assert "edge.example" in render_public_subscription(
                 db,
@@ -439,9 +429,7 @@ def test_postgres_subscription_issue_render_rotate_and_revoke_are_hash_only() ->
             db.commit()
 
             with pytest.raises(DeliveryError) as duplicate_rotation:
-                rotate_service_subscription(
-                    db, SERVICE_ID, issued_at + timedelta(minutes=3)
-                )
+                rotate_service_subscription(db, SERVICE_ID, issued_at + timedelta(minutes=3))
             assert duplicate_rotation.value.code is DeliveryErrorCode.IDEMPOTENCY_CONFLICT
             db.rollback()
 
@@ -463,9 +451,7 @@ def test_postgres_subscription_issue_render_rotate_and_revoke_are_hash_only() ->
             )
             db.commit()
 
-            revoked = revoke_service_subscription(
-                db, SERVICE_ID, issued_at + timedelta(minutes=9)
-            )
+            revoked = revoke_service_subscription(db, SERVICE_ID, issued_at + timedelta(minutes=9))
             db.commit()
             assert revoked.status == "REVOKED"
 
