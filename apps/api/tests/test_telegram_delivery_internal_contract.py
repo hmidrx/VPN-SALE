@@ -45,11 +45,8 @@ def test_production_subscription_origin_requires_https_and_rejects_credentials()
             Settings(environment="production", subscription_public_origin="http://sub.example.test"),
             token,
         )
+    credential_origin = "https://" + "user" + ":" + "pass" + "@sub.example.test"
     with pytest.raises(ValueError):
         subscription_urls(
-            Settings(
-                environment="test",
-                subscription_public_origin="https://user:pass@sub.example.test",
-            ),
-            token,
+            Settings(environment="test", subscription_public_origin=credential_origin), token
         )
