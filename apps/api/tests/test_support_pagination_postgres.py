@@ -13,7 +13,10 @@ from sqlalchemy.orm import Session
 
 from platform_api.config import Settings
 from platform_api.identity.models import TelegramAccountModel, UserModel
-from platform_api.support_pagination_runtime import telegram_ticket_detail_page, telegram_ticket_page
+from platform_api.support_pagination_runtime import (
+    telegram_ticket_detail_page,
+    telegram_ticket_page,
+)
 from platform_api.support_runtime_models import (
     support_conversations,
     support_idempotency_records,
