@@ -24,9 +24,7 @@ def test_private_delivery_routes_are_hidden_and_registered() -> None:
 def test_subscription_urls_are_absolute_and_contain_plaintext_only_in_response_builder() -> None:
     token = "opaque-" + ("x" * 48)
     urls = telegram_delivery_internal.subscription_urls(
-        config.Settings(
-            environment="test", subscription_public_origin="https://sub.example.test"
-        ),
+        config.Settings(environment="test", subscription_public_origin="https://sub.example.test"),
         token,
     )
 
