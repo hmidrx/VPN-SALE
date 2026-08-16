@@ -15,6 +15,15 @@ describe("service metrics", () => {
       ),
     ).toEqual({ percentage: 50, remainingDays: 15, unlimited: false });
   });
+  it("keeps remaining days truthful when activation start is deferred", () => {
+    expect(
+      calculateTimeMetric(
+        null,
+        "2026-01-31T00:00:00Z",
+        Date.parse("2026-01-16T00:00:00Z"),
+      ),
+    ).toEqual({ percentage: null, remainingDays: 15, unlimited: false });
+  });
   it("handles expired, invalid and no-expiry services", () => {
     expect(
       calculateTimeMetric(
