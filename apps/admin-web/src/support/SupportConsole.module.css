@@ -1,0 +1,331 @@
+.console {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+
+.console :global(.support-runtime-header) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--brand) 12%, transparent), transparent 54%),
+    var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.console :global(.support-runtime-header h1),
+.console :global(.support-runtime-ticket-head h2),
+.console :global(.support-runtime-actions h3) {
+  margin: 0;
+}
+
+.console :global(.support-runtime-header p),
+.console :global(.support-runtime-ticket-head p),
+.console :global(.support-runtime-empty p) {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.console button,
+.console select,
+.console input,
+.console textarea {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
+.console button {
+  padding: 10px 15px;
+  cursor: pointer;
+  font-weight: 800;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.console button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+  background: color-mix(in srgb, var(--brand) 8%, var(--panel));
+  transform: translateY(-1px);
+}
+
+.console button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.console select,
+.console input,
+.console textarea {
+  width: 100%;
+  padding: 11px 13px;
+}
+
+.console textarea {
+  resize: vertical;
+  line-height: 1.8;
+}
+
+.console :global(.support-runtime-error) {
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.console :global(.support-runtime-layout) {
+  display: grid;
+  grid-template-columns: minmax(250px, 340px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.console :global(.support-runtime-inbox),
+.console :global(.support-runtime-detail) {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--panel);
+  box-shadow: 0 12px 36px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.console :global(.support-runtime-inbox) {
+  position: sticky;
+  top: 22px;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  max-height: calc(100vh - 44px);
+  overflow: hidden;
+}
+
+.console :global(.support-runtime-inbox > label) {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.console :global(.support-runtime-ticket-list) {
+  display: grid;
+  gap: 9px;
+  overflow: auto;
+  padding-inline-end: 3px;
+}
+
+.console :global(.support-runtime-ticket-list > button) {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 13px;
+  text-align: right;
+  background: transparent;
+}
+
+.console :global(.support-runtime-ticket-list > button.is-active) {
+  border-color: color-mix(in srgb, var(--brand) 60%, var(--line));
+  background: color-mix(in srgb, var(--brand) 10%, var(--panel));
+  box-shadow: inset -3px 0 0 var(--brand);
+}
+
+.console :global(.support-runtime-ticket-list strong) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console :global(.support-runtime-ticket-list span) {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.console :global(.support-runtime-ticket-list small) {
+  direction: ltr;
+  unicode-bidi: isolate;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console :global(.support-runtime-detail) {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+
+.console :global(.support-runtime-empty) {
+  padding: 56px 24px;
+  text-align: center;
+}
+
+.console :global(.support-runtime-ticket-head) {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.console :global(.support-runtime-ticket-head > div) {
+  min-width: 0;
+}
+
+.console :global(.support-runtime-ticket-head p) {
+  overflow-wrap: anywhere;
+}
+
+.console :global(.support-runtime-messages) {
+  display: grid;
+  gap: 11px;
+  max-height: 54vh;
+  overflow: auto;
+  padding: 2px 2px 2px 8px;
+  scroll-behavior: smooth;
+}
+
+.console :global(.support-runtime-messages article),
+.console :global(.support-runtime-notes article) {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--brand) 4%, var(--panel));
+}
+
+.console :global(.support-runtime-messages article header) {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.console :global(.support-runtime-messages article p),
+.console :global(.support-runtime-notes article p) {
+  margin: 9px 0 0;
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.console :global(.support-runtime-actions) {
+  display: grid;
+  gap: 11px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--brand) 3%, var(--panel));
+}
+
+.console :global(.support-runtime-actions > button) {
+  justify-self: start;
+  border-color: transparent;
+  background: var(--brand);
+  color: #fff;
+}
+
+.console :global(.support-runtime-actions > button:hover:not(:disabled)) {
+  background: color-mix(in srgb, var(--brand) 88%, #000);
+  color: #fff;
+}
+
+.console :global(.support-runtime-internal) {
+  border-color: color-mix(in srgb, #d49b35 45%, var(--line));
+  background: color-mix(in srgb, #d49b35 7%, var(--panel));
+}
+
+.console :global(.support-runtime-notes) {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.console :global(.support-runtime-notes > p) {
+  margin: 0;
+  color: var(--muted);
+}
+
+.console :global(.support-runtime-notes article) {
+  background: color-mix(in srgb, #d49b35 8%, var(--panel));
+}
+
+.console :global(.support-runtime-status-row) {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(220px, 1.5fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+@media (max-width: 1050px) {
+  .console :global(.support-runtime-layout) {
+    grid-template-columns: 1fr;
+  }
+
+  .console :global(.support-runtime-inbox) {
+    position: static;
+    max-height: none;
+  }
+
+  .console :global(.support-runtime-ticket-list) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: 360px;
+  }
+}
+
+@media (max-width: 700px) {
+  .console {
+    gap: 14px;
+  }
+
+  .console :global(.support-runtime-header),
+  .console :global(.support-runtime-ticket-head) {
+    flex-direction: column;
+  }
+
+  .console :global(.support-runtime-header > button),
+  .console :global(.support-runtime-ticket-head > button),
+  .console :global(.support-runtime-actions > button) {
+    width: 100%;
+  }
+
+  .console :global(.support-runtime-ticket-list) {
+    grid-template-columns: 1fr;
+  }
+
+  .console :global(.support-runtime-detail) {
+    padding: 14px;
+  }
+
+  .console :global(.support-runtime-status-row) {
+    grid-template-columns: 1fr;
+  }
+
+  .console :global(.support-runtime-messages) {
+    max-height: 48vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .console button {
+    transition: none;
+  }
+
+  .console :global(.support-runtime-messages) {
+    scroll-behavior: auto;
+  }
+}
