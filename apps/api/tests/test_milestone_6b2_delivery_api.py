@@ -26,11 +26,13 @@ def test_delivery_admin_compatibility_and_validation() -> None:
     assert bad.json()["valid"] is False
 
 
-def test_subscription_endpoints_are_no_store_and_uniform() -> None:
+def test_subscription_endpoints_are_no_store_and_fail_closed_without_repository_token() -> None:
     client = TestClient(app)
-    missing = client.get("/subscriptions/short")
-    assert missing.status_code == 404
-    assert missing.headers["cache-control"] == "private, no-store"
-    ok = client.get("/subscriptions/" + "a" * 50 + "/sing-box")
-    assert ok.status_code == 200
-    assert ok.headers["cache-control"] == "private, no-store"
+    malformed = client.get("/subscriptions/short")
+    assert malformed.status_code == 404
+    assert malformed.headers["cache-control"] == "private, no-store"
+
+    syntactically_valid_but_unknown = client.get("/subscriptions/" + "a" * 64 + "/sing-box")
+    assert syntactically_valid_but_unknown.status_code == 404
+    assert syntactically_valid_but_unknown.headers["cache-control"] == "private, no-store"
+    assert syntactically_valid_but_unknown.json()["code"] == "SUBSCRIPTION_NOT_FOUND"
