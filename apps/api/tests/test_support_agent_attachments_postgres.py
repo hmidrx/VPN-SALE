@@ -99,7 +99,7 @@ def _admin(db: Session) -> AdminModel:
     admin = AdminModel(
         id=str(uuid4()),
         normalized_email=f"agent-image-{uuid4().hex}@example.test",
-        password_hash="test-only-not-a-real-password-hash",
+        password_hash="test-only-not-a-real-password-hash",  # noqa: S106
         status="ACTIVE",
         failed_login_count=0,
     )
