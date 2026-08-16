@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from typing import cast
 from uuid import UUID
 
@@ -275,7 +276,15 @@ def render_service_connection(
         observed_remote_identity=remote_identity,
         required=attachment.required,
     )
-    connection = resolve_connection(ctx, profile, remote_identity)
+    # New activation/profile selection is strictly PUBLISHED-only. An existing
+    # delivery revision may, however, pin a profile version that was published
+    # at activation time and later became SUPERSEDED. Preserve that immutable
+    # revision's renderability without making SUPERSEDED profiles selectable
+    # for new activations.
+    resolution_profile = profile
+    if profile.status is DeliveryProfileStatus.SUPERSEDED:
+        resolution_profile = replace(profile, status=DeliveryProfileStatus.PUBLISHED)
+    connection = resolve_connection(ctx, resolution_profile, remote_identity)
     if connection.protocol is DeliveryProtocol.VLESS:
         rendered = render_vless(connection)
     elif connection.protocol is DeliveryProtocol.VMESS:
