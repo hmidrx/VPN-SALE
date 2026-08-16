@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 
 import { acknowledgeSupportSlaEscalation, listOpenSlaEscalations } from "./api";
+import styles from "./SupportSlaInbox.module.css";
 import type { SupportSlaEscalation } from "./types";
 
 const kindLabels: Record<SupportSlaEscalation["kind"], string> = {
@@ -66,13 +67,17 @@ export function SupportSlaInbox(): React.ReactElement {
   }
 
   return (
-    <section dir="rtl" className="support-runtime-sla-inbox" aria-label="هشدارهای SLA پشتیبانی">
+    <section dir="rtl" className={styles.inbox} aria-label="هشدارهای SLA پشتیبانی">
       <header className="support-runtime-header">
         <div>
           <h2>هشدارهای SLA</h2>
           <p>تیکت‌های در آستانه نقض یا عبورکرده از SLA که نیازمند بررسی عملیاتی هستند.</p>
         </div>
-        <button type="button" onClick={() => void refresh()} disabled={loading || Boolean(busyReference)}>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          disabled={loading || Boolean(busyReference)}
+        >
           {loading ? "در حال دریافت…" : "تازه‌سازی هشدارها"}
         </button>
       </header>
@@ -80,9 +85,9 @@ export function SupportSlaInbox(): React.ReactElement {
       {error ? <div role="alert" className="support-runtime-error">{error}</div> : null}
       {!loading && items.length === 0 ? <p>هشدار SLA بازی وجود ندارد.</p> : null}
 
-      <div className="support-runtime-ticket-list">
+      <div className={styles.grid}>
         {items.slice(0, 20).map((item) => (
-          <article key={item.reference}>
+          <article className={styles.card} key={item.reference}>
             <strong>{phaseLabels[item.phase]} · {kindLabels[item.kind]}</strong>
             <span>{item.ticket_reference} · اولویت {item.priority}</span>
             <small>
