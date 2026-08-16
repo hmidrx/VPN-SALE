@@ -433,14 +433,14 @@ def test_postgres_subscription_issue_render_rotate_and_revoke_are_hash_only() ->
             assert duplicate_rotation.value.code is DeliveryErrorCode.IDEMPOTENCY_CONFLICT
             db.rollback()
 
-            with pytest.raises(DeliveryError) as expired_old:
+            with pytest.raises(DeliveryError) as old_after_grace:
                 render_public_subscription(
                     db,
                     first_credential,
                     DeliveryOutputFormat.PLAIN_LINKS,
                     issued_at + timedelta(minutes=8),
                 )
-            assert expired_old.value.code is DeliveryErrorCode.SUBSCRIPTION_EXPIRED
+            assert old_after_grace.value.code is DeliveryErrorCode.SUBSCRIPTION_REVOKED
             db.rollback()
 
             assert "edge.example" in render_public_subscription(
