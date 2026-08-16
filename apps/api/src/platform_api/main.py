@@ -62,6 +62,7 @@ from .support import reseller_router as reseller_support_router
 from .telegram_account_internal import router as telegram_account_internal_router
 from .telegram_delivery_internal import router as telegram_delivery_internal_router
 from .telegram_internal import router as telegram_internal_router
+from .telegram_support_internal import router as telegram_support_internal_router
 from .usage import admin_router as admin_usage_router
 from .usage import anomaly_router as admin_usage_anomaly_router
 from .usage import automation_router as admin_lifecycle_automation_router
@@ -208,6 +209,7 @@ def create_app(settings: Settings) -> FastAPI:
         telegram_internal_router,
         telegram_delivery_internal_router,
         telegram_account_internal_router,
+        telegram_support_internal_router,
     ]
     for api_router in routers:
         application.include_router(api_router)
