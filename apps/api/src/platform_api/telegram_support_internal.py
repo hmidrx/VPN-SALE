@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Header, HTTPException, Response, status
@@ -238,8 +238,11 @@ def _resume_deadlines_after_customer_wait(
     row: Any,
     now: datetime,
 ) -> dict[str, datetime | None]:
-    snapshot = row["sla_policy_snapshot"]
-    if not isinstance(snapshot, dict) or snapshot.get("pause_on_customer_wait") is not True:
+    snapshot_value = row["sla_policy_snapshot"]
+    if not isinstance(snapshot_value, dict):
+        return {}
+    snapshot = cast(dict[str, object], snapshot_value)
+    if snapshot.get("pause_on_customer_wait") is not True:
         return {}
     paused_at = db.scalar(
         select(support_status_history.c.created_at)
