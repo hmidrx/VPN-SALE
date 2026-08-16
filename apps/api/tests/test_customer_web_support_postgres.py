@@ -36,9 +36,7 @@ def _postgres_url() -> str:
     return value.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
 
 
-def _identity(
-    db: Session, settings: Settings
-) -> tuple[UserModel, CustomerSessionModel, str]:
+def _identity(db: Session, settings: Settings) -> tuple[UserModel, CustomerSessionModel, str]:
     now = datetime.now(UTC)
     user = UserModel(id=str(uuid4()), status="ACTIVE", created_at=now, updated_at=now)
     db.add(user)
@@ -78,9 +76,7 @@ def _cleanup(db: Session, user_ids: list[str]) -> None:
             )
         )
         db.execute(
-            delete(support_messages).where(
-                support_messages.c.conversation_id.in_(conversation_ids)
-            )
+            delete(support_messages).where(support_messages.c.conversation_id.in_(conversation_ids))
         )
         db.execute(
             delete(support_conversations).where(support_conversations.c.id.in_(conversation_ids))
@@ -110,7 +106,9 @@ def test_customer_web_support_enforces_csrf_ownership_and_idempotency() -> None:
 
             with pytest.raises(HTTPException) as missing_csrf:
                 create_ticket(
-                    CreateTicketRequest(subject="پشتیبانی وب", message="این درخواست نباید ثبت شود."),
+                    CreateTicketRequest(
+                        subject="پشتیبانی وب", message="این درخواست نباید ثبت شود."
+                    ),
                     Response(),
                     owner_session,
                     db,
