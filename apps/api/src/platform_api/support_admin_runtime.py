@@ -12,7 +12,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 from vpnsale_domain.identity import sanitize_metadata
-from vpnsale_domain.support import LEGAL_TRANSITIONS, SupportStatus, sanitize_message
+from vpnsale_domain.support import (
+    LEGAL_TRANSITIONS,
+    SupportDomainError,
+    SupportStatus,
+    sanitize_message,
+)
 
 from platform_api.database import get_db_session
 from platform_api.identity.models import AdminModel, AuditLogModel
@@ -48,7 +53,7 @@ class StatusChangeRequest(BaseModel):
 def _clean(value: str, limit: int) -> str:
     try:
         cleaned = sanitize_message(value, limit)
-    except ValueError as exc:
+    except (SupportDomainError, ValueError) as exc:
         raise HTTPException(status_code=422, detail="support_text_invalid") from exc
     if not cleaned:
         raise HTTPException(status_code=422, detail="support_text_invalid")
@@ -56,9 +61,7 @@ def _clean(value: str, limit: int) -> str:
 
 
 def _conversation(db: Session, reference: str, *, lock: bool = False) -> Any:
-    statement = select(support_conversations).where(
-        support_conversations.c.reference == reference
-    )
+    statement = select(support_conversations).where(support_conversations.c.reference == reference)
     if lock:
         statement = statement.with_for_update()
     row = db.execute(statement).mappings().one_or_none()
@@ -113,9 +116,11 @@ def _messages(
     )
     if message_type is not None:
         statement = statement.where(support_messages.c.message_type == message_type)
-    newest = db.execute(
-        statement.order_by(support_messages.c.sequence.desc()).limit(100)
-    ).mappings().all()
+    newest = (
+        db.execute(statement.order_by(support_messages.c.sequence.desc()).limit(100))
+        .mappings()
+        .all()
+    )
     rows = list(reversed(newest))
     return [
         {
@@ -194,9 +199,7 @@ def _resume_deadlines(db: Session, row: Any, now: datetime) -> dict[str, datetim
             else None
         ),
         "resolution_deadline": (
-            row["resolution_deadline"] + delta
-            if row["resolution_deadline"] is not None
-            else None
+            row["resolution_deadline"] + delta if row["resolution_deadline"] is not None else None
         ),
     }
 
@@ -313,9 +316,13 @@ def inbox(
     statement = select(support_conversations)
     if status_filter is not None:
         statement = statement.where(support_conversations.c.status == status_filter.value)
-    rows = db.execute(
-        statement.order_by(support_conversations.c.updated_at.desc()).limit(bounded_limit)
-    ).mappings().all()
+    rows = (
+        db.execute(
+            statement.order_by(support_conversations.c.updated_at.desc()).limit(bounded_limit)
+        )
+        .mappings()
+        .all()
+    )
     response.headers["Cache-Control"] = "private, no-store"
     return {"items": [_summary(row, admin.id) for row in rows]}
 
@@ -475,7 +482,14 @@ def add_internal_note(
     if existing is not None:
         if str(existing[0]) != digest:
             raise HTTPException(status_code=409, detail="idempotency_conflict")
-        return {"items": _messages(db, str(row["id"]), visibility="AGENT_ONLY")}
+        return {
+            "items": _messages(
+                db,
+                str(row["id"]),
+                visibility="AGENT_ONLY",
+                message_type="INTERNAL_NOTE",
+            )
+        }
     if int(row["version"]) != body.expected_version:
         raise HTTPException(status_code=409, detail="ticket_version_conflict")
     if str(row["status"]) == SupportStatus.ARCHIVED.value:
