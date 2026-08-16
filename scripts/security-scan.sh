@@ -95,6 +95,7 @@ report_assigned_secrets() {
 
 report_credential_urls() {
   local tmp files
+  tmp="$(mktemp)"
   while IFS= read -r line; do
     # Match a literal expansion marker in scanned text.
     # shellcheck disable=SC2016
