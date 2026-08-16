@@ -50,6 +50,10 @@ class DeliveryPrivatePlatformClient(PrivatePlatformClient):
             raise PrivateApiUnavailable("اطلاعات اشتراک قابل استفاده نیست.")
         return SubscriptionDelivery(str(data.get("status") or "UNKNOWN"), newly_issued, urls)
 
+    def service_delivery_ready(self, context: CustomerContext, service_reference: str) -> bool:
+        data = self._request("GET", f"/services/{service_reference}", context.telegram_user_id)
+        return str(data.get("status") or "").upper() == "ACTIVE" and data.get("delivery_ready") is True
+
     def issue_subscription(
         self, context: CustomerContext, service_reference: str
     ) -> SubscriptionDelivery:
