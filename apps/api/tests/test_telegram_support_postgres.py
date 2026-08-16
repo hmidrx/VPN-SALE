@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from datetime import UTC, datetime
 from hashlib import sha256
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -92,21 +93,27 @@ def test_native_support_is_idempotent_owned_and_hides_internal_notes() -> None:
         try:
             owner_id, owner_telegram = _identity(db)
             other_id, other_telegram = _identity(db)
-            first = create_ticket(
-                CreateTicketRequest(subject="مشکل اتصال", message="سرویس من وصل نمی‌شود."),
-                Response(),
-                None,
-                db,
-                owner_telegram,
-                "tg-support-create-fixed",
+            first = cast(
+                dict[str, Any],
+                create_ticket(
+                    CreateTicketRequest(subject="مشکل اتصال", message="سرویس من وصل نمی‌شود."),
+                    Response(),
+                    None,
+                    db,
+                    owner_telegram,
+                    "tg-support-create-fixed",
+                ),
             )
-            repeated = create_ticket(
-                CreateTicketRequest(subject="مشکل اتصال", message="سرویس من وصل نمی‌شود."),
-                Response(),
-                None,
-                db,
-                owner_telegram,
-                "tg-support-create-fixed",
+            repeated = cast(
+                dict[str, Any],
+                create_ticket(
+                    CreateTicketRequest(subject="مشکل اتصال", message="سرویس من وصل نمی‌شود."),
+                    Response(),
+                    None,
+                    db,
+                    owner_telegram,
+                    "tg-support-create-fixed",
+                ),
             )
             reference = str(first["reference"])
             assert repeated["reference"] == reference
@@ -120,8 +127,9 @@ def test_native_support_is_idempotent_owned_and_hides_internal_notes() -> None:
                 .one()
             )
             conversation_id = str(conversation["id"])
-            snapshot = conversation["sla_policy_snapshot"]
-            assert isinstance(snapshot, dict)
+            snapshot_value = conversation["sla_policy_snapshot"]
+            assert isinstance(snapshot_value, dict)
+            snapshot = cast(dict[str, object], snapshot_value)
             assert snapshot["code"] == "telegram_normal"
             assert snapshot["first_response_minutes"] == 240
             assert (
@@ -173,30 +181,40 @@ def test_native_support_is_idempotent_owned_and_hides_internal_notes() -> None:
             )
             db.commit()
 
-            detail = ticket_detail(reference, Response(), None, db, owner_telegram)
-            assert "internal-note-sentinel" not in repr(detail)
-            assert len(detail["messages"]) == 1
-
-            replied = reply_ticket(
-                reference,
-                ReplyTicketRequest(message="اطلاعات بیشتری ارسال شد."),
-                Response(),
-                None,
-                db,
-                owner_telegram,
-                "tg-support-reply-fixed",
+            detail = cast(
+                dict[str, Any], ticket_detail(reference, Response(), None, db, owner_telegram)
             )
-            repeated_reply = reply_ticket(
-                reference,
-                ReplyTicketRequest(message="اطلاعات بیشتری ارسال شد."),
-                Response(),
-                None,
-                db,
-                owner_telegram,
-                "tg-support-reply-fixed",
+            detail_messages = cast(list[dict[str, Any]], detail["messages"])
+            assert "internal-note-sentinel" not in repr(detail)
+            assert len(detail_messages) == 1
+
+            replied = cast(
+                dict[str, Any],
+                reply_ticket(
+                    reference,
+                    ReplyTicketRequest(message="اطلاعات بیشتری ارسال شد."),
+                    Response(),
+                    None,
+                    db,
+                    owner_telegram,
+                    "tg-support-reply-fixed",
+                ),
+            )
+            repeated_reply = cast(
+                dict[str, Any],
+                reply_ticket(
+                    reference,
+                    ReplyTicketRequest(message="اطلاعات بیشتری ارسال شد."),
+                    Response(),
+                    None,
+                    db,
+                    owner_telegram,
+                    "tg-support-reply-fixed",
+                ),
             )
             assert replied["reference"] == repeated_reply["reference"]
-            assert len(replied["messages"]) == 2
+            replied_messages = cast(list[dict[str, Any]], replied["messages"])
+            assert len(replied_messages) == 2
             with pytest.raises(HTTPException) as reply_conflict:
                 reply_ticket(
                     reference,
@@ -228,9 +246,10 @@ def test_native_support_is_idempotent_owned_and_hides_internal_notes() -> None:
                     )
                 )
             db.commit()
-            latest = ticket_detail(reference, Response(), None, db, owner_telegram)
-            latest_messages = latest["messages"]
-            assert isinstance(latest_messages, list)
+            latest = cast(
+                dict[str, Any], ticket_detail(reference, Response(), None, db, owner_telegram)
+            )
+            latest_messages = cast(list[dict[str, Any]], latest["messages"])
             assert len(latest_messages) == 100
             assert latest_messages[-1]["sequence"] == 108
             assert latest_messages[-1]["body"] == "bulk-108"
@@ -243,14 +262,17 @@ def test_native_support_is_idempotent_owned_and_hides_internal_notes() -> None:
                 .values(status="RESOLVED", resolved_at=now)
             )
             db.commit()
-            reopened = reply_ticket(
-                reference,
-                ReplyTicketRequest(message="مشکل دوباره برگشته است."),
-                Response(),
-                None,
-                db,
-                owner_telegram,
-                "tg-support-reopen-fixed",
+            reopened = cast(
+                dict[str, Any],
+                reply_ticket(
+                    reference,
+                    ReplyTicketRequest(message="مشکل دوباره برگشته است."),
+                    Response(),
+                    None,
+                    db,
+                    owner_telegram,
+                    "tg-support-reopen-fixed",
+                ),
             )
             assert reopened["status"] == "WAITING_FOR_SUPPORT"
             transitions = db.execute(
