@@ -1,2 +1,11 @@
 import { SupportConsole } from "../../src/support/SupportConsole";
-export default function Page() { return <SupportConsole />; }
+import { SupportSlaInbox } from "../../src/support/SupportSlaInbox";
+
+export default function Page() {
+  return (
+    <>
+      <SupportSlaInbox />
+      <SupportConsole />
+    </>
+  );
+}
