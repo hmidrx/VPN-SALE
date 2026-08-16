@@ -147,9 +147,7 @@ def test_telegram_ticket_round_trips_through_durable_admin_inbox() -> None:
             items = cast(list[dict[str, Any]], queue["items"])
             assert any(item["reference"] == reference for item in items)
 
-            detail = cast(
-                dict[str, Any], conversation_detail(reference, Response(), admin, db)
-            )
+            detail = cast(dict[str, Any], conversation_detail(reference, Response(), admin, db))
             assert detail["status"] == "NEW"
             messages = cast(list[dict[str, Any]], detail["messages"])
             assert messages[0]["body"] == "سرویس از چند دقیقه قبل متصل نمی‌شود."
@@ -184,14 +182,10 @@ def test_telegram_ticket_round_trips_through_durable_admin_inbox() -> None:
             note_items = cast(list[dict[str, Any]], notes_result["items"])
             assert note_items[-1]["message_type"] == "INTERNAL_NOTE"
 
-            after_note = cast(
-                dict[str, Any], conversation_detail(reference, Response(), admin, db)
-            )
+            after_note = cast(dict[str, Any], conversation_detail(reference, Response(), admin, db))
             public_repr = repr(after_note["messages"])
             assert "این متن نباید به مشتری برسد" not in public_repr
-            private = cast(
-                dict[str, Any], internal_notes(reference, Response(), admin, db)
-            )
+            private = cast(dict[str, Any], internal_notes(reference, Response(), admin, db))
             assert "این متن نباید به مشتری برسد" in repr(private["items"])
 
             replied = cast(
@@ -214,9 +208,7 @@ def test_telegram_ticket_round_trips_through_durable_admin_inbox() -> None:
             customer_view = cast(
                 dict[str, Any], ticket_detail(reference, Response(), None, db, telegram_id)
             )
-            assert "لطفاً اکنون اتصال را دوباره امتحان کنید" in repr(
-                customer_view["messages"]
-            )
+            assert "لطفاً اکنون اتصال را دوباره امتحان کنید" in repr(customer_view["messages"])
             assert "این متن نباید به مشتری برسد" not in repr(customer_view["messages"])
 
             status_changed = cast(
