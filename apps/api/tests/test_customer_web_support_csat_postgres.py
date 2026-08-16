@@ -123,9 +123,7 @@ def _create_ticket(
     reference = str(ticket["reference"])
     conversation_id = str(
         db.scalar(
-            select(support_conversations.c.id).where(
-                support_conversations.c.reference == reference
-            )
+            select(support_conversations.c.id).where(support_conversations.c.reference == reference)
         )
     )
     return reference, conversation_id
@@ -145,7 +143,9 @@ def test_customer_web_csat_is_owned_csrf_protected_and_cycles_after_reopen() -> 
             )
 
             initial_response = Response()
-            initial = cast(dict[str, Any], csat_state(reference, initial_response, owner_session, db))
+            initial = cast(
+                dict[str, Any], csat_state(reference, initial_response, owner_session, db)
+            )
             assert initial == {"eligible": False, "submitted": False, "score": None}
             assert initial_response.headers["Cache-Control"] == "private, no-store"
 
@@ -267,7 +267,9 @@ def test_customer_web_csat_is_owned_csrf_protected_and_cycles_after_reopen() -> 
                 ),
             )
             assert reopened["status"] == "WAITING_FOR_SUPPORT"
-            during_reopen = cast(dict[str, Any], csat_state(reference, Response(), owner_session, db))
+            during_reopen = cast(
+                dict[str, Any], csat_state(reference, Response(), owner_session, db)
+            )
             assert during_reopen == {"eligible": False, "submitted": False, "score": None}
 
             second_resolved_at = datetime.now(UTC)
@@ -281,7 +283,9 @@ def test_customer_web_csat_is_owned_csrf_protected_and_cycles_after_reopen() -> 
                 )
             )
             db.commit()
-            second_cycle = cast(dict[str, Any], csat_state(reference, Response(), owner_session, db))
+            second_cycle = cast(
+                dict[str, Any], csat_state(reference, Response(), owner_session, db)
+            )
             assert second_cycle == {"eligible": True, "submitted": False, "score": None}
 
             second_submission = cast(
