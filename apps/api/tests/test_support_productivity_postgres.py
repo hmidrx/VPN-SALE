@@ -113,7 +113,9 @@ def _cleanup(
             support_status_history.c.conversation_id == conversation_id
         )
     )
-    db.execute(delete(support_messages).where(support_messages.c.conversation_id == conversation_id))
+    db.execute(
+        delete(support_messages).where(support_messages.c.conversation_id == conversation_id)
+    )
     db.execute(delete(support_conversations).where(support_conversations.c.id == conversation_id))
     db.execute(
         delete(support_idempotency_records).where(
@@ -150,11 +152,15 @@ def test_canned_response_and_macro_preview_are_durable_but_non_mutating() -> Non
                 f"support-productivity-ticket-{uuid4().hex}",
             )
             reference = str(created_ticket["reference"])
-            conversation = db.execute(
-                select(support_conversations).where(
-                    support_conversations.c.reference == reference
+            conversation = (
+                db.execute(
+                    select(support_conversations).where(
+                        support_conversations.c.reference == reference
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             conversation_id = str(conversation["id"])
             original_version = int(conversation["version"])
             original_status = str(conversation["status"])
@@ -163,9 +169,7 @@ def test_canned_response_and_macro_preview_are_durable_but_non_mutating() -> Non
                 CannedResponseDefinition(
                     code=canned_code,
                     title="راهنمای اتصال",
-                    body=(
-                        "برای تیکت {{ticket_reference}} لطفاً {{device_hint}} را بررسی کنید."
-                    ),
+                    body=("برای تیکت {{ticket_reference}} لطفاً {{device_hint}} را بررسی کنید."),
                     locale="fa",
                     queue_id=conversation["queue_id"],
                     category_id=conversation["category_id"],
@@ -260,11 +264,15 @@ def test_canned_response_and_macro_preview_are_durable_but_non_mutating() -> Non
             assert draft["status"] == "OPEN"
             assert reference in str(draft["status_reason"])
 
-            after_preview = db.execute(
-                select(support_conversations).where(
-                    support_conversations.c.id == conversation_id
+            after_preview = (
+                db.execute(
+                    select(support_conversations).where(
+                        support_conversations.c.id == conversation_id
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             assert int(after_preview["version"]) == original_version
             assert str(after_preview["status"]) == original_status
 
@@ -272,9 +280,7 @@ def test_canned_response_and_macro_preview_are_durable_but_non_mutating() -> Non
                 macro_code,
                 MacroRevision(
                     title="شروع بررسی اتصال غیرفعال",
-                    actions=[
-                        ReplyDraftAction(type="reply_draft", body="این نسخه غیرفعال است.")
-                    ],
+                    actions=[ReplyDraftAction(type="reply_draft", body="این نسخه غیرفعال است.")],
                     active=False,
                 ),
                 _request(),
