@@ -200,11 +200,15 @@ def test_agent_image_is_public_idempotent_and_enqueues_delivery() -> None:
                 ),
             )
             reference = str(created["reference"])
-            conversation = db.execute(
-                select(support_conversations).where(
-                    support_conversations.c.reference == reference
+            conversation = (
+                db.execute(
+                    select(support_conversations).where(
+                        support_conversations.c.reference == reference
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             conversation_id = str(conversation["id"])
             original_version = int(conversation["version"])
             source = _png(42)
@@ -222,30 +226,42 @@ def test_agent_image_is_public_idempotent_and_enqueues_delivery() -> None:
             assert asset_reference.startswith("SAT-")
             assert Path(root, asset_reference).is_file()
 
-            message = db.execute(
-                select(support_messages).where(
-                    support_messages.c.conversation_id == conversation_id,
-                    support_messages.c.message_type == "AGENT_ATTACHMENT",
+            message = (
+                db.execute(
+                    select(support_messages).where(
+                        support_messages.c.conversation_id == conversation_id,
+                        support_messages.c.message_type == "AGENT_ATTACHMENT",
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             assert message["sender_type"] == "SUPPORT_AGENT"
             assert message["visibility"] == "PUBLIC"
             assert message["body"] == "📎 تصویر از پشتیبانی ارسال شد."
 
-            attachment = db.execute(
-                select(support_attachments).where(
-                    support_attachments.c.asset_reference == asset_reference
+            attachment = (
+                db.execute(
+                    select(support_attachments).where(
+                        support_attachments.c.asset_reference == asset_reference
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             assert str(attachment["message_id"]) == str(message["id"])
             assert attachment["state"] == "READY"
             assert len(str(attachment["sha256"])) == 64
 
-            event = db.execute(
-                select(support_reply_notification_outbox).where(
-                    support_reply_notification_outbox.c.message_id == message["id"]
+            event = (
+                db.execute(
+                    select(support_reply_notification_outbox).where(
+                        support_reply_notification_outbox.c.message_id == message["id"]
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             assert event["status"] == "PENDING"
             assert str(event["customer_id"]) == user_id
 
