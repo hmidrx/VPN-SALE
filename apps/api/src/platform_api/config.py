@@ -123,6 +123,10 @@ class Settings(BaseSettings):
     manual_topup_image_dimension_limit: int = Field(default=8_192, ge=256, le=16_384)
     manual_topup_max_active_requests: int = Field(default=3, ge=1, le=10)
     manual_topup_max_receipt_versions: int = Field(default=5, ge=1, le=10)
+    support_private_upload_root: str = "/var/lib/vpnsale/private/support"
+    support_max_attachment_bytes: int = Field(default=5_242_880, ge=1024, le=5_242_880)
+    support_image_dimension_limit: int = Field(default=8_192, ge=256, le=16_384)
+    support_max_attachments_per_conversation: int = Field(default=20, ge=1, le=50)
     maintenance_mode_enabled: bool = False
     provider_credential_vault_key_version: str = "dev-v1"
     object_storage_url: str = "file:///tmp/vpnsale-media"
