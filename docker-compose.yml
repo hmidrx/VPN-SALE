@@ -44,6 +44,8 @@ services:
       VPN_SALE_UNIFIED_ADMIN_IDENTITY_ENABLED: "${VPN_SALE_UNIFIED_ADMIN_IDENTITY_ENABLED:-false}"
       VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED: "${VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED:-false}"
     secrets: [telegram-internal-token]
+    volumes:
+      - private_media:/var/lib/vpnsale/private
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -135,6 +137,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  private_media:
 
 secrets:
   telegram-internal-token:
