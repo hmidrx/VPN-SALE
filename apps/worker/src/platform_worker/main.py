@@ -20,6 +20,7 @@ from .real_activator import DatabaseSanaeiActivator
 from .real_provisioner import DatabaseSanaeiProvisioner
 from .service_activation import DisabledActivator, ServiceActivationWorker
 from .support_reply_delivery import SupportReplyDeliveryWorker
+from .support_sla_escalation import SupportSlaEscalationWorker
 
 
 def build_order_provisioner(
@@ -80,6 +81,7 @@ def main() -> None:
     transport = BotApiTransport(token)
     manual_topup = ManualTopupDeliveryWorker(factory, transport, delivery_settings)
     support_reply = SupportReplyDeliveryWorker(factory, transport, delivery_settings)
+    support_sla = SupportSlaEscalationWorker(factory)
     provider_writes_enabled = (
         os.getenv("VPN_SALE_PROVIDER_WRITES_ENABLED", "false").lower() == "true"
     )
@@ -101,6 +103,10 @@ def main() -> None:
             processed += support_reply.run_once()
         except Exception:
             print("support_reply_worker_cycle_failed", flush=True)
+        try:
+            processed += support_sla.run_once()
+        except Exception:
+            print("support_sla_worker_cycle_failed", flush=True)
         try:
             processed += fulfillment.run_once()
         except Exception:

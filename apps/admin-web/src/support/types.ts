@@ -39,3 +39,18 @@ export type SupportConversationSummary = {
 export type SupportConversationDetail = SupportConversationSummary & {
   messages: SupportMessage[];
 };
+
+export type SupportSlaEscalation = {
+  reference: string;
+  ticket_reference: string;
+  ticket_status: SupportStatus;
+  priority: string;
+  kind: "FIRST_RESPONSE" | "NEXT_RESPONSE" | "RESOLUTION" | "MANUAL";
+  phase: "AT_RISK" | "BREACHED" | "MANUAL";
+  source: "AUTOMATED" | "MANUAL";
+  status: "OPEN" | "ACKNOWLEDGED";
+  deadline_at: string | null;
+  observed_at: string;
+  acknowledged_at: string | null;
+  created_at: string;
+};
