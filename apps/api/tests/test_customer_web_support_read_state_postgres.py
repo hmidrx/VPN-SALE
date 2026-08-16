@@ -178,8 +178,19 @@ def test_customer_web_unread_is_owned_filtered_and_sequence_bounded() -> None:
             )
 
             first_public = _agent_message(db, conversation_id, 2)
-            _agent_message(db, conversation_id, 3, visibility="AGENT_ONLY", message_type="INTERNAL_NOTE")
-            second_public = _agent_message(db, conversation_id, 4, message_type="AGENT_ATTACHMENT")
+            _agent_message(
+                db,
+                conversation_id,
+                3,
+                visibility="AGENT_ONLY",
+                message_type="INTERNAL_NOTE",
+            )
+            second_public = _agent_message(
+                db,
+                conversation_id,
+                4,
+                message_type="AGENT_ATTACHMENT",
+            )
             _agent_message(db, conversation_id, 5, redacted=True)
 
             owner_response = Response()
@@ -270,12 +281,15 @@ def test_customer_web_unread_is_owned_filtered_and_sequence_bounded() -> None:
                 )
                 == 2
             )
-            assert db.scalar(
-                select(support_message_deliveries.c.read_at).where(
-                    support_message_deliveries.c.message_id == second_public,
-                    support_message_deliveries.c.participant_id == owner.id,
+            assert (
+                db.scalar(
+                    select(support_message_deliveries.c.read_at).where(
+                        support_message_deliveries.c.message_id == second_public,
+                        support_message_deliveries.c.participant_id == owner.id,
+                    )
                 )
-            ) is not None
+                is not None
+            )
 
             late_public = _agent_message(db, conversation_id, 6)
             assert cast(dict[str, Any], unread_summary(Response(), owner_session, db))[
@@ -295,14 +309,17 @@ def test_customer_web_unread_is_owned_filtered_and_sequence_bounded() -> None:
                 ),
             )
             assert stale_snapshot == {"unread_count": 1}
-            assert db.scalar(
-                select(func.count())
-                .select_from(support_message_deliveries)
-                .where(
-                    support_message_deliveries.c.message_id == late_public,
-                    support_message_deliveries.c.participant_id == owner.id,
+            assert (
+                db.scalar(
+                    select(func.count())
+                    .select_from(support_message_deliveries)
+                    .where(
+                        support_message_deliveries.c.message_id == late_public,
+                        support_message_deliveries.c.participant_id == owner.id,
+                    )
                 )
-            ) == 0
+                == 0
+            )
 
             latest_snapshot = cast(
                 dict[str, Any],
