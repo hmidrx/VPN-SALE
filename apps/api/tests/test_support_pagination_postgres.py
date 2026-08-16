@@ -13,12 +13,7 @@ from sqlalchemy.orm import Session
 
 from platform_api.config import Settings
 from platform_api.identity.models import TelegramAccountModel, UserModel
-from platform_api.support_pagination_runtime import (
-    _decode_cursor,
-    _encode_cursor,
-    telegram_ticket_detail_page,
-    telegram_ticket_page,
-)
+from platform_api.support_pagination_runtime import telegram_ticket_detail_page, telegram_ticket_page
 from platform_api.support_runtime_models import (
     support_conversations,
     support_idempotency_records,
@@ -103,17 +98,6 @@ def _tamper_signature(cursor: str) -> str:
     return f"{encoded}.{replacement}{signature[1:]}"
 
 
-def test_cursor_is_signed_and_bound_to_its_read_surface() -> None:
-    secret = sha256(b"support-pagination-cursor-contract").hexdigest()
-    cursor = _encode_cursor(secret, "tickets", {"s": 42})
-    assert _decode_cursor(secret, "tickets", cursor) == {"s": 42}
-
-    with pytest.raises(ValueError, match="invalid cursor"):
-        _decode_cursor(secret, "tickets", _tamper_signature(cursor))
-    with pytest.raises(ValueError, match="cursor"):
-        _decode_cursor(secret, "messages", cursor)
-
-
 def test_telegram_support_ticket_and_message_pages_are_complete_owned_and_deduplicated() -> None:
     engine = create_engine(_postgres_url())
     owner_id = other_id = ""
@@ -167,9 +151,24 @@ def test_telegram_support_ticket_and_message_pages_are_complete_owned_and_dedupl
             assert len(seen_references) == 12
             assert len(set(seen_references)) == 12
             assert set(seen_references) == set(references)
+            assert response_cursors
             assert all(owner_id not in value for value in response_cursors)
 
             reference = references[0]
+            with pytest.raises(HTTPException) as binding_error:
+                telegram_ticket_detail_page(
+                    reference,
+                    Response(),
+                    None,
+                    db,
+                    owner_telegram,
+                    _settings(),
+                    limit=10,
+                    cursor=response_cursors[0],
+                )
+            assert binding_error.value.status_code == 400
+            assert binding_error.value.detail == "support_cursor_invalid"
+
             conversation_id = str(
                 db.scalar(
                     select(support_conversations.c.id).where(
