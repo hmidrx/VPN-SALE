@@ -15,16 +15,17 @@ afterEach(() => {
 describe("customer service delivery request boundary", () => {
   it("issues a subscription exactly once with in-memory bearer auth", async () => {
     const token = "a".repeat(43);
-    const fetcher = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          service_reference: "svc-public-test",
-          status: "ACTIVE",
-          stable_urls: { base64: `/subscriptions/${token}` },
-          token_visible_once: token,
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      ),
+    const fetcher = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+        new Response(
+          JSON.stringify({
+            service_reference: "svc-public-test",
+            status: "ACTIVE",
+            stable_urls: { base64: `/subscriptions/${token}` },
+            token_visible_once: token,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
     );
     vi.stubGlobal("fetch", fetcher);
     setAccessToken("memory-only-access-token");
@@ -32,7 +33,7 @@ describe("customer service delivery request boundary", () => {
     await issueServiceSubscription("svc-public-test");
 
     expect(fetcher).toHaveBeenCalledTimes(1);
-    const [input, init] = fetcher.mock.calls[0] ?? [];
+    const [input, init] = fetcher.mock.calls[0];
     expect(String(input)).toContain(
       "/api/v1/customer/delivery/services/svc-public-test/subscription",
     );
@@ -45,14 +46,21 @@ describe("customer service delivery request boundary", () => {
   });
 
   it("does not retry an ambiguous subscription mutation", async () => {
-    const fetcher = vi.fn(async () => {
-      throw new TypeError("network unavailable");
-    });
+    const fetcher = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+        throw new TypeError("network unavailable");
+      },
+    );
     vi.stubGlobal("fetch", fetcher);
 
-    await expect(issueServiceSubscription("svc-public-test")).rejects.toEqual(
-      expect.objectContaining<ServiceRequestError>({ status: 0 }),
-    );
+    let caught: unknown;
+    try {
+      await issueServiceSubscription("svc-public-test");
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ServiceRequestError);
+    expect((caught as ServiceRequestError).status).toBe(0);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
@@ -74,18 +82,19 @@ describe("customer service delivery request boundary", () => {
 
   it("sends QR payload in a header instead of the URL", async () => {
     const payload = ["vless", "://", "runtime-only", "@example.test:443"].join("");
-    const fetcher = vi.fn(async () =>
-      new Response(new Uint8Array([137, 80, 78, 71]), {
-        status: 200,
-        headers: { "content-type": "image/png" },
-      }),
+    const fetcher = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+        new Response(new Uint8Array([137, 80, 78, 71]), {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        }),
     );
     vi.stubGlobal("fetch", fetcher);
 
     const image = await getConnectionQr(payload);
     expect(image.type).toBe("image/png");
     expect(fetcher).toHaveBeenCalledTimes(1);
-    const [input, init] = fetcher.mock.calls[0] ?? [];
+    const [input, init] = fetcher.mock.calls[0];
     expect(String(input)).toContain("/api/v1/customer/delivery/qr");
     expect(String(input)).not.toContain(payload);
     expect(new Headers(init?.headers).get("payload")).toBe(payload);
