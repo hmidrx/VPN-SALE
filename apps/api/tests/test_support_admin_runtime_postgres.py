@@ -56,6 +56,7 @@ def _identity(db: Session) -> tuple[str, int]:
     telegram_id = int(uuid4().hex[:12], 16)
     now = datetime.now(UTC)
     db.add(UserModel(id=user_id, status="ACTIVE"))
+    db.flush()
     db.add(
         TelegramAccountModel(
             telegram_user_id=telegram_id,
