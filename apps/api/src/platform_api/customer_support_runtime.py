@@ -1,7 +1,7 @@
 """Authenticated customer-web bridge into the durable support store.
 
 This keeps customer support available when Telegram is unavailable while preserving the
-same ownership, SLA, state-machine and idempotency boundaries used by the native bot.
+same ownership, SLA, state-machine and idempotency boundaries used by native support.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
@@ -20,6 +21,18 @@ from vpnsale_domain.support import SupportStatus
 from .config import Settings, get_settings
 from .customer_auth.routes import current_customer_session_dependency
 from .customer_auth.service import CustomerAuthService
+from .customer_support_contract import (
+    clean_customer_support_text,
+    customer_support_detail,
+    customer_support_idempotency_resource,
+    customer_support_key_hash,
+    customer_support_payload_digest,
+    customer_support_routing,
+    customer_support_summary,
+    existing_customer_support_ticket_for_key,
+    owned_customer_support_conversation,
+    transition_customer_support,
+)
 from .database import get_db_session
 from .identity.models import CustomerSessionModel
 from .support_runtime_models import (
@@ -27,21 +40,19 @@ from .support_runtime_models import (
     support_idempotency_records,
     support_messages,
 )
-from .telegram_support_internal import (
-    CreateTicketRequest,
-    ReplyTicketRequest,
-    _clean_text,
-    _detail,
-    _existing_ticket_for_key,
-    _idempotency_resource,
-    _key_hash,
-    _payload_digest,
-    _routing,
-    _summary,
-    _transition,
-)
 
 router = APIRouter(prefix="/api/v1/customer/support", tags=["customer-support"])
+
+
+class CreateTicketRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    subject: str = Field(min_length=3, max_length=160)
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class ReplyTicketRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str = Field(min_length=1, max_length=4000)
 
 
 def _no_store(response: Response) -> None:
@@ -56,26 +67,6 @@ def _require_csrf(
 ) -> None:
     if not CustomerAuthService(db, settings).validate_csrf(current, token):
         raise HTTPException(status_code=403, detail="csrf_invalid")
-
-
-def _owned_conversation(
-    db: Session,
-    customer_id: str,
-    reference: str,
-    *,
-    lock: bool = False,
-):
-    statement = select(support_conversations).where(
-        support_conversations.c.reference == reference,
-        support_conversations.c.requester_type == "CUSTOMER",
-        support_conversations.c.requester_user_id == customer_id,
-    )
-    if lock:
-        statement = statement.with_for_update()
-    row = db.execute(statement).mappings().one_or_none()
-    if row is None:
-        raise HTTPException(status_code=404, detail="ticket_not_found")
-    return row
 
 
 @router.get("/tickets")
@@ -98,7 +89,7 @@ def list_tickets(
         .all()
     )
     _no_store(response)
-    return {"items": [_summary(row) for row in rows]}
+    return {"items": [customer_support_summary(row) for row in rows]}
 
 
 @router.get("/tickets/{reference}")
@@ -108,8 +99,7 @@ def ticket_detail(
     current: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
     db: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, object]:
-    _owned_conversation(db, current.user_id, reference)
-    payload = _detail(db, current.user_id, reference)
+    payload = customer_support_detail(db, current.user_id, reference)
     _no_store(response)
     return payload
 
@@ -129,12 +119,12 @@ def create_ticket(
 ) -> dict[str, object]:
     _require_csrf(db, settings, current, x_csrf_token)
     customer_id = current.user_id
-    subject = _clean_text(body.subject, limit=160)
-    message = _clean_text(body.message, limit=4000)
-    routing = _routing(db)
+    subject = clean_customer_support_text(body.subject, limit=160)
+    message = clean_customer_support_text(body.message, limit=4000)
+    routing = customer_support_routing(db)
     scope = f"web-ticket:{customer_id}"
-    key_hash = _key_hash(idempotency_key)
-    payload_digest = _payload_digest(subject, message)
+    key_hash = customer_support_key_hash(idempotency_key)
+    payload_digest = customer_support_payload_digest(subject, message)
     existing = db.scalar(
         select(support_idempotency_records.c.resource_reference).where(
             support_idempotency_records.c.scope == scope,
@@ -142,14 +132,16 @@ def create_ticket(
         )
     )
     if existing:
-        payload = _existing_ticket_for_key(db, customer_id, str(existing), payload_digest)
+        payload = existing_customer_support_ticket_for_key(
+            db, customer_id, str(existing), payload_digest
+        )
         _no_store(response)
         return payload
 
     now = datetime.now(UTC)
     reference = f"SUP-{uuid4().hex[:24]}"
     conversation_id = str(uuid4())
-    resource_value = _idempotency_resource(reference, payload_digest)
+    resource_value = customer_support_idempotency_resource(reference, payload_digest)
     claimed = db.execute(
         postgresql.insert(support_idempotency_records)
         .values(
@@ -176,7 +168,9 @@ def create_ticket(
         )
         if not existing:
             raise HTTPException(status_code=503, detail="support_retry")
-        payload = _existing_ticket_for_key(db, customer_id, str(existing), payload_digest)
+        payload = existing_customer_support_ticket_for_key(
+            db, customer_id, str(existing), payload_digest
+        )
         _no_store(response)
         return payload
 
@@ -220,7 +214,7 @@ def create_ticket(
         )
     )
     db.commit()
-    payload = _detail(db, customer_id, reference)
+    payload = customer_support_detail(db, customer_id, reference)
     _no_store(response)
     return payload
 
@@ -241,13 +235,13 @@ def reply_ticket(
 ) -> dict[str, object]:
     _require_csrf(db, settings, current, x_csrf_token)
     customer_id = current.user_id
-    message = _clean_text(body.message, limit=4000)
-    row = _owned_conversation(db, customer_id, reference, lock=True)
+    message = clean_customer_support_text(body.message, limit=4000)
+    row = owned_customer_support_conversation(db, customer_id, reference, lock=True)
     current_status = str(row["status"])
     if current_status in {SupportStatus.SPAM.value, SupportStatus.ARCHIVED.value}:
         raise HTTPException(status_code=409, detail="ticket_not_replyable")
 
-    message_key = f"web:{_key_hash(idempotency_key)}"
+    message_key = f"web:{customer_support_key_hash(idempotency_key)}"
     existing = db.execute(
         select(support_messages.c.id, support_messages.c.body_sha256).where(
             support_messages.c.conversation_id == row["id"],
@@ -286,7 +280,7 @@ def reply_ticket(
             .values(updated_at=now, version=support_conversations.c.version + 1)
         )
         if current_status == SupportStatus.WAITING_FOR_CUSTOMER.value:
-            current_status = _transition(
+            current_status = transition_customer_support(
                 db,
                 row,
                 current_status,
@@ -296,7 +290,7 @@ def reply_ticket(
                 now=now,
             )
         elif current_status in {SupportStatus.RESOLVED.value, SupportStatus.CLOSED.value}:
-            current_status = _transition(
+            current_status = transition_customer_support(
                 db,
                 row,
                 current_status,
@@ -306,7 +300,7 @@ def reply_ticket(
                 now=now,
             )
         if current_status in {SupportStatus.IN_PROGRESS.value, SupportStatus.REOPENED.value}:
-            _transition(
+            transition_customer_support(
                 db,
                 row,
                 current_status,
@@ -316,6 +310,6 @@ def reply_ticket(
                 now=now,
             )
         db.commit()
-    payload = _detail(db, customer_id, reference)
+    payload = customer_support_detail(db, customer_id, reference)
     _no_store(response)
     return payload
