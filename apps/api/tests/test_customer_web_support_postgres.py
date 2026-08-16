@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException, Response
-from sqlalchemy import create_engine, delete, func, select
+from sqlalchemy import create_engine, delete, func, select, text
 from sqlalchemy.orm import Session
 
 from platform_api.config import Settings
@@ -24,7 +24,6 @@ from platform_api.support_runtime_models import (
     support_conversations,
     support_idempotency_records,
     support_messages,
-    support_queues,
     support_status_history,
 )
 
@@ -170,12 +169,10 @@ def test_customer_web_support_enforces_csrf_ownership_and_idempotency() -> None:
             conversation_id = str(conversation["id"])
             assert conversation["requester_user_id"] == owner.id
             assert conversation["channel"] == "CUSTOMER_WEB"
-            supported_channels = db.scalar(
-                select(support_queues.c.supported_channels).where(
-                    support_queues.c.id == conversation["queue_id"]
-                )
-            )
-            assert isinstance(supported_channels, list)
+            supported_channels = db.execute(
+                text("SELECT supported_channels FROM support_queues WHERE id = :queue_id"),
+                {"queue_id": conversation["queue_id"]},
+            ).scalar_one()
             typed_channels = cast(list[str], supported_channels)
             assert {"TELEGRAM_BOT", "CUSTOMER_WEB"}.issubset(set(typed_channels))
             assert (
