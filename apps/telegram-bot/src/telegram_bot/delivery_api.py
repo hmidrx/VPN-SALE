@@ -30,7 +30,11 @@ class DeliveryPrivatePlatformClient(PrivatePlatformClient):
             raise PrivateApiUnavailable("اطلاعات اشتراک قابل استفاده نیست.")
         urls: dict[str, str] = {}
         for key, value in cast(dict[object, object], raw_urls).items():
-            if not isinstance(key, str) or key not in _ALLOWED_URL_KEYS or not isinstance(value, str):
+            if (
+                not isinstance(key, str)
+                or key not in _ALLOWED_URL_KEYS
+                or not isinstance(value, str)
+            ):
                 raise PrivateApiUnavailable("اطلاعات اشتراک قابل استفاده نیست.")
             parsed = urlsplit(value)
             if (
@@ -52,7 +56,10 @@ class DeliveryPrivatePlatformClient(PrivatePlatformClient):
 
     def service_delivery_ready(self, context: CustomerContext, service_reference: str) -> bool:
         data = self._request("GET", f"/services/{service_reference}", context.telegram_user_id)
-        return str(data.get("status") or "").upper() == "ACTIVE" and data.get("delivery_ready") is True
+        return (
+            str(data.get("status") or "").upper() == "ACTIVE"
+            and data.get("delivery_ready") is True
+        )
 
     def issue_subscription(
         self, context: CustomerContext, service_reference: str
