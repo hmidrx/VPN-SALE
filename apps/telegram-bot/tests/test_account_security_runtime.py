@@ -62,9 +62,7 @@ def test_profile_exposes_native_account_security_entry() -> None:
 
 
 def test_security_command_lists_sessions_without_sensitive_identifiers() -> None:
-    result = _handler().handle_command(
-        IncomingCommand(11, "private", _user(), "/security")
-    )
+    result = _handler().handle_command(IncomingCommand(11, "private", _user(), "/security"))
 
     assert "امنیت حساب" in result.messages[0].text
     assert "Customer web" in result.messages[0].text
@@ -86,7 +84,9 @@ def test_revoke_requires_second_confirmation_and_does_not_revoke_current_session
         _callback(CallbackAction.CONFIRM_REVOKE, "sess-web", update_id=21)
     )
     assert "موفقیت" in confirmed.messages[0].text
-    assert not any(item.ref == "sess-web" for item in portal.sessions(CustomerContext("x", 42, "fa")))
+    assert not any(
+        item.ref == "sess-web" for item in portal.sessions(CustomerContext("x", 42, "fa"))
+    )
 
     current = handler.handle_callback(
         _callback(CallbackAction.REVOKE_SESSION, "sess-current", update_id=22)
@@ -110,4 +110,6 @@ def test_ambiguous_revoke_reconciles_with_safe_read_instead_of_repeating_mutatio
     )
 
     assert "موفقیت" in result.messages[0].text
-    assert not any(item.ref == "sess-web" for item in portal.sessions(CustomerContext("x", 42, "fa")))
+    assert not any(
+        item.ref == "sess-web" for item in portal.sessions(CustomerContext("x", 42, "fa"))
+    )
