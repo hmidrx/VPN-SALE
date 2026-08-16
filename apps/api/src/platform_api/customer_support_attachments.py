@@ -301,10 +301,14 @@ def download_customer_support_attachment(
         select(
             support_attachments.c.normalized_filename,
             support_attachments.c.content_type,
-        ).where(
+        )
+        .join(support_messages, support_messages.c.id == support_attachments.c.message_id)
+        .where(
             support_attachments.c.conversation_id == row["id"],
             support_attachments.c.asset_reference == asset_reference,
             support_attachments.c.state == "READY",
+            support_messages.c.visibility == "PUBLIC",
+            support_messages.c.redacted_at.is_(None),
         )
     ).one_or_none()
     if attachment is None:
