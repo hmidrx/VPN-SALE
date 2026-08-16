@@ -242,7 +242,9 @@ def test_ticket_pagination_keeps_opaque_cursor_out_of_callbacks() -> None:
     assert second_state.support_ticket_cursor == "tickets:10"
     assert second_state.support_ticket_previous_cursors == ("",)
 
-    first_again = handler.handle_callback(_callback(CallbackAction.SUPPORT_TICKETS_PREV, update_id=42))
+    first_again = handler.handle_callback(
+        _callback(CallbackAction.SUPPORT_TICKETS_PREV, update_id=42)
+    )
     assert "تیکت 12" in first_again.messages[0].text
     assert store.get(key, now_utc()).support_ticket_cursor is None
 
@@ -269,7 +271,9 @@ def test_message_history_pages_are_reversible_without_body_in_state() -> None:
         messages,
     )
 
-    latest = handler.handle_callback(_callback(CallbackAction.SUPPORT_OPEN, reference, update_id=50))
+    latest = handler.handle_callback(
+        _callback(CallbackAction.SUPPORT_OPEN, reference, update_id=50)
+    )
     assert "history body 17" in latest.messages[0].text
     assert "history body 9" not in latest.messages[0].text
     key = handler._conversation_key(_user())
