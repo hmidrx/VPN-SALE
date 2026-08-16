@@ -261,7 +261,9 @@ def _attachment_dto(db: Session, conversation_id: str, asset_reference: str) -> 
 
 
 def _payload_digest(content_type: str, raw: bytes) -> str:
-    return hashlib.sha256(content_type.encode() + b"\x00" + hashlib.sha256(raw).digest()).hexdigest()
+    return hashlib.sha256(
+        content_type.encode() + b"\x00" + hashlib.sha256(raw).digest()
+    ).hexdigest()
 
 
 def _attachment_count(db: Session, conversation_id: object) -> int:
@@ -453,7 +455,6 @@ async def upload_agent_support_attachment(
         Header(alias="Idempotency-Key", min_length=8, max_length=128),
     ],
 ) -> dict[str, object]:
-    row = _conversation(db, reference, lock=True)
     content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if content_type not in ALLOWED_SUPPORT_IMAGE_TYPES:
         raise HTTPException(status_code=415, detail="support_attachment_type_invalid")
@@ -461,6 +462,9 @@ async def upload_agent_support_attachment(
     payload_digest = _payload_digest(content_type, raw)
     key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
     scope = f"admin-att:{reference}:{admin.id}"
+
+    # Do not hold a ticket row lock while the client is still streaming the upload.
+    row = _conversation(db, reference, lock=True)
     existing_resource = db.scalar(
         select(support_idempotency_records.c.resource_reference).where(
             support_idempotency_records.c.scope == scope,
