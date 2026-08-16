@@ -38,7 +38,9 @@ def _postgres_url() -> str:
 def _settings() -> Settings:
     return Settings(
         environment="test",
-        customer_access_token_signing_key=sha256(b"support-pagination-settings-fixture").hexdigest(),
+        customer_access_token_signing_key=sha256(
+            b"support-pagination-settings-fixture"
+        ).hexdigest(),
     )
 
 
