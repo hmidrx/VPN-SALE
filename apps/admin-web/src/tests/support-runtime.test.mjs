@@ -14,7 +14,7 @@ for (const value of [
   "changeSupportStatus",
   "expected_version",
   "Idempotency-Key",
-  "support.internal",
+  "internal-notes",
   "کنسول پشتیبانی",
 ]) {
   if (!combined.includes(value)) throw new Error(`missing ${value}`);
