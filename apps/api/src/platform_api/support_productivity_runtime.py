@@ -8,7 +8,7 @@ from typing import Annotated, Any, Literal, cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from vpnsale_domain.identity import sanitize_metadata
@@ -138,7 +138,6 @@ MacroAction = Annotated[
     ReplyDraftAction | InternalNoteDraftAction | StatusDraftAction,
     Field(discriminator="type"),
 ]
-_macro_action_adapter = TypeAdapter(MacroAction)
 
 
 class MacroDefinition(BaseModel):
@@ -181,12 +180,26 @@ def _validate_macro_action_set(actions: list[MacroAction]) -> None:
         texts: list[str] = []
         if isinstance(action, ReplyDraftAction | InternalNoteDraftAction):
             texts.append(action.body)
-        elif isinstance(action, StatusDraftAction):
+        else:
             texts.append(action.reason)
         for text in texts:
             unknown = set(_PLACEHOLDER_RE.findall(text)) - _BUILTIN_PLACEHOLDERS
             if unknown:
                 raise ValueError("macros may only use built-in placeholders")
+
+
+def _macro_action_from_json(raw: object) -> MacroAction:
+    if not isinstance(raw, dict):
+        raise ValueError("macro action must be an object")
+    payload = cast(dict[str, object], raw)
+    kind = payload.get("type")
+    if kind == "reply_draft":
+        return ReplyDraftAction.model_validate(payload)
+    if kind == "internal_note_draft":
+        return InternalNoteDraftAction.model_validate(payload)
+    if kind == "status_draft":
+        return StatusDraftAction.model_validate(payload)
+    raise ValueError("unsupported macro action type")
 
 
 def _clean(value: str, limit: int) -> str:
@@ -298,7 +311,9 @@ def _latest_macro(db: Session, code: str, *, lock: bool = False) -> Any | None:
 
 def _canned_view(row: Any) -> dict[str, object]:
     raw_placeholders = row["placeholders"]
-    placeholders = raw_placeholders if isinstance(raw_placeholders, list) else []
+    placeholders = (
+        cast(list[object], raw_placeholders) if isinstance(raw_placeholders, list) else []
+    )
     return {
         "code": str(row["code"]),
         "title": str(row["title"]),
@@ -313,7 +328,8 @@ def _canned_view(row: Any) -> dict[str, object]:
 
 
 def _macro_view(row: Any) -> dict[str, object]:
-    actions = row["actions"] if isinstance(row["actions"], list) else []
+    raw_actions = row["actions"]
+    actions = cast(list[object], raw_actions) if isinstance(raw_actions, list) else []
     return {
         "code": str(row["code"]),
         "title": str(row["title"]),
@@ -368,7 +384,8 @@ def _render_canned(row: Any, conversation: Any, supplied: dict[str, str]) -> str
     raw_placeholders = row["placeholders"]
     if not isinstance(raw_placeholders, list):
         raise HTTPException(status_code=500, detail="canned_response_invalid")
-    declared = {str(item) for item in raw_placeholders}
+    placeholders = cast(list[object], raw_placeholders)
+    declared = {str(item) for item in placeholders}
     if set(_PLACEHOLDER_RE.findall(str(row["body"]))) != declared:
         raise HTTPException(status_code=500, detail="canned_response_invalid")
     custom = declared - _BUILTIN_PLACEHOLDERS
@@ -651,8 +668,9 @@ def preview_macro(
     raw_actions = row["actions"]
     if not isinstance(raw_actions, list):
         raise HTTPException(status_code=500, detail="support_macro_invalid")
+    action_payloads = cast(list[object], raw_actions)
     try:
-        actions = [_macro_action_adapter.validate_python(item) for item in raw_actions]
+        actions = [_macro_action_from_json(item) for item in action_payloads]
         _validate_macro_action_set(actions)
     except ValueError as exc:
         raise HTTPException(status_code=500, detail="support_macro_invalid") from exc
@@ -674,7 +692,7 @@ def preview_macro(
             if current_status == SupportStatus.ARCHIVED:
                 raise HTTPException(status_code=409, detail="ticket_not_writable")
             preview["internal_note_body"] = _clean(_render_text(action.body, variables), 4000)
-        elif isinstance(action, StatusDraftAction):
+        else:
             if action.status not in LEGAL_TRANSITIONS[current_status]:
                 raise HTTPException(status_code=409, detail="macro_transition_invalid")
             preview["status"] = action.status.value
