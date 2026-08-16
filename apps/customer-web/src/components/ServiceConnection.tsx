@@ -83,14 +83,16 @@ export function ServiceConnectionPanel({
   };
 
   const handleMutationError = (caught: unknown) => {
-    if (caught instanceof ServiceRequestError && caught.status === 0) {
+    const ambiguous =
+      !(caught instanceof ServiceRequestError) || caught.status === 0;
+    if (ambiguous) {
       setAmbiguousMutation(true);
       setError(
-        "پاسخ عملیات دریافت نشد و نتیجه نامشخص است. برای جلوگیری از ساخت یا لغو تکراری، عملیات اشتراک در این صفحه متوقف شد؛ صفحه را دوباره باز کنید و وضعیت را بررسی کنید.",
+        "پاسخ قابل اتکایی برای نتیجه عملیات در دسترس نیست. برای جلوگیری از ساخت یا لغو تکراری، عملیات اشتراک در این صفحه متوقف شد؛ صفحه را دوباره باز کنید و وضعیت را بررسی کنید.",
       );
       return;
     }
-    setError("عملیات اشتراک انجام نشد. وضعیت فعلی تغییر داده نشده یا قابل تأیید نیست.");
+    setError("عملیات اشتراک انجام نشد و پاسخ قطعی خطا از سرور دریافت شد.");
   };
 
   const revealConnection = async () => {
