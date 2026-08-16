@@ -149,7 +149,9 @@ def submit_csat(
         Header(alias="Idempotency-Key", min_length=8, max_length=128),
     ],
 ) -> dict[str, object]:
-    del idempotency_key  # the (conversation, resolution_cycle) unique key is the durable idempotency anchor
+    del (
+        idempotency_key
+    )  # the (conversation, resolution_cycle) unique key is the durable idempotency anchor
     customer_id = _customer_id(db, x_telegram_subject)
     row = _conversation(db, customer_id, reference, lock=True)
     if str(row["status"]) not in {
