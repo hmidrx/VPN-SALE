@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
@@ -9,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from vpnsale_domain.delivery import (
     DeliveryError,
+    DeliveryErrorCode,
     DeliveryOutputFormat,
     DeliveryProtocol,
     render_qr_png,
@@ -21,6 +23,12 @@ from platform_api.delivery_resolution import (
     RENDERER_VERSION,
     delivery_profile_from_model,
     render_service_connection,
+)
+from platform_api.delivery_subscriptions import (
+    issue_service_subscription,
+    render_public_subscription,
+    revoke_service_subscription,
+    rotate_service_subscription,
 )
 from platform_api.identity.models import CustomerSessionModel
 from platform_api.service_models import (
@@ -257,16 +265,89 @@ def customer_service_delivery(
     )
 
 
+def _raise_subscription_management_error(exc: DeliveryError) -> None:
+    if exc.code in {
+        DeliveryErrorCode.IDEMPOTENCY_CONFLICT,
+        DeliveryErrorCode.SUBSCRIPTION_NOT_FOUND,
+        DeliveryErrorCode.DELIVERY_FORMAT_UNSUPPORTED,
+        DeliveryErrorCode.SUBSCRIPTION_FORMAT_UNSUPPORTED,
+    }:
+        status_code = status.HTTP_409_CONFLICT
+    else:
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    raise HTTPException(status_code, detail={"code": exc.code.value}) from exc
+
+
+def _subscription_status(service: ServiceModel, token: str | None, result_status: str) -> SubscriptionStatus:
+    return SubscriptionStatus(
+        service_reference=service.public_reference,
+        status=result_status,
+        stable_urls=_stable_urls(token) if token is not None else {},
+        token_visible_once=token,
+    )
+
+
 @customer_router.post(
     "/services/{service_reference}/subscription",
     response_model=SubscriptionStatus,
 )
-async def issue_customer_subscription(service_reference: str) -> SubscriptionStatus:
-    del service_reference
-    raise HTTPException(
-        status.HTTP_501_NOT_IMPLEMENTED,
-        detail={"code": "SUBSCRIPTION_PERSISTENCE_NOT_IMPLEMENTED"},
-    )
+def issue_customer_subscription(
+    service_reference: str,
+    response: Response,
+    session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> SubscriptionStatus:
+    response.headers.update(NO_STORE)
+    service = _owned_service(db, session.user_id, service_reference)
+    try:
+        result = issue_service_subscription(db, service.id, datetime.now(UTC))
+        db.commit()
+    except DeliveryError as exc:
+        db.rollback()
+        _raise_subscription_management_error(exc)
+    return _subscription_status(service, result.token, result.status)
+
+
+@customer_router.post(
+    "/services/{service_reference}/subscription/rotate",
+    response_model=SubscriptionStatus,
+)
+def rotate_customer_subscription(
+    service_reference: str,
+    response: Response,
+    session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> SubscriptionStatus:
+    response.headers.update(NO_STORE)
+    service = _owned_service(db, session.user_id, service_reference)
+    try:
+        result = rotate_service_subscription(db, service.id, datetime.now(UTC))
+        db.commit()
+    except DeliveryError as exc:
+        db.rollback()
+        _raise_subscription_management_error(exc)
+    return _subscription_status(service, result.token, result.status)
+
+
+@customer_router.post(
+    "/services/{service_reference}/subscription/revoke",
+    response_model=SubscriptionStatus,
+)
+def revoke_customer_subscription(
+    service_reference: str,
+    response: Response,
+    session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> SubscriptionStatus:
+    response.headers.update(NO_STORE)
+    service = _owned_service(db, session.user_id, service_reference)
+    try:
+        result = revoke_service_subscription(db, service.id, datetime.now(UTC))
+        db.commit()
+    except DeliveryError as exc:
+        db.rollback()
+        _raise_subscription_management_error(exc)
+    return _subscription_status(service, None, result.status)
 
 
 @customer_router.get("/qr", responses={200: {"content": {"image/png": {}}}})
@@ -286,35 +367,81 @@ async def qr(payload: Annotated[str, Header(max_length=2048)]) -> Response:
 
 
 @public_router.get("/{opaque_token}")
-async def subscription_default(opaque_token: str) -> Response:
-    return _subscription_response(opaque_token, DeliveryOutputFormat.BASE64_LINKS)
+def subscription_default(
+    opaque_token: str,
+    db: Annotated[Session, Depends(get_db_session)],
+) -> Response:
+    return _subscription_response(db, opaque_token, DeliveryOutputFormat.BASE64_LINKS)
 
 
 @public_router.get("/{opaque_token}/links")
-async def subscription_links(opaque_token: str) -> Response:
-    return _subscription_response(opaque_token, DeliveryOutputFormat.PLAIN_LINKS)
+def subscription_links(
+    opaque_token: str,
+    db: Annotated[Session, Depends(get_db_session)],
+) -> Response:
+    return _subscription_response(db, opaque_token, DeliveryOutputFormat.PLAIN_LINKS)
 
 
 @public_router.get("/{opaque_token}/mihomo")
-async def subscription_mihomo(opaque_token: str) -> Response:
-    return _subscription_response(opaque_token, DeliveryOutputFormat.MIHOMO)
+def subscription_mihomo(
+    opaque_token: str,
+    db: Annotated[Session, Depends(get_db_session)],
+) -> Response:
+    return _subscription_response(db, opaque_token, DeliveryOutputFormat.MIHOMO)
 
 
 @public_router.get("/{opaque_token}/clash")
-async def subscription_clash(opaque_token: str) -> Response:
-    return _subscription_response(opaque_token, DeliveryOutputFormat.CLASH_LEGACY)
+def subscription_clash(
+    opaque_token: str,
+    db: Annotated[Session, Depends(get_db_session)],
+) -> Response:
+    return _subscription_response(db, opaque_token, DeliveryOutputFormat.CLASH_LEGACY)
 
 
 @public_router.get("/{opaque_token}/sing-box")
-async def subscription_sing_box(opaque_token: str) -> Response:
-    return _subscription_response(opaque_token, DeliveryOutputFormat.SING_BOX)
+def subscription_sing_box(
+    opaque_token: str,
+    db: Annotated[Session, Depends(get_db_session)],
+) -> Response:
+    return _subscription_response(db, opaque_token, DeliveryOutputFormat.SING_BOX)
 
 
-def _subscription_response(opaque_token: str, fmt: DeliveryOutputFormat) -> Response:
-    if len(opaque_token) < 43 or "/" in opaque_token:
+def _subscription_response(
+    db: Session,
+    opaque_token: str,
+    fmt: DeliveryOutputFormat,
+) -> Response:
+    try:
+        content = render_public_subscription(db, opaque_token, fmt, datetime.now(UTC))
+        db.commit()
+    except DeliveryError as exc:
+        db.rollback()
+        if exc.code in {
+            DeliveryErrorCode.SUBSCRIPTION_NOT_FOUND,
+            DeliveryErrorCode.SUBSCRIPTION_REVOKED,
+            DeliveryErrorCode.SUBSCRIPTION_EXPIRED,
+        }:
+            return Response(
+                content='{"code":"SUBSCRIPTION_NOT_FOUND","message":"subscription unavailable"}',
+                status_code=status.HTTP_404_NOT_FOUND,
+                media_type="application/json",
+                headers=NO_STORE,
+            )
+        if exc.code in {
+            DeliveryErrorCode.SUBSCRIPTION_FORMAT_UNSUPPORTED,
+            DeliveryErrorCode.DELIVERY_FORMAT_UNSUPPORTED,
+            DeliveryErrorCode.DELIVERY_RENDERER_UNSUPPORTED,
+            DeliveryErrorCode.DELIVERY_PROFILE_INCOMPATIBLE,
+        }:
+            return Response(
+                content='{"code":"SUBSCRIPTION_FORMAT_UNSUPPORTED","message":"format unavailable"}',
+                status_code=status.HTTP_409_CONFLICT,
+                media_type="application/json",
+                headers=NO_STORE,
+            )
         return Response(
-            content='{"code":"SUBSCRIPTION_NOT_FOUND","message":"subscription unavailable"}',
-            status_code=status.HTTP_404_NOT_FOUND,
+            content='{"code":"DELIVERY_UNAVAILABLE","message":"delivery unavailable"}',
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             media_type="application/json",
             headers=NO_STORE,
         )
@@ -325,11 +452,17 @@ def _subscription_response(opaque_token: str, fmt: DeliveryOutputFormat) -> Resp
         DeliveryOutputFormat.CLASH_LEGACY: "application/yaml; charset=utf-8",
         DeliveryOutputFormat.SING_BOX: "application/json; charset=utf-8",
     }[fmt]
-    return Response(
-        content="# delivery subscription requires repository-backed token lookup\n",
-        media_type=media,
-        headers=NO_STORE,
-    )
+    return Response(content=content, media_type=media, headers=NO_STORE)
+
+
+def _stable_urls(token: str) -> dict[str, str]:
+    return {
+        "base64": f"/subscriptions/{token}",
+        "links": f"/subscriptions/{token}/links",
+        "mihomo": f"/subscriptions/{token}/mihomo",
+        "clash": f"/subscriptions/{token}/clash",
+        "sing_box": f"/subscriptions/{token}/sing-box",
+    }
 
 
 def _safe_summary(service_reference: str) -> DeliverySummary:
