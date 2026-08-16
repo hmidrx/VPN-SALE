@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from fastapi.routing import APIRoute
 
 from platform_api.config import Settings
@@ -15,9 +17,9 @@ EXPECTED_PATHS = {
 }
 
 
-def _assert_value_error(callable_: object) -> None:
+def _assert_value_error(callable_: Callable[[], object]) -> None:
     try:
-        callable_()  # type: ignore[operator]
+        callable_()
     except ValueError:
         return
     raise AssertionError("expected ValueError")
