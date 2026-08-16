@@ -82,9 +82,7 @@ def _resolve_owned_reference(
     if len(reference) != 28 or not reference.startswith("ses_"):
         return None
     matches = [
-        row
-        for row in rows
-        if hmac.compare_digest(session_reference(settings, row.id), reference)
+        row for row in rows if hmac.compare_digest(session_reference(settings, row.id), reference)
     ]
     return matches[0] if len(matches) == 1 else None
 
