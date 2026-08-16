@@ -36,8 +36,19 @@ export type SupportConversationSummary = {
   resolution_deadline: string | null;
 };
 
+export type SupportConversationPage = {
+  items: SupportConversationSummary[];
+  next_cursor: string | null;
+};
+
+export type SupportMessagePage = {
+  items: SupportMessage[];
+  next_cursor: string | null;
+};
+
 export type SupportConversationDetail = SupportConversationSummary & {
   messages: SupportMessage[];
+  messages_next_cursor: string | null;
 };
 
 export type SupportSlaEscalation = {
