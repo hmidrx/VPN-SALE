@@ -8,6 +8,7 @@ they are navigation hints only and never replace ownership or RBAC checks.
 from __future__ import annotations
 
 import base64
+import binascii
 import hmac
 import json
 from datetime import UTC, datetime
@@ -17,6 +18,7 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
+from vpnsale_domain.support import SupportStatus
 
 from platform_api.config import Settings, get_settings
 from platform_api.database import get_db_session
@@ -24,7 +26,6 @@ from platform_api.identity.models import AdminModel, TelegramAccountModel, UserM
 from platform_api.management import require_perm
 from platform_api.support_runtime_models import support_conversations, support_messages
 from platform_api.telegram_internal import Database, InternalAuth
-from vpnsale_domain.support import SupportStatus
 
 admin_router = APIRouter(
     prefix="/api/v1/admin/support-runtime",
@@ -71,7 +72,7 @@ def _decode_cursor(secret: str, kind: str, cursor: str) -> dict[str, object]:
         if len(signature) != _SIGNATURE_BYTES or not hmac.compare_digest(signature, expected):
             raise ValueError("invalid cursor signature")
         decoded = json.loads(_b64decode(encoded))
-    except (ValueError, TypeError, json.JSONDecodeError, base64.binascii.Error) as exc:
+    except (ValueError, TypeError, json.JSONDecodeError, binascii.Error) as exc:
         raise ValueError("invalid cursor") from exc
     if not isinstance(decoded, dict):
         raise ValueError("invalid cursor payload")
