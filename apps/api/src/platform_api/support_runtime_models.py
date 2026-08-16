@@ -107,6 +107,33 @@ support_attachments = sa.Table(
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
 )
 
+support_canned_responses = sa.Table(
+    "support_canned_responses",
+    metadata,
+    sa.Column("id", uuid, primary_key=True),
+    sa.Column("code", sa.String(64), nullable=False),
+    sa.Column("title", sa.String(160), nullable=False),
+    sa.Column("body", sa.Text(), nullable=False),
+    sa.Column("locale", sa.String(16), nullable=False),
+    sa.Column("queue_id", uuid),
+    sa.Column("category_id", uuid),
+    sa.Column("placeholders", jsonb, nullable=False),
+    sa.Column("active", sa.Boolean(), nullable=False),
+    sa.Column("version", sa.Integer(), nullable=False),
+    sa.Column("usage_count", sa.Integer(), nullable=False),
+)
+
+support_macros = sa.Table(
+    "support_macros",
+    metadata,
+    sa.Column("id", uuid, primary_key=True),
+    sa.Column("code", sa.String(64), nullable=False),
+    sa.Column("title", sa.String(160), nullable=False),
+    sa.Column("actions", jsonb, nullable=False),
+    sa.Column("active", sa.Boolean(), nullable=False),
+    sa.Column("version", sa.Integer(), nullable=False),
+)
+
 support_status_history = sa.Table(
     "support_status_history",
     metadata,
