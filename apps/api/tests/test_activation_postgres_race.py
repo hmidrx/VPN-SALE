@@ -386,7 +386,11 @@ def _seed(factory: sessionmaker[Session]) -> None:
                 ) VALUES (
                     :id, :profile_id, 1, 'PUBLISHED', 'VLESS', 'RAW', 'TLS',
                     'FIXED_DOMAIN', 'edge.example', 443, 'NL', 'VPN {service}',
-                    '{"server_name":"edge.example","alpn":["h2"],"verify_certificate":true}'::jsonb,
+                    jsonb_build_object(
+                        'server_name', 'edge.example',
+                        'alpn', jsonb_build_array('h2'),
+                        'verify_certificate', true
+                    ),
                     NULL, '{}'::jsonb, '{"encryption":"none"}'::jsonb,
                     '[]'::jsonb, '[]'::jsonb, :now, :now
                 )
