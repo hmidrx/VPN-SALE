@@ -95,16 +95,19 @@ def _cleanup(db: Session, user_ids: list[str]) -> None:
     db.commit()
 
 
+def _tamper_signature(cursor: str) -> str:
+    encoded, signature = cursor.split(".", 1)
+    replacement = "A" if signature[0] != "A" else "B"
+    return f"{encoded}.{replacement}{signature[1:]}"
+
+
 def test_cursor_is_signed_and_bound_to_its_read_surface() -> None:
     secret = sha256(b"support-pagination-cursor-contract").hexdigest()
     cursor = _encode_cursor(secret, "tickets", {"s": 42})
     assert _decode_cursor(secret, "tickets", cursor) == {"s": 42}
 
-    encoded, signature = cursor.split(".", 1)
-    tampered_signature = "A" if signature[-1] != "A" else "B"
-    tampered = f"{encoded}.{signature[:-1]}{tampered_signature}"
     with pytest.raises(ValueError, match="invalid cursor"):
-        _decode_cursor(secret, "tickets", tampered)
+        _decode_cursor(secret, "tickets", _tamper_signature(cursor))
     with pytest.raises(ValueError, match="cursor"):
         _decode_cursor(secret, "messages", cursor)
 
@@ -242,7 +245,6 @@ def test_telegram_support_ticket_and_message_pages_are_complete_owned_and_dedupl
                 )
             assert ownership_error.value.status_code == 404
 
-            tampered = f"{first_cursor[:-1]}{'A' if first_cursor[-1] != 'A' else 'B'}"
             with pytest.raises(HTTPException) as cursor_error:
                 telegram_ticket_detail_page(
                     reference,
@@ -252,7 +254,7 @@ def test_telegram_support_ticket_and_message_pages_are_complete_owned_and_dedupl
                     owner_telegram,
                     _settings(),
                     limit=10,
-                    cursor=tampered,
+                    cursor=_tamper_signature(first_cursor),
                 )
             assert cursor_error.value.status_code == 400
             assert cursor_error.value.detail == "support_cursor_invalid"
