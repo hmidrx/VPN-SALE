@@ -1,4 +1,4 @@
-"""Private customer support image attachments and permission-gated agent retrieval."""
+"""Private support image attachments with permission-gated agent workflows."""
 
 from __future__ import annotations
 
@@ -9,15 +9,16 @@ from pathlib import Path
 from typing import Annotated, Any, cast
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
+from vpnsale_domain.identity import sanitize_metadata
 from vpnsale_domain.support import LEGAL_TRANSITIONS, SupportStatus
 
 from platform_api.config import Settings, get_settings
 from platform_api.database import get_db_session
-from platform_api.identity.models import AdminModel, TelegramAccountModel, UserModel
+from platform_api.identity.models import AdminModel, AuditLogModel, TelegramAccountModel, UserModel
 from platform_api.management import require_perm
 from platform_api.support_attachment_storage import (
     ALLOWED_SUPPORT_IMAGE_TYPES,
@@ -44,6 +45,7 @@ admin_router = APIRouter(
 )
 
 _ATTACHMENT_BODY = "📎 تصویر پیوست شد."
+_AGENT_ATTACHMENT_BODY = "📎 تصویر از پشتیبانی ارسال شد."
 
 
 def _no_store(response: Response) -> None:
@@ -257,6 +259,70 @@ def _attachment_dto(db: Session, conversation_id: str, asset_reference: str) -> 
     }
 
 
+def _payload_digest(content_type: str, raw: bytes) -> str:
+    return hashlib.sha256(content_type.encode() + b"\x00" + hashlib.sha256(raw).digest()).hexdigest()
+
+
+def _attachment_count(db: Session, conversation_id: object) -> int:
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(support_attachments)
+            .where(support_attachments.c.conversation_id == conversation_id)
+        )
+        or 0
+    )
+
+
+def _store_image(
+    settings: Settings,
+    asset_reference: str,
+    raw: bytes,
+    content_type: str,
+) -> tuple[LocalPrivateSupportAttachmentStorage, object]:
+    storage = LocalPrivateSupportAttachmentStorage(
+        Path(settings.support_private_upload_root),
+        maximum_bytes=settings.support_max_attachment_bytes,
+        dimension_limit=settings.support_image_dimension_limit,
+    )
+    try:
+        stored = storage.store(asset_reference, io.BytesIO(raw), content_type)
+    except InvalidSupportAttachment as exc:
+        raise HTTPException(status_code=422, detail="support_attachment_invalid") from exc
+    return storage, stored
+
+
+def _audit_agent_attachment(
+    db: Session,
+    request: Request,
+    admin_id: str,
+    row: Any,
+    asset_reference: str,
+) -> None:
+    db.add(
+        AuditLogModel(
+            actor_type="admin",
+            actor_id=admin_id,
+            target_type="support_conversation",
+            target_id=str(row["id"]),
+            event_code="support.attachment.sent",
+            occurred_at=datetime.now(UTC),
+            correlation_id=(
+                request.headers.get("x-request-id")
+                or request.headers.get("x-correlation-id")
+                or "local"
+            ),
+            metadata_=sanitize_metadata(
+                {
+                    "ticket_reference": str(row["reference"]),
+                    "asset_reference": asset_reference,
+                    "visibility": "PUBLIC",
+                }
+            ),
+        )
+    )
+
+
 @telegram_router.post("/support/tickets/{reference}/attachments")
 async def upload_customer_support_attachment(
     reference: str,
@@ -281,9 +347,7 @@ async def upload_customer_support_attachment(
     if content_type not in ALLOWED_SUPPORT_IMAGE_TYPES:
         raise HTTPException(status_code=415, detail="support_attachment_type_invalid")
     raw = await _read_bounded(request, settings.support_max_attachment_bytes)
-    payload_digest = hashlib.sha256(
-        content_type.encode() + b"\x00" + hashlib.sha256(raw).digest()
-    ).hexdigest()
+    payload_digest = _payload_digest(content_type, raw)
     key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
     scope = f"tg-att:{reference}"
     existing_resource = db.scalar(
@@ -300,28 +364,11 @@ async def upload_customer_support_attachment(
         _no_store(response)
         return payload
 
-    count = int(
-        db.scalar(
-            select(func.count())
-            .select_from(support_attachments)
-            .where(support_attachments.c.conversation_id == row["id"])
-        )
-        or 0
-    )
-    if count >= settings.support_max_attachments_per_conversation:
+    if _attachment_count(db, row["id"]) >= settings.support_max_attachments_per_conversation:
         raise HTTPException(status_code=409, detail="support_attachment_limit")
 
     asset_reference = f"SAT-{uuid4().hex[:24]}"
-    storage = LocalPrivateSupportAttachmentStorage(
-        Path(settings.support_private_upload_root),
-        maximum_bytes=settings.support_max_attachment_bytes,
-        dimension_limit=settings.support_image_dimension_limit,
-    )
-    try:
-        stored = storage.store(asset_reference, io.BytesIO(raw), content_type)
-    except InvalidSupportAttachment as exc:
-        raise HTTPException(status_code=422, detail="support_attachment_invalid") from exc
-
+    storage, stored = _store_image(settings, asset_reference, raw, content_type)
     suffix = stored.suffix
     filename = f"support-image-{asset_reference[-8:]}{suffix}"
     message_id = str(uuid4())
@@ -379,6 +426,124 @@ async def upload_customer_support_attachment(
             .values(updated_at=now, version=support_conversations.c.version + 1)
         )
         _advance_after_customer_attachment(db, row, customer_id, now)
+        db.commit()
+    except Exception:
+        db.rollback()
+        storage.delete(asset_reference)
+        raise
+
+    payload = _attachment_dto(db, str(row["id"]), asset_reference)
+    _no_store(response)
+    return payload
+
+
+@admin_router.post("/conversations/{reference}/attachments")
+async def upload_agent_support_attachment(
+    reference: str,
+    request: Request,
+    response: Response,
+    expected_version: Annotated[int, Query(gt=0)],
+    admin: Annotated[AdminModel, Depends(require_perm("support.attachments.manage"))],
+    _: Annotated[AdminModel, Depends(require_perm("support.reply"))],
+    db: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=8, max_length=128),
+    ],
+) -> dict[str, object]:
+    row = _conversation(db, reference, lock=True)
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in ALLOWED_SUPPORT_IMAGE_TYPES:
+        raise HTTPException(status_code=415, detail="support_attachment_type_invalid")
+    raw = await _read_bounded(request, settings.support_max_attachment_bytes)
+    payload_digest = _payload_digest(content_type, raw)
+    key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
+    scope = f"admin-att:{reference}:{admin.id}"
+    existing_resource = db.scalar(
+        select(support_idempotency_records.c.resource_reference).where(
+            support_idempotency_records.c.scope == scope,
+            support_idempotency_records.c.key_hash == key_hash,
+        )
+    )
+    if existing_resource:
+        asset_reference, stored_digest = _parse_resource(str(existing_resource))
+        if stored_digest != payload_digest[:32]:
+            raise HTTPException(status_code=409, detail="idempotency_conflict")
+        payload = _attachment_dto(db, str(row["id"]), asset_reference)
+        _no_store(response)
+        return payload
+
+    if int(row["version"]) != expected_version:
+        raise HTTPException(status_code=409, detail="ticket_version_conflict")
+    if str(row["status"]) in {
+        SupportStatus.RESOLVED.value,
+        SupportStatus.CLOSED.value,
+        SupportStatus.SPAM.value,
+        SupportStatus.ARCHIVED.value,
+    }:
+        raise HTTPException(status_code=409, detail="ticket_not_replyable")
+    if _attachment_count(db, row["id"]) >= settings.support_max_attachments_per_conversation:
+        raise HTTPException(status_code=409, detail="support_attachment_limit")
+
+    asset_reference = f"SAT-{uuid4().hex[:24]}"
+    storage, stored = _store_image(settings, asset_reference, raw, content_type)
+    filename = f"support-image-{asset_reference[-8:]}{stored.suffix}"
+    message_id = str(uuid4())
+    now = datetime.now(UTC)
+    try:
+        last_sequence = db.scalar(
+            select(func.max(support_messages.c.sequence)).where(
+                support_messages.c.conversation_id == row["id"]
+            )
+        )
+        sequence = int(last_sequence or 0) + 1
+        db.execute(
+            support_messages.insert().values(
+                id=message_id,
+                conversation_id=row["id"],
+                sequence=sequence,
+                sender_type="SUPPORT_AGENT",
+                sender_id=admin.id,
+                channel="ADMIN_WEB",
+                message_type="AGENT_ATTACHMENT",
+                visibility="PUBLIC",
+                body=_AGENT_ATTACHMENT_BODY,
+                body_sha256=hashlib.sha256(_AGENT_ATTACHMENT_BODY.encode()).hexdigest(),
+                client_idempotency_key=f"admin-attachment:{admin.id}:{key_hash}",
+                created_at=now,
+            )
+        )
+        db.execute(
+            support_attachments.insert().values(
+                id=str(uuid4()),
+                conversation_id=row["id"],
+                message_id=message_id,
+                asset_reference=asset_reference,
+                normalized_filename=filename,
+                content_type=stored.media_type,
+                byte_size=stored.byte_size,
+                sha256=stored.sanitized_sha256,
+                state="READY",
+                created_by=admin.id,
+                created_at=now,
+            )
+        )
+        db.execute(
+            support_idempotency_records.insert().values(
+                id=str(uuid4()),
+                scope=scope,
+                key_hash=key_hash,
+                resource_reference=_resource_value(asset_reference, payload_digest),
+                created_at=now,
+            )
+        )
+        db.execute(
+            update(support_conversations)
+            .where(support_conversations.c.id == row["id"])
+            .values(updated_at=now, version=support_conversations.c.version + 1)
+        )
+        _audit_agent_attachment(db, request, admin.id, row, asset_reference)
         db.commit()
     except Exception:
         db.rollback()
