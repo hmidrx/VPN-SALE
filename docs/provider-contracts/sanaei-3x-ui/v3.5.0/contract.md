@@ -1,6 +1,6 @@
 # Provider contract dossier
 
-Extraction date: 2026-07-18, re-verified for BOT-2A.1 on 2026-08-15. Official tagged source is authoritative; community wrappers, old wiki pages and different forks are non-authoritative.
+Extraction date: 2026-07-18, re-verified for BOT-2A.1 and BOT-2B.1 on 2026-08-15. Official tagged source is authoritative; community wrappers, old wiki pages and different forks are non-authoritative.
 
 ## Compatibility target
 
@@ -10,13 +10,13 @@ Tag: `v3.5.0`
 
 Exact release commit: `4e928a1ce0945a6e956aa63365034ec24d2b1387`
 
-The release commit and exact route/DTO below were re-verified directly against the official tagged source before enabling any production CREATE implementation.
+The release commit and exact routes/DTOs below were re-verified directly against the official tagged source before enabling production CREATE or activation execution.
 
-## Milestone 6-A2A / BOT-2A.1 write-contract layer
+## BOT-2A.1 / BOT-2B.1 write-contract layer
 
 The adapter defines provider-specific upstream DTO names, endpoint identifiers, method, authentication, content type, success/error conditions, atomicity, natural idempotency, side effects, read-after-write endpoint class, compensation strategy, sensitive fields and capability evidence in `panel_adapters.write_contracts`.
 
-BOT-2A.1 implements only the exact certified Sanaei CREATE operation. Other provider mutations remain fail-closed until separately reviewed/certified.
+BOT-2A.1 implements the exact certified Sanaei CREATE operation. BOT-2B.1 adds only the exact global-client UPDATE needed to activate an already-created identity. Customer connection rendering remains a platform Delivery Profile responsibility rather than a management-panel host responsibility. Other provider mutations remain fail-closed until separately reviewed/certified.
 
 ## Common safety semantics
 
@@ -27,6 +27,7 @@ BOT-2A.1 implements only the exact certified Sanaei CREATE operation. Other prov
 - HTTP 200 alone is never success; the response envelope and authoritative read-after-write postconditions are required.
 - Ambiguous timeouts require read-before-retry and may move operations to uncertain/manual review.
 - CREATE is not treated as naturally idempotent. A deterministic identity plus authoritative reconciliation is required before any retry or compensation.
+- Activation never starts the paid entitlement clock until provider state is verified and the platform can render a customer connection from an explicitly published Delivery Profile.
 
 ## Provider-specific evidence summary
 
@@ -42,17 +43,17 @@ Official source evidence at `4e928a1ce0945a6e956aa63365034ec24d2b1387`:
 - VLESS/VMess client `id` is the remote credential identity; BOT-2A.1 supplies the persisted deterministic UUID instead of allowing a retry to mint another UUID.
 - The JSON response uses the standard `success` envelope; HTTP 200 by itself is not authoritative success.
 
-Certified CREATE request shape:
+BOT-2A.1 deliberately creates the provider identity disabled and without a paid expiry clock:
 
 ```json
 {
   "client": {
     "id": "<persisted deterministic UUID>",
     "email": "<provider-safe deterministic label>",
-    "enable": true,
-    "totalGB": 0,
+    "enable": false,
+    "totalGB": "<purchased traffic bytes>",
     "expiryTime": 0,
-    "limitIp": 0,
+    "limitIp": "<purchased device limit>",
     "tgId": 0,
     "subId": "<stable non-secret idempotency-derived value>",
     "comment": "<safe remark>"
@@ -65,12 +66,44 @@ The production executor requires an explicit configured numeric inbound ID and n
 
 Authentication uses the panel session cookie. Raw credentials/cookies are never included in logs, dry-run plans, provider results or customer responses.
 
+### Sanaei v3.5.0 activation UPDATE
+
+The official tagged controller registers:
+
+- `GET /panel/api/clients/get/:email`
+- `POST /panel/api/clients/update/:email`
+- `GET /panel/api/clients/links/:email`
+
+For `POST /panel/api/clients/update/:email`, `internal/web/controller/client.go` binds the JSON body directly to `model.Client` and passes it to `ClientService.UpdateByEmail`. BOT-2B.1 therefore first reads the authoritative global client record, preserves provider-owned fields, and changes only the activation fields required by the purchased entitlement:
+
+- deterministic `id` remains unchanged;
+- deterministic provider-safe `email` remains unchanged;
+- `enable` becomes `true`;
+- `totalGB` remains the purchased byte quota;
+- `limitIp` remains the purchased device limit;
+- `expiryTime` becomes the activation instant plus the full purchased duration.
+
+The activation executor requires a non-empty expected remote snapshot and the same exact provider version/digest certification as CREATE. It reads before mutation, verifies all desired activation fields after mutation, and treats response loss as ambiguous rather than as permission to blindly replay an update.
+
+A retry after an ambiguous/crash window computes a fresh activation instant. If remote activation already happened but the local ACTIVE/delivery-revision transaction did not commit, the retry may update expiry to the fresh activation instant plus the full purchased duration. This prevents crash time from consuming the customer's purchased duration before usable delivery.
+
+### Why provider-generated links are not customer-delivery authority
+
+The tagged controller implements `GET /panel/api/clients/links/:email` through `InboundService.GetAllClientLinks`. The tagged service receives the current web request host while generating links. That proves the route exists, but it also means a management-panel hostname can influence generated customer links.
+
+BOT-2B.1 therefore does not use this route as the source of the customer's public VPN endpoint. The platform requires an active published Delivery Profile assignment for the exact allocation target before provider activation can start. Public address, port, transport, TLS/REALITY settings and renderer compatibility come from that reviewed platform profile.
+
+Only the deterministic remote identity from the verified provider attachment is combined with the published Delivery Profile. The final URI is rendered on demand for the authenticated owner; it is not persisted in a delivery revision. The revision stores only safe profile/attachment references, renderer version and a credential fingerprint.
+
 ### Sanaei read/reconciliation evidence
 
 - Version detection: `/panel/api/server/status`.
 - Authoritative inventory: `/panel/api/inbounds/list` plus the certified client/inbound parser.
-- Reconciliation matches the persisted remote client identity first and the deterministic provider-safe label as a secondary recovery key.
+- Authoritative activation record: `/panel/api/clients/get/:email`.
+- Provider link helper exists at `/panel/api/clients/links/:email`, but is not trusted as platform public-endpoint authority.
+- CREATE reconciliation matches the persisted remote client identity first and the deterministic provider-safe label as a secondary recovery key.
 - A lost CREATE response is never blindly replayed: inventory is read before another CREATE is attempted.
+- A lost activation response is reconciled through the exact global-client read before another state-changing update is accepted as necessary.
 
 ### Alireza X-UI v1.11.3
 
