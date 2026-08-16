@@ -6,14 +6,17 @@ import {
   addSupportInternalNote,
   changeSupportStatus,
   claimSupportConversation,
+  downloadSupportAttachment,
   getInternalNotes,
   getSupportConversation,
+  listSupportAttachments,
   listSupportConversations,
   replySupportConversation,
   supportIdempotencyKey,
 } from "./api";
 import styles from "./SupportConsole.module.css";
 import type {
+  SupportAttachment,
   SupportConversationDetail,
   SupportConversationSummary,
   SupportMessage,
@@ -69,6 +72,11 @@ function senderLabel(message: SupportMessage): string {
   return message.sender_type === "CUSTOMER" ? "مشتری" : "پشتیبانی";
 }
 
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value.toLocaleString("fa-IR")} بایت`;
+  return `${(value / 1024).toLocaleString("fa-IR", { maximumFractionDigits: 1 })} کیلوبایت`;
+}
+
 function mergeMessages(older: SupportMessage[], newer: SupportMessage[]): SupportMessage[] {
   const bySequence = new Map<number, SupportMessage>();
   for (const message of [...older, ...newer]) bySequence.set(message.sequence, message);
@@ -88,6 +96,7 @@ export function SupportConsole(): React.ReactElement {
   const [inboxNextCursor, setInboxNextCursor] = useState<string | null>(null);
   const [selectedReference, setSelectedReference] = useState<string | null>(null);
   const [detail, setDetail] = useState<SupportConversationDetail | null>(null);
+  const [attachments, setAttachments] = useState<SupportAttachment[]>([]);
   const [notes, setNotes] = useState<SupportMessage[]>([]);
   const [notesNextCursor, setNotesNextCursor] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<SupportStatus | "">("");
@@ -138,6 +147,12 @@ export function SupportConsole(): React.ReactElement {
       const available = legalTransitions[conversation.status];
       if (available.length > 0) setTargetStatus(available[0]);
       try {
+        const attachmentPage = await listSupportAttachments(reference);
+        setAttachments(attachmentPage.items);
+      } catch {
+        setAttachments([]);
+      }
+      try {
         const internal = await getInternalNotes(reference);
         setNotes(internal.items);
         setNotesNextCursor(internal.next_cursor);
@@ -147,6 +162,7 @@ export function SupportConsole(): React.ReactElement {
       }
     } catch (cause) {
       setDetail(null);
+      setAttachments([]);
       setNotes([]);
       setNotesNextCursor(null);
       setError(cause instanceof Error ? cause.message : "دریافت تیکت انجام نشد.");
@@ -154,6 +170,15 @@ export function SupportConsole(): React.ReactElement {
   }, []);
 
   const visibleItems = useMemo(() => items, [items]);
+  const attachmentsBySequence = useMemo(() => {
+    const grouped = new Map<number, SupportAttachment[]>();
+    for (const attachment of attachments) {
+      const current = grouped.get(attachment.message_sequence) ?? [];
+      current.push(attachment);
+      grouped.set(attachment.message_sequence, current);
+    }
+    return grouped;
+  }, [attachments]);
   const allowedTargetStatuses = detail ? legalTransitions[detail.status] : [];
   const replyAllowed = detail ? !replyBlockedStatuses.has(detail.status) : false;
   const noteAllowed = detail?.status !== "ARCHIVED";
@@ -163,10 +188,7 @@ export function SupportConsole(): React.ReactElement {
     setLoadingMore("inbox");
     setError(null);
     try {
-      const result = await listSupportConversations(
-        statusFilter || undefined,
-        inboxNextCursor,
-      );
+      const result = await listSupportConversations(statusFilter || undefined, inboxNextCursor);
       setItems((current) => appendConversations(current, result.items));
       setInboxNextCursor(result.next_cursor);
     } catch (cause) {
@@ -216,6 +238,26 @@ export function SupportConsole(): React.ReactElement {
     }
   }
 
+  async function downloadAttachment(attachment: SupportAttachment): Promise<void> {
+    if (!detail || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const blob = await downloadSupportAttachment(detail.reference, attachment.asset_reference);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = attachment.filename;
+      anchor.rel = "noopener";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "دریافت تصویر پیوست انجام نشد.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function afterMutation(next: SupportConversationDetail): Promise<void> {
     setDetail(next);
     setSelectedReference(next.reference);
@@ -244,12 +286,7 @@ export function SupportConsole(): React.ReactElement {
     setError(null);
     const body = replyBody.trim();
     try {
-      const next = await replySupportConversation(
-        detail.reference,
-        body,
-        detail.version,
-        replyKey,
-      );
+      const next = await replySupportConversation(detail.reference, body, detail.version, replyKey);
       setReplyBody("");
       setReplyKey(supportIdempotencyKey());
       await afterMutation(next);
@@ -267,12 +304,7 @@ export function SupportConsole(): React.ReactElement {
     setError(null);
     const body = noteBody.trim();
     try {
-      await addSupportInternalNote(
-        detail.reference,
-        body,
-        detail.version,
-        noteKey,
-      );
+      await addSupportInternalNote(detail.reference, body, detail.version, noteKey);
       setNoteBody("");
       setNoteKey(supportIdempotencyKey());
       await openTicket(detail.reference, true);
@@ -318,7 +350,7 @@ export function SupportConsole(): React.ReactElement {
       <header className="support-runtime-header">
         <div>
           <h1>کنسول پشتیبانی</h1>
-          <p>Inbox واقعی تیکت‌های مشتری با claim، پاسخ عمومی، یادداشت داخلی و تاریخچه صفحه‌بندی‌شده.</p>
+          <p>Inbox واقعی تیکت‌های مشتری با claim، پاسخ عمومی، تصویر پیوست، یادداشت داخلی و تاریخچه صفحه‌بندی‌شده.</p>
         </div>
         <button type="button" onClick={() => void refreshInbox()} disabled={loading || busy}>
           {loading ? "در حال دریافت…" : "تازه‌سازی"}
@@ -417,6 +449,16 @@ export function SupportConsole(): React.ReactElement {
                       <span>#{message.sequence.toLocaleString("fa-IR")} · {faDate(message.created_at)}</span>
                     </header>
                     <p>{message.body}</p>
+                    {(attachmentsBySequence.get(message.sequence) ?? []).map((attachment) => (
+                      <button
+                        type="button"
+                        key={attachment.asset_reference}
+                        onClick={() => void downloadAttachment(attachment)}
+                        disabled={busy}
+                      >
+                        📎 دانلود تصویر · {formatBytes(attachment.byte_size)}
+                      </button>
+                    ))}
                   </article>
                 ))}
               </div>

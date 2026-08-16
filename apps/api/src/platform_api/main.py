@@ -57,6 +57,8 @@ from .services import allocation_router as admin_allocation_router
 from .services import customer_router as customer_service_router
 from .services import reconciliation_router as admin_service_reconciliation_router
 from .support_admin_runtime import router as admin_support_runtime_router
+from .support_attachments_runtime import admin_router as admin_support_attachment_router
+from .support_attachments_runtime import telegram_router as telegram_support_attachment_router
 from .support_pagination_runtime import admin_router as admin_support_pagination_router
 from .support_pagination_runtime import telegram_router as telegram_support_pagination_router
 from .support_sla_admin import router as admin_support_sla_router
@@ -177,6 +179,7 @@ def create_app(settings: Settings) -> FastAPI:
         admin_configuration_router,
         admin_support_runtime_router,
         admin_support_pagination_router,
+        admin_support_attachment_router,
         admin_support_sla_router,
         knowledge_router,
         admin_knowledge_router,
@@ -213,6 +216,7 @@ def create_app(settings: Settings) -> FastAPI:
         telegram_account_internal_router,
         telegram_support_internal_router,
         telegram_support_pagination_router,
+        telegram_support_attachment_router,
         telegram_support_csat_internal_router,
     ]
     for api_router in routers:

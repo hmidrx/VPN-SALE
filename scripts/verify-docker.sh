@@ -64,6 +64,28 @@ docker compose run --rm --no-deps --user 0:0 \
 [[ "$(stat -c %u:%g:%a "$secret_file")" == "0:$api_gid:640" ]]
 log "Start core stack"
 docker compose up -d postgres redis api reverse-proxy
+log "Verify persistent private media mount"
+api_container="$(docker compose ps -q api)"
+private_mount="$(docker inspect "$api_container" --format '{{range .Mounts}}{{if eq .Destination "/var/lib/vpnsale/private"}}{{.Type}}:{{.Name}}{{end}}{{end}}')"
+[[ "$private_mount" == volume:* ]]
+docker compose exec -T api python - <<'PY'
+from pathlib import Path
+import os
+import stat
+
+root = Path("/var/lib/vpnsale/private")
+for name in ("manual-topups", "support"):
+    directory = root / name
+    assert directory.is_dir()
+    assert directory.stat().st_uid == os.getuid()
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+    probe = directory / ".write-probe"
+    probe.write_bytes(b"private-media-persistence-probe")
+    probe.chmod(0o600)
+    assert stat.S_IMODE(probe.stat().st_mode) == 0o600
+    probe.unlink()
+print("PRIVATE_MEDIA_VOLUME_WRITABLE")
+PY
 log "Verify private Telegram credential mount"
 docker compose exec -T api python - <<'PY'
 from pathlib import Path

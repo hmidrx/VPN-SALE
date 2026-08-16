@@ -21,6 +21,15 @@ export type SupportMessage = {
   created_at: string;
 };
 
+export type SupportAttachment = {
+  asset_reference: string;
+  message_sequence: number;
+  filename: string;
+  content_type: "image/jpeg" | "image/png" | "image/webp";
+  byte_size: number;
+  created_at: string;
+};
+
 export type SupportConversationSummary = {
   reference: string;
   subject: string;

@@ -17,6 +17,7 @@ from telegram_bot.portal import CustomerContext
 
 _TICKET_REFERENCE = re.compile(r"^SUP-[0-9a-f]{24}$")
 _MAX_CURSOR_LENGTH = 1024
+_ALLOWED_SUPPORT_IMAGE_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 
 
 class SupportOutcomeUnknown(PrivateApiUnavailable):
@@ -81,6 +82,14 @@ class NativeSupportPortal(Protocol):
         context: CustomerContext,
         reference: str,
         message: str,
+        idempotency_key: str,
+    ) -> SupportTicket: ...
+    def upload_support_attachment(
+        self,
+        context: CustomerContext,
+        reference: str,
+        content: bytes,
+        content_type: str,
         idempotency_key: str,
     ) -> SupportTicket: ...
     def support_csat_state(self, context: CustomerContext, reference: str) -> SupportCsatState: ...
@@ -253,8 +262,6 @@ class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeS
         except AuthoritativePrivateApiError:
             raise
         except PrivateApiUnavailable:
-            # The backend mutation is idempotent. Replay once with exactly the same key/body;
-            # if transport is still ambiguous, the caller must reconcile through a GET.
             try:
                 data = self._request(method, path, telegram_id, body, idempotency_key)
             except AuthoritativePrivateApiError:
@@ -294,6 +301,52 @@ class SupportPrivatePlatformClient(AccountSecurityPrivatePlatformClient, NativeS
             {"message": message},
             idempotency_key,
         )
+
+    def upload_support_attachment(
+        self,
+        context: CustomerContext,
+        reference: str,
+        content: bytes,
+        content_type: str,
+        idempotency_key: str,
+    ) -> SupportTicket:
+        if (
+            _TICKET_REFERENCE.fullmatch(reference) is None
+            or content_type not in _ALLOWED_SUPPORT_IMAGE_TYPES
+            or not content
+            or len(content) > 5 * 1024 * 1024
+        ):
+            raise PrivateApiUnavailable("تصویر پشتیبانی معتبر نیست.")
+        path = f"/support/tickets/{reference}/attachments"
+        try:
+            self._request(
+                "POST",
+                path,
+                context.telegram_user_id,
+                content,
+                idempotency_key,
+                content_type,
+            )
+        except AuthoritativePrivateApiError:
+            raise
+        except PrivateApiUnavailable:
+            try:
+                self._request(
+                    "POST",
+                    path,
+                    context.telegram_user_id,
+                    content,
+                    idempotency_key,
+                    content_type,
+                )
+            except AuthoritativePrivateApiError:
+                raise
+            except PrivateApiUnavailable as exc:
+                raise SupportOutcomeUnknown("نتیجه ارسال تصویر هنوز مشخص نیست.") from exc
+        ticket = self.support_ticket(context, reference)
+        if ticket is None:
+            raise PrivateApiUnavailable("تیکت پشتیبانی پس از ارسال تصویر پیدا نشد.")
+        return ticket
 
     def submit_support_csat(
         self,

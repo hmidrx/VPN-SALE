@@ -24,8 +24,10 @@ services:
       VPN_SALE_FAKE_CUSTOMER_AUTH_ENABLED: "false"
       VPN_SALE_PAYMENT_FAKE_SUCCESS_PUBLIC_ENABLED: "false"
       VPN_SALE_MANUAL_TOPUP_PRIVATE_UPLOAD_ROOT: /var/lib/vpnsale/private/manual-topups
+      VPN_SALE_SUPPORT_PRIVATE_UPLOAD_ROOT: /var/lib/vpnsale/private/support
     volumes:
       - test_server_manual_topup_receipts:/var/lib/vpnsale/private/manual-topups
+      - test_server_support_attachments:/var/lib/vpnsale/private/support
     ports: !override
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -121,3 +123,4 @@ volumes:
   test_server_postgres_data:
   test_server_redis_data:
   test_server_manual_topup_receipts:
+  test_server_support_attachments:

@@ -91,6 +91,22 @@ support_messages = sa.Table(
     sa.Column("redacted_at", sa.DateTime(timezone=True)),
 )
 
+support_attachments = sa.Table(
+    "support_attachments",
+    metadata,
+    sa.Column("id", uuid, primary_key=True),
+    sa.Column("conversation_id", uuid, nullable=False),
+    sa.Column("message_id", uuid),
+    sa.Column("asset_reference", sa.String(64), nullable=False),
+    sa.Column("normalized_filename", sa.String(180), nullable=False),
+    sa.Column("content_type", sa.String(100), nullable=False),
+    sa.Column("byte_size", sa.Integer(), nullable=False),
+    sa.Column("sha256", sa.String(64), nullable=False),
+    sa.Column("state", sa.String(24), nullable=False),
+    sa.Column("created_by", uuid, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+)
+
 support_status_history = sa.Table(
     "support_status_history",
     metadata,
