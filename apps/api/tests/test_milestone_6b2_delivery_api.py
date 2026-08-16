@@ -4,8 +4,10 @@ from fastapi.testclient import TestClient
 
 from platform_api.config import Settings
 from platform_api.main import app, create_app
-from platform_api.telegram_delivery_internal import router as telegram_delivery_router
-from platform_api.telegram_delivery_internal import subscription_urls
+from platform_api.telegram_delivery_internal import (
+    router as telegram_delivery_router,
+    subscription_urls,
+)
 
 
 TELEGRAM_DELIVERY_PATHS = {
