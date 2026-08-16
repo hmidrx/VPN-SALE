@@ -90,9 +90,7 @@ def _cleanup(db: Session, user_id: str, admin_id: str, conversation_id: str) -> 
         )
     )
     db.execute(
-        delete(support_assignments).where(
-            support_assignments.c.conversation_id == conversation_id
-        )
+        delete(support_assignments).where(support_assignments.c.conversation_id == conversation_id)
     )
     db.execute(
         delete(support_status_history).where(
@@ -102,9 +100,7 @@ def _cleanup(db: Session, user_id: str, admin_id: str, conversation_id: str) -> 
     db.execute(
         delete(support_messages).where(support_messages.c.conversation_id == conversation_id)
     )
-    db.execute(
-        delete(support_conversations).where(support_conversations.c.id == conversation_id)
-    )
+    db.execute(delete(support_conversations).where(support_conversations.c.id == conversation_id))
     db.execute(
         delete(support_idempotency_records).where(
             support_idempotency_records.c.scope == f"tg-ticket:{user_id}"
