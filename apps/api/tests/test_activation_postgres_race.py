@@ -32,6 +32,7 @@ ORDER_ITEM_ID = "44444444-4444-4444-8444-444444444444"
 CUSTOMER_ID = "55555555-5555-4555-8555-555555555555"
 FULFILLMENT_ID = "66666666-6666-4666-8666-666666666666"
 REMOTE_IDENTITY = "77777777-7777-4777-8777-777777777777"
+STALE_PROFILE_VERSION_ID = "88888888-8888-4888-8888-888888888888"
 
 
 class CountingActivator:
@@ -60,6 +61,22 @@ class CountingActivator:
             PROFILE_VERSION_ID,
             fingerprint,
         )
+
+
+class SequenceActivator:
+    def __init__(self, results: list[ActivationResult]) -> None:
+        self._results = results
+        self.calls = 0
+
+    def activate(
+        self,
+        request: ServiceActivationRequestModel,
+        service: ServiceModel,
+        attachment: ServiceAttachmentModel,
+    ) -> ActivationResult:
+        del request, service, attachment
+        self.calls += 1
+        return self._results.pop(0)
 
 
 def _postgres_url() -> str:
@@ -473,5 +490,86 @@ def test_two_postgres_activation_workers_converge_to_one_active_revision(
         assert first.run_once() == 0
         assert second.run_once() == 0
         assert activator.calls == 1
+    finally:
+        _drop_schema(admin_engine, schema)
+
+
+def test_delivery_drift_retries_without_consuming_purchased_duration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admin_engine, factory, schema = _create_schema()
+    try:
+        _seed(factory)
+        monkeypatch.setattr(service_activation, "MAX_BATCH", 1)
+        fingerprint = hashlib.sha256(REMOTE_IDENTITY.encode()).hexdigest()
+        first_activation_at = datetime.now(UTC)
+        delivered_activation_at = first_activation_at + timedelta(hours=2)
+        activator = SequenceActivator(
+            [
+                ActivationResult(
+                    "SUCCESS",
+                    "AUTHORITATIVE_ACTIVATION_MATCH",
+                    first_activation_at,
+                    first_activation_at + timedelta(days=30),
+                    STALE_PROFILE_VERSION_ID,
+                    fingerprint,
+                ),
+                ActivationResult(
+                    "SUCCESS",
+                    "AUTHORITATIVE_ACTIVATION_MATCH",
+                    delivered_activation_at,
+                    delivered_activation_at + timedelta(days=30),
+                    PROFILE_VERSION_ID,
+                    fingerprint,
+                ),
+            ]
+        )
+        worker = ServiceActivationWorker(factory, activator, "activation-drift-worker")
+
+        assert worker.run_once() == 1
+        assert activator.calls == 1
+
+        with factory() as db:
+            request = db.scalar(select(ServiceActivationRequestModel))
+            service = db.get(ServiceModel, SERVICE_ID)
+            attachment = db.get(ServiceAttachmentModel, ATTACHMENT_ID)
+            clock = db.get(FulfillmentEntitlementClockModel, FULFILLMENT_ID)
+            assert request is not None
+            assert request.status == "RETRY_PENDING"
+            assert request.failure_category == "DELIVERY_PRECONDITION_DRIFT"
+            assert request.result_code == "DELIVERY_PRECONDITION_CHANGED"
+            assert request.attempt_count == 1
+            assert service is not None
+            assert service.lifecycle == "PENDING_ACTIVATION"
+            assert service.starts_at is None
+            assert service.activated_at is None
+            assert service.expires_at is None
+            assert attachment is not None
+            assert attachment.status == "PROVISIONED"
+            assert attachment.verification_status == "PENDING_DELIVERY"
+            assert clock is None
+            assert db.scalar(select(func.count()).select_from(DeliveryRevisionModel)) == 0
+            request.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
+            db.commit()
+
+        assert worker.run_once() == 1
+        assert activator.calls == 2
+
+        with factory() as db:
+            request = db.scalar(select(ServiceActivationRequestModel))
+            service = db.get(ServiceModel, SERVICE_ID)
+            clock = db.get(FulfillmentEntitlementClockModel, FULFILLMENT_ID)
+            assert request is not None
+            assert request.status == "SUCCEEDED"
+            assert request.attempt_count == 2
+            assert service is not None
+            assert service.lifecycle == "ACTIVE"
+            assert service.starts_at == delivered_activation_at
+            assert service.activated_at == delivered_activation_at
+            assert service.expires_at == delivered_activation_at + timedelta(days=30)
+            assert clock is not None
+            assert clock.starts_at == delivered_activation_at
+            assert clock.expires_at == delivered_activation_at + timedelta(days=30)
+            assert db.scalar(select(func.count()).select_from(DeliveryRevisionModel)) == 1
     finally:
         _drop_schema(admin_engine, schema)
