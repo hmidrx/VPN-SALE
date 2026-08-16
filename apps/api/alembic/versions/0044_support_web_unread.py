@@ -9,7 +9,10 @@ down_revision: str = "0043_customer_web_support"
 branch_labels = None
 depends_on = None
 
-_BASELINE_ID = "md5('web-unread-baseline:' || message.id::text || ':' || conversation.requester_user_id::text)::uuid"
+_BASELINE_ID = (
+    "md5('web-unread-baseline:' || message.id::text || ':' || "
+    "conversation.requester_user_id::text)::uuid"
+)
 
 
 def upgrade() -> None:
