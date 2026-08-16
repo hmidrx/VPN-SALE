@@ -51,7 +51,9 @@ def _identity(db: Session) -> tuple[str, int]:
 
 def _cleanup(db: Session, user_id: str, conversation_id: str) -> None:
     db.execute(
-        delete(support_notifications).where(support_notifications.c.conversation_id == conversation_id)
+        delete(support_notifications).where(
+            support_notifications.c.conversation_id == conversation_id
+        )
     )
     db.execute(
         delete(support_sla_escalations).where(
@@ -63,7 +65,9 @@ def _cleanup(db: Session, user_id: str, conversation_id: str) -> None:
             support_reply_notification_outbox.c.conversation_id == conversation_id
         )
     )
-    db.execute(delete(support_messages).where(support_messages.c.conversation_id == conversation_id))
+    db.execute(
+        delete(support_messages).where(support_messages.c.conversation_id == conversation_id)
+    )
     db.execute(delete(support_conversations).where(support_conversations.c.id == conversation_id))
     db.execute(
         delete(support_idempotency_records).where(
