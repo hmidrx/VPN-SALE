@@ -44,6 +44,7 @@ class CallbackAction(StrEnum):
     SUPPORT_NEW = "sup_new"
     SUPPORT_OPEN = "sup_open"
     SUPPORT_REPLY = "sup_reply"
+    SUPPORT_ATTACHMENT = "sup_attach"
     SUPPORT_MESSAGES_OLDER = "sup_msg_old"
     SUPPORT_MESSAGES_NEWER = "sup_msg_new"
     SUPPORT_CSAT_RATE = "sup_rate"
