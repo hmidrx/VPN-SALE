@@ -240,6 +240,7 @@ def test_telegram_ticket_round_trips_through_durable_admin_inbox() -> None:
                     ).where(support_status_history.c.conversation_id == conversation_id)
                 ).all()
             ]
+            assert ("NEW", "ASSIGNED") in history
             assert ("ASSIGNED", "IN_PROGRESS") in history
         finally:
             if user_id and admin_id and conversation_id:
