@@ -12,9 +12,13 @@ import {
 } from "../components/customer-ui";
 import {
   createSupportTicket,
+  fetchSupportAttachmentBlob,
   getSupportTicket,
   listSupportTickets,
   replySupportTicket,
+  SupportApiError,
+  uploadSupportImage,
+  type SupportAttachment,
   type SupportTicket,
   type SupportTicketSummary,
 } from "./api";
@@ -46,6 +50,43 @@ function faDate(value: string): string {
   }
 }
 
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value.toLocaleString("fa-IR")} بایت`;
+  return `${(value / 1024).toLocaleString("fa-IR", { maximumFractionDigits: 1 })} کیلوبایت`;
+}
+
+function AttachmentPreview({ reference, attachment }: { reference: string; attachment: SupportAttachment }): React.ReactElement {
+  const [url, setUrl] = React.useState<string | null>(null);
+  const [failed, setFailed] = React.useState(false);
+
+  React.useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+    setUrl(null);
+    setFailed(false);
+    void fetchSupportAttachmentBlob(reference, attachment.asset_reference, controller.signal)
+      .then((blob) => {
+        if (controller.signal.aborted) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setFailed(true);
+      });
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [reference, attachment.asset_reference]);
+
+  if (failed) return <span className={styles.fileHint}>نمایش تصویر ممکن نشد.</span>;
+  if (!url) return <span className={styles.fileHint}>در حال دریافت تصویر…</span>;
+  return <a className={styles.attachmentCard} href={url} target="_blank" rel="noreferrer">
+    <img className={styles.attachmentImage} src={url} alt="تصویر پیوست پشتیبانی" />
+    <span>{formatBytes(attachment.byte_size)}</span>
+  </a>;
+}
+
 export function CustomerSupportHome(): React.ReactElement {
   const botUsername = loadCustomerConfig().botUsername;
   const [tickets, setTickets] = React.useState<SupportTicketSummary[]>([]);
@@ -54,6 +95,7 @@ export function CustomerSupportHome(): React.ReactElement {
   const [loading, setLoading] = React.useState(true);
   const [failed, setFailed] = React.useState(false);
   const [pending, setPending] = React.useState(false);
+  const [imagePending, setImagePending] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
 
@@ -133,6 +175,42 @@ export function CustomerSupportHome(): React.ReactElement {
     }
   }
 
+  async function uploadImage(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!detail || imagePending) return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const file = data.get("image");
+    if (!(file instanceof File) || file.size === 0) {
+      setNotice("ابتدا یک تصویر انتخاب کنید.");
+      return;
+    }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setNotice("فقط تصویر JPEG، PNG یا WebP قابل ارسال است.");
+      return;
+    }
+    setImagePending(true);
+    setNotice(null);
+    try {
+      await uploadSupportImage(detail.reference, file);
+      const refreshed = await getSupportTicket(detail.reference);
+      form.reset();
+      setDetail(refreshed);
+      setNotice("تصویر با موفقیت و به‌صورت امن ارسال شد.");
+      await loadTickets();
+    } catch (error) {
+      if (error instanceof SupportApiError && error.status === 413) {
+        setNotice("حجم تصویر بیشتر از حد مجاز است.");
+      } else if (error instanceof SupportApiError && error.status === 415) {
+        setNotice("فرمت این تصویر پشتیبانی نمی‌شود.");
+      } else {
+        setNotice("ارسال تصویر انجام نشد. دوباره تلاش کنید.");
+      }
+    } finally {
+      setImagePending(false);
+    }
+  }
+
   return <PageShell labelledBy="page-title">
     <PageHeader
       title="پشتیبانی"
@@ -184,6 +262,7 @@ export function CustomerSupportHome(): React.ReactElement {
               return <div className={`${styles.message} ${customer ? styles.customer : styles.agent}`} key={item.sequence}>
                 <strong>{customer ? "شما" : "پشتیبانی"}</strong>
                 <div>{item.body}</div>
+                {item.attachments.map((attachment) => <AttachmentPreview key={attachment.asset_reference} reference={detail.reference} attachment={attachment} />)}
                 <small>{faDate(item.created_at)}</small>
               </div>;
             })}
@@ -193,6 +272,12 @@ export function CustomerSupportHome(): React.ReactElement {
               <label htmlFor="support-reply">پاسخ شما</label>
               <textarea id="support-reply" name="message" maxLength={4000} required />
               <button className="ui-button" type="submit" disabled={pending}>{pending ? "در حال ارسال…" : "ارسال پاسخ"}</button>
+            </form>
+            <form className={styles.imageForm} onSubmit={(event) => void uploadImage(event)}>
+              <label htmlFor="support-image">پیوست تصویر</label>
+              <input id="support-image" name="image" type="file" accept="image/jpeg,image/png,image/webp" required />
+              <span className={styles.fileHint}>JPEG، PNG یا WebP؛ فایل قبل از ذخیره‌سازی پاک‌سازی و نرمال می‌شود.</span>
+              <button type="submit" disabled={imagePending}>{imagePending ? "در حال ارسال تصویر…" : "ارسال تصویر"}</button>
             </form>
           </PremiumCard> : null}
         </>}
