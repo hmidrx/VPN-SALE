@@ -16,9 +16,9 @@ from vpnsale_domain.delivery import (
     DeliveryErrorCode,
     DeliveryOutputFormat,
     DeliveryProfileStatus,
+    DeliveryProtocol,
     DeliveryResolvedConnection,
     DeliverySubscriptionToken,
-    DeliveryProtocol,
     hash_token,
     issue_subscription_token,
     render_base64_links,
@@ -138,6 +138,11 @@ def active_revision_connection(db: Session, service: ServiceModel) -> DeliveryRe
             "delivery revision references unavailable state",
         )
     profile = delivery_profile_from_model(profile_row, require_published=False)
+    if profile.status not in {DeliveryProfileStatus.PUBLISHED, DeliveryProfileStatus.SUPERSEDED}:
+        raise DeliveryError(
+            DeliveryErrorCode.DELIVERY_REVISION_STALE,
+            "delivery revision profile is no longer renderable",
+        )
     remote_identity = attachment.remote_identity_reference
     if not remote_identity:
         raise DeliveryError(
@@ -303,7 +308,11 @@ def rotate_service_subscription(
     service = _lock_service(db, service_id)
     active_revision_connection(db, service)
     subscription = _subscription_for_update(db, service.id)
-    if subscription is None or subscription.status != "ACTIVE" or not subscription.active_token_hash:
+    if (
+        subscription is None
+        or subscription.status != "ACTIVE"
+        or not subscription.active_token_hash
+    ):
         raise DeliveryError(DeliveryErrorCode.SUBSCRIPTION_NOT_FOUND, "subscription unavailable")
     rotating = db.scalar(
         select(DeliverySubscriptionTokenModel)
