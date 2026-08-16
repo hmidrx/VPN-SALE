@@ -47,7 +47,9 @@ def _phase(now: datetime, deadline: datetime, duration_minutes: int) -> str | No
     return None
 
 
-def _latest_public_sender_at(db: Session, conversation_id: str, sender_type: str) -> datetime | None:
+def _latest_public_sender_at(
+    db: Session, conversation_id: str, sender_type: str
+) -> datetime | None:
     return db.scalar(
         select(func.max(support_messages.c.created_at)).where(
             support_messages.c.conversation_id == conversation_id,
