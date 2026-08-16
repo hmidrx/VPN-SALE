@@ -61,6 +61,7 @@ from .support_attachments_runtime import admin_router as admin_support_attachmen
 from .support_attachments_runtime import telegram_router as telegram_support_attachment_router
 from .support_pagination_runtime import admin_router as admin_support_pagination_router
 from .support_pagination_runtime import telegram_router as telegram_support_pagination_router
+from .support_productivity_runtime import router as admin_support_productivity_router
 from .support_sla_admin import router as admin_support_sla_router
 from .telegram_account_internal import router as telegram_account_internal_router
 from .telegram_delivery_internal import router as telegram_delivery_internal_router
@@ -181,6 +182,7 @@ def create_app(settings: Settings) -> FastAPI:
         admin_support_pagination_router,
         admin_support_attachment_router,
         admin_support_sla_router,
+        admin_support_productivity_router,
         knowledge_router,
         admin_knowledge_router,
         status_router,
