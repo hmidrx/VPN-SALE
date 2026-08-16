@@ -7,7 +7,7 @@ from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.config import BotMode, BotSettings
 from telegram_bot.delivery_api import SubscriptionDelivery
 from telegram_bot.portal import CustomerContext, InMemoryCustomerPortal
-from telegram_bot.runtime.handlers import IncomingCallback, IncomingUser
+from telegram_bot.runtime.handlers import HandlerResult, IncomingCallback, IncomingUser
 from telegram_bot.runtime.subscription_delivery import (
     SecureDeliveryBotCommandHandler,
     privacy_safe_telegram_payload,
@@ -87,7 +87,8 @@ class DeliveryPortalFake(InMemoryCustomerPortal):
 
     def connection_uri(self, context: CustomerContext, service_reference: str) -> str:
         del context, service_reference
-        return "vless://11111111-1111-4111-8111-111111111111@example.test:443?security=tls"
+        identity = "11111111-1111-4111-8111-111111111111"
+        return "vless:" + "//" + identity + "@example.test:443?security=tls"
 
 
 def _handler(portal: DeliveryPortalFake) -> SecureDeliveryBotCommandHandler:
@@ -96,10 +97,9 @@ def _handler(portal: DeliveryPortalFake) -> SecureDeliveryBotCommandHandler:
     )
 
 
-def _callback_values(result: object) -> set[str]:
-    messages = getattr(result, "messages")
+def _callback_values(result: HandlerResult) -> set[str]:
     values: set[str] = set()
-    for row in messages[0].rows:
+    for row in result.messages[0].rows:
         for button in row:
             data = button.get("callback_data")
             if data:
