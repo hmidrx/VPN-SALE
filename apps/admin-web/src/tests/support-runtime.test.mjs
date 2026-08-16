@@ -35,6 +35,18 @@ for (const value of [
   "SupportSlaInbox.module.css",
   "هشدارهای SLA",
   "<SupportSlaInbox />",
+  "/conversations-page",
+  "/paged",
+  "/internal-notes-page",
+  "next_cursor",
+  "messages_next_cursor",
+  "loadMoreInbox",
+  "loadOlderMessages",
+  "loadOlderNotes",
+  "نمایش تیکت‌های قدیمی‌تر",
+  "نمایش پیام‌های قدیمی‌تر",
+  "نمایش یادداشت‌های قدیمی‌تر",
+  "URLSearchParams",
 ]) {
   if (!combined.includes(value)) throw new Error(`missing ${value}`);
 }
@@ -45,6 +57,8 @@ for (const forbidden of [
   "sessionStorage.setItem",
   "requester_user_id",
   "assigned_agent_id",
+  "atob(",
+  "JSON.parse(cursor",
 ]) {
   if (combined.includes(forbidden)) throw new Error(`unsafe or internal ${forbidden}`);
 }
