@@ -461,7 +461,8 @@ async def upload_agent_support_attachment(
     raw = await _read_bounded(request, settings.support_max_attachment_bytes)
     payload_digest = _payload_digest(content_type, raw)
     key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
-    scope = f"admin-att:{reference}:{admin.id}"
+    scope_subject = hashlib.sha256(f"{reference}:{admin.id}".encode()).hexdigest()[:48]
+    scope = f"admin-att:{scope_subject}"
 
     # Do not hold a ticket row lock while the client is still streaming the upload.
     row = _conversation(db, reference, lock=True)
