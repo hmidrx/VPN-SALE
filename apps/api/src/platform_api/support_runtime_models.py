@@ -117,6 +117,18 @@ support_assignments = sa.Table(
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
 )
 
+support_csat = sa.Table(
+    "support_csat",
+    metadata,
+    sa.Column("id", uuid, primary_key=True),
+    sa.Column("conversation_id", uuid, nullable=False),
+    sa.Column("resolution_cycle", sa.Integer(), nullable=False),
+    sa.Column("score", sa.Integer(), nullable=False),
+    sa.Column("feedback", sa.String(800)),
+    sa.Column("channel", sa.String(40), nullable=False),
+    sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=False),
+)
+
 support_idempotency_records = sa.Table(
     "support_idempotency_records",
     metadata,
