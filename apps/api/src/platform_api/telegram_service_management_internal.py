@@ -247,9 +247,7 @@ def _quote_options(
     if minimum > maximum:
         return None
     suggestions = [
-        amount
-        for amount in candidates
-        if minimum <= amount <= maximum and amount % increment == 0
+        amount for amount in candidates if minimum <= amount <= maximum and amount % increment == 0
     ]
     if not suggestions:
         first = ((minimum + increment - 1) // increment) * increment
