@@ -51,6 +51,14 @@ def blocker_reason_for_status(status: str) -> str | None:
     return None
 
 
+def blocker_http_detail(blocker: ServiceOperationBlocker) -> str:
+    if blocker.reason_code == "SERVICE_OPERATION_REVIEW_REQUIRED":
+        return "service_operation_review_required"
+    if blocker.reason_code == "SERVICE_OPERATION_IN_PROGRESS":
+        return "service_operation_in_progress"
+    raise RuntimeError("blocking operation reason is not classified")
+
+
 def find_service_operation_blocker(
     db: Session,
     service_id: str,
