@@ -448,7 +448,9 @@ def confirm(
         request,
     )
     order = cast(dict[str, Any], confirmed["order"])
-    order_row = db.scalar(select(OrderModel).where(OrderModel.reference == order["order_reference"]))
+    order_row = db.scalar(
+        select(OrderModel).where(OrderModel.reference == order["order_reference"])
+    )
     if order_row is None:
         raise HTTPException(status_code=409, detail="purchase_reconciliation_unavailable")
     order_row.snapshot = {
