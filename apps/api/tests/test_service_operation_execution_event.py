@@ -63,7 +63,10 @@ def test_approved_paid_renewal_emits_the_same_ready_contract_as_direct_payment()
 
     _enqueue_paid_operation_ready(cast(Session, fake), operation, _service(), now)
 
-    assert operation.payment_id == "33333333-3333-3333-3333-333333333333"
+    # ServiceOperationModel.payment_id points to wallet_payments, while the direct
+    # service-operation anchor lives in service_operation_payments. Keep the legacy
+    # field untouched and carry the correct payment id only in the execution event.
+    assert operation.payment_id is None
     assert len(fake.added) == 1
     event = cast(TransactionalOutboxModel, fake.added[0])
     assert event.event_key == "service_operation.ready:11111111-1111-1111-1111-111111111111"
