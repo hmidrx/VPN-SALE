@@ -17,6 +17,7 @@ from platform_api.telegram_service_management_internal import (
     OperationQuoteRequest,
     _policy_domain,
     _price_rule_compatible,
+    _quote_options,
 )
 
 
@@ -99,3 +100,15 @@ def test_unit_price_rule_must_match_native_operation() -> None:
     assert _price_rule_compatible(ServiceOperationType.ADD_TRAFFIC, fixed_policy)
     assert _price_rule_compatible(ServiceOperationType.RENEW, fixed_policy)
     assert fixed_policy.price_rule is ServiceOperationPriceRule.FIXED_RIAL
+
+
+def test_quote_options_only_expose_policy_valid_amounts() -> None:
+    policy = _policy_domain(_policy_row())
+
+    assert _quote_options(ServiceOperationType.ADD_TRAFFIC, policy) == {
+        "unit": "GIB",
+        "minimum_amount": 1,
+        "maximum_amount": 100,
+        "increment": 5,
+        "suggested_amounts": [5, 10, 20, 50, 100],
+    }
