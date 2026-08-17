@@ -119,7 +119,11 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
             return self._operation_screen(user, locale, callback.value, operation_type)
 
         result = super()._route_callback(user, locale, callback, update_id)
-        if callback.action != CallbackAction.OPEN_SERVICE or not callback.value or not result.messages:
+        if (
+            callback.action != CallbackAction.OPEN_SERVICE
+            or not callback.value
+            or not result.messages
+        ):
             return result
         eligibility = self._eligibility(user, locale, callback.value)
         management_rows = self._management_rows(callback.value, eligibility)
