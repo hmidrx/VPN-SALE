@@ -97,12 +97,7 @@ class NativePurchasePrivatePlatformClient(SupportPrivatePlatformClient, NativePu
             raw_suggested = data.get("suggested", [])
         except (KeyError, TypeError, ValueError) as exc:
             raise PrivateApiUnavailable("گزینه‌های خرید قابل استفاده نیست.") from exc
-        if (
-            minimum <= 0
-            or maximum < minimum
-            or step <= 0
-            or not isinstance(raw_suggested, list)
-        ):
+        if minimum <= 0 or maximum < minimum or step <= 0 or not isinstance(raw_suggested, list):
             raise PrivateApiUnavailable("گزینه‌های خرید قابل استفاده نیست.")
         suggested: list[int] = []
         for item in cast(list[object], raw_suggested):
