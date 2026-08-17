@@ -88,9 +88,7 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
                 [
                     {
                         "text": "⏳ عملیات سرویس در حال انجام است",
-                        "callback_data": BotCallback(
-                            CallbackAction.OPEN_SERVICE, reference
-                        ).pack(),
+                        "callback_data": BotCallback(CallbackAction.OPEN_SERVICE, reference).pack(),
                     }
                 ]
             ]
