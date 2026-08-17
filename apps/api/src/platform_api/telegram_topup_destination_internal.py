@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """Private Telegram access to the customer-safe manual top-up destination snapshot."""
 
 from __future__ import annotations
