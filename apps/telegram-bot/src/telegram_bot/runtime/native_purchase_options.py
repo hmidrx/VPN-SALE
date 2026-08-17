@@ -61,7 +61,7 @@ def _partial(value: str | None) -> dict[str, int | str]:
     if not isinstance(decoded, dict):
         raise ValueError("invalid purchase state")
     result: dict[str, int | str] = {}
-    for key, item in decoded.items():
+    for key, item in cast(dict[object, object], decoded).items():
         if isinstance(key, str) and (
             (isinstance(item, int) and not isinstance(item, bool)) or isinstance(item, str)
         ):
