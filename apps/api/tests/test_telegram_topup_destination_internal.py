@@ -58,9 +58,7 @@ def encryptor(_settings: Settings) -> FakeEncryptor:
     return FakeEncryptor()
 
 
-def request_with_destination(
-    _db: object, _reference: str, _customer_id: str
-) -> SimpleNamespace:
+def request_with_destination(_db: object, _reference: str, _customer_id: str) -> SimpleNamespace:
     return SimpleNamespace(destination_version_id="dest-v1")
 
 
@@ -75,7 +73,9 @@ def test_owned_request_returns_only_customer_safe_formatted_destination(
 
     monkeypatch.setattr(destination_api, "_customer_id", customer_a)
     monkeypatch.setattr(destination_api, "customer_manual_topup_request", owned_request)
-    monkeypatch.setattr(destination_api, "customer_manual_topup_destination_settings", display_enabled)
+    monkeypatch.setattr(
+        destination_api, "customer_manual_topup_destination_settings", display_enabled
+    )
     monkeypatch.setattr(destination_api, "_encryptor", encryptor)
     response = Response()
 
@@ -134,7 +134,9 @@ def test_disabled_customer_display_returns_support_only_without_decryption(
 
     monkeypatch.setattr(destination_api, "_customer_id", customer_a)
     monkeypatch.setattr(destination_api, "customer_manual_topup_request", request_with_destination)
-    monkeypatch.setattr(destination_api, "customer_manual_topup_destination_settings", display_disabled)
+    monkeypatch.setattr(
+        destination_api, "customer_manual_topup_destination_settings", display_disabled
+    )
     monkeypatch.setattr(destination_api, "_encryptor", fail_encryptor)
 
     result = destination_api.manual_topup_destination(
