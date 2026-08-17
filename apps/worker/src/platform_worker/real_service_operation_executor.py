@@ -76,7 +76,7 @@ class DatabaseSanaeiServiceOperationExecutor:
             traffic = traffic_raw
         else:
             raise ValueError("service operation unsupported")
-        return traffic, expires_at, cast(int | None, device_limit)
+        return traffic, expires_at, device_limit
 
     def execute(
         self,
