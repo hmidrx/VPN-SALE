@@ -168,7 +168,7 @@ class ServiceOperationNotificationWorker:
                 )
                 .order_by(ServiceOperationModel.updated_at, ServiceOperationModel.id)
                 .limit(BATCH_SIZE)
-                .with_for_update(skip_locked=True, of=ServiceOperationModel)
+                .with_for_update(skip_locked=True)
             )
         )
         for operation in operations:
@@ -313,7 +313,9 @@ class ServiceOperationNotificationWorker:
                 return
 
             telegram = db.scalar(
-                select(TelegramAccountModel).where(TelegramAccountModel.user_id == target.customer_id)
+                select(TelegramAccountModel).where(
+                    TelegramAccountModel.user_id == target.customer_id
+                )
             )
             preference = db.scalar(
                 select(CustomerNotificationPreferenceModel).where(
