@@ -38,9 +38,7 @@ class NativeTopupPrivatePlatformClient(
         support_required = data.get("support_required")
         card = data.get("formatted_card_number")
         holder = data.get("card_holder_name")
-        if mode not in {"DIRECT_CARD", "SUPPORT_ONLY"} or not isinstance(
-            support_required, bool
-        ):
+        if mode not in {"DIRECT_CARD", "SUPPORT_ONLY"} or not isinstance(support_required, bool):
             raise ValueError("invalid manual top-up destination response")
         if card is not None and not isinstance(card, str):
             raise ValueError("invalid manual top-up destination response")
