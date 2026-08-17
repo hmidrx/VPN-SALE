@@ -161,7 +161,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install shell test tools
-        run: sudo apt-get update && sudo apt-get install -y shellcheck jq
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          command -v shellcheck >/dev/null 2>&1 || missing+=(shellcheck)
+          command -v jq >/dev/null 2>&1 || missing+=(jq)
+          if ((${#missing[@]})); then
+            timeout --signal=TERM 180s sudo -n env DEBIAN_FRONTEND=noninteractive \
+              apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+            timeout --signal=TERM 180s sudo -n env DEBIAN_FRONTEND=noninteractive \
+              apt-get -o Acquire::Retries=3 -o Dpkg::Use-Pty=0 install -y --no-install-recommends "${missing[@]}"
+          fi
+          shellcheck --version
+          jq --version
       - name: Shell syntax and ShellCheck
         run: |
           bash -n scripts/{bootstrap-test-server,install-test-server,run-test-server-install,verify-test-server,reset-disposable-test-server,test-server-installer-lib,test-server-compose-json,test-test-server-lifecycle,verify-test-server-images}.sh
