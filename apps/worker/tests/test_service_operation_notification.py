@@ -180,8 +180,7 @@ def test_rollout_migration_baselines_only_historical_terminal_rows() -> None:
     module_path = Path(service_operation_notification.__file__).resolve()
     root = module_path.parents[4]
     migration = (
-        root
-        / "apps/api/alembic/versions/0046_service_op_telegram_notifications.py"
+        root / "apps/api/alembic/versions/0046_service_op_telegram_notifications.py"
     ).read_text(encoding="utf-8")
 
     assert "'baseline', true" in migration
