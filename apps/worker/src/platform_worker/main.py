@@ -21,6 +21,7 @@ from .real_activator import DatabaseSanaeiActivator
 from .real_provisioner import DatabaseSanaeiProvisioner
 from .real_service_operation_executor import DatabaseSanaeiServiceOperationExecutor
 from .service_activation import DisabledActivator, ServiceActivationWorker
+from .service_expiry_notification import ServiceExpiryNotificationWorker
 from .service_operation_execution import (
     DisabledServiceOperationExecutor,
     ServiceOperationExecutionWorker,
@@ -159,6 +160,11 @@ def main() -> None:
     transport = BotApiTransport(token)
     manual_topup = ManualTopupDeliveryWorker(factory, transport, delivery_settings)
     support_reply = SupportReplyDeliveryWorker(factory, transport, support_delivery_settings)
+    service_expiry_notifications = ServiceExpiryNotificationWorker(
+        factory,
+        transport,
+        enabled,
+    )
     service_operation_notifications = ServiceOperationNotificationWorker(
         factory,
         transport,
@@ -207,6 +213,10 @@ def main() -> None:
             processed += service_operations.run_once()
         except Exception:
             print("service_operation_worker_cycle_failed", flush=True)
+        try:
+            processed += service_expiry_notifications.run_once()
+        except Exception:
+            print("service_expiry_notification_worker_cycle_failed", flush=True)
         try:
             processed += service_operation_notifications.run_once()
         except Exception:
