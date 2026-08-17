@@ -224,6 +224,64 @@ async def test_payment_captures_wallet_once_and_queues_one_outbox_event(
 
 
 @pytest.mark.asyncio
+async def test_paid_operation_replay_remains_stable_after_worker_advances_status(
+    payment_app: PaymentApp,
+) -> None:
+    app, factory = payment_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://private") as client:
+        first = await _pay(client)
+
+        with factory.begin() as db:
+            operation = db.get(ServiceOperationModel, OPERATION_ID)
+            assert operation is not None
+            operation.status = "SUCCEEDED"
+            operation.version += 1
+
+        replay = await _pay(client, _headers(key="post-worker-replay-key-003"))
+
+    assert first.status_code == replay.status_code == 200
+    assert replay.json()["payment_reference"] == first.json()["payment_reference"]
+    assert replay.json()["status"] == "QUEUED"
+    assert replay.json()["queued"] is True
+
+    with factory() as db:
+        assert db.scalar(select(func.count()).select_from(ServiceOperationPaymentModel)) == 1
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(JournalEntryModel)
+                .where(JournalEntryModel.operation_code == "SERVICE_OPERATION_WALLET_CAPTURE")
+            )
+            == 1
+        )
+        projection = db.scalar(select(WalletBalanceProjectionModel))
+        assert projection is not None
+        assert projection.posted_balance_rial == INITIAL_BALANCE - PRICE_RIAL
+
+
+@pytest.mark.asyncio
+async def test_ineligible_lifecycle_is_rejected_before_wallet_mutation(
+    payment_app: PaymentApp,
+) -> None:
+    app, factory = payment_app
+    with factory.begin() as db:
+        service = db.get(ServiceModel, SERVICE_ID)
+        assert service is not None
+        service.lifecycle = "CANCELLED"
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://private") as client:
+        response = await _pay(client)
+
+    assert response.status_code == 409
+    with factory() as db:
+        assert db.scalar(select(func.count()).select_from(ServiceOperationPaymentModel)) == 0
+        assert db.scalar(select(func.count()).select_from(JournalEntryModel)) == 0
+        assert db.scalar(select(func.count()).select_from(WalletReservationModel)) == 0
+        projection = db.scalar(select(WalletBalanceProjectionModel))
+        assert projection is not None and projection.posted_balance_rial == INITIAL_BALANCE
+
+
+@pytest.mark.asyncio
 async def test_stale_service_version_is_rejected_before_wallet_mutation(
     payment_app: PaymentApp,
 ) -> None:
