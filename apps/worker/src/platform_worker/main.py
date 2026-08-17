@@ -19,7 +19,12 @@ from .manual_topup_delivery import (
 from .order_fulfillment import DisabledProvisioner, OrderFulfillmentWorker
 from .real_activator import DatabaseSanaeiActivator
 from .real_provisioner import DatabaseSanaeiProvisioner
+from .real_service_operation_executor import DatabaseSanaeiServiceOperationExecutor
 from .service_activation import DisabledActivator, ServiceActivationWorker
+from .service_operation_execution import (
+    DisabledServiceOperationExecutor,
+    ServiceOperationExecutionWorker,
+)
 from .support_reply_delivery import SupportDeliverySettings, SupportReplyDeliveryWorker
 from .support_sla_escalation import SupportSlaEscalationWorker
 
@@ -39,6 +44,16 @@ def build_service_activator(
 ) -> DisabledActivator | DatabaseSanaeiActivator:
     return (
         DatabaseSanaeiActivator(factory, True) if provider_writes_enabled else DisabledActivator()
+    )
+
+
+def build_service_operation_executor(
+    factory: sessionmaker[Session], provider_writes_enabled: bool
+) -> DisabledServiceOperationExecutor | DatabaseSanaeiServiceOperationExecutor:
+    return (
+        DatabaseSanaeiServiceOperationExecutor(factory, True)
+        if provider_writes_enabled
+        else DisabledServiceOperationExecutor()
     )
 
 
@@ -129,6 +144,11 @@ def main() -> None:
         build_service_activator(factory, provider_writes_enabled),
         worker_id,
     )
+    service_operations = ServiceOperationExecutionWorker(
+        factory,
+        build_service_operation_executor(factory, provider_writes_enabled),
+        worker_id,
+    )
     while True:
         processed = 0
         try:
@@ -151,6 +171,10 @@ def main() -> None:
             processed += activation.run_once()
         except Exception:
             print("service_activation_worker_cycle_failed", flush=True)
+        try:
+            processed += service_operations.run_once()
+        except Exception:
+            print("service_operation_worker_cycle_failed", flush=True)
         time.sleep(1 if processed else 5)
 
 
