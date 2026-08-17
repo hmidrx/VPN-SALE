@@ -19,6 +19,8 @@ from telegram_bot.runtime.native_topup_destination import (
 from telegram_bot.service_management_api import (
     ServiceManagementPortal,
     ServiceOperationEligibility,
+    ServiceOperationQuote,
+    ServiceOperationQuoteOptions,
 )
 from telegram_bot.transport.polling import TelegramTransport
 
@@ -68,6 +70,37 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
             )
         return [buttons] if buttons else []
 
+    @staticmethod
+    def _amount_label(amount: int, options: ServiceOperationQuoteOptions) -> str:
+        return f"{amount} روز" if options.unit == "DAY" else f"{amount} گیگابایت"
+
+    @staticmethod
+    def _quote_action(operation_type: str) -> CallbackAction:
+        return (
+            CallbackAction.RENEW_QUOTE
+            if operation_type == "RENEW"
+            else CallbackAction.EXTRA_TRAFFIC_QUOTE
+        )
+
+    def _quote_rows(
+        self,
+        reference: str,
+        operation_type: str,
+        options: ServiceOperationQuoteOptions,
+    ) -> list[list[dict[str, str]]]:
+        buttons: list[dict[str, str]] = []
+        for amount in options.suggested_amounts:
+            try:
+                callback_data = BotCallback(
+                    self._quote_action(operation_type), f"{reference},{amount}"
+                ).pack()
+            except ValueError:
+                continue
+            buttons.append(
+                {"text": self._amount_label(amount, options), "callback_data": callback_data}
+            )
+        return [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
+
     def _operation_screen(
         self,
         user: IncomingUser,
@@ -88,14 +121,23 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
                 self.renderer.nav_rows(locale),
             )
         title = "🔄 تمدید سرویس" if operation_type == "RENEW" else "➕ خرید حجم اضافه"
-        if operation.requires_authoritative_quote:
+        options = operation.quote_options
+        if operation.requires_authoritative_quote and options is not None:
+            unit = "روز" if options.unit == "DAY" else "گیگابایت"
+            rows = self._quote_rows(reference, operation_type, options)
+            if not rows:
+                return self._callback_message(
+                    "گزینه معتبر برای صدور قیمت در حال حاضر در دسترس نیست.",
+                    self.renderer.nav_rows(locale),
+                )
             return self._callback_message(
                 f"{title}\n\n"
-                "سرویس شما برای این عملیات مجاز است. مبلغ نهایی باید از سیستم قیمت‌گذاری "
-                "مرکزی صادر و دوباره قبل از پرداخت تأیید شود.\n\n"
-                "اتصال پرداخت مستقیم این عملیات داخل ربات در مرحله بعد همین توسعه فعال می‌شود؛ "
-                "برای جلوگیری از مبلغ اشتباه، ربات قیمت را حدس نمی‌زند.",
+                f"مقدار موردنظر را انتخاب کنید. بازه مجاز: {options.minimum_amount:,} تا "
+                f"{options.maximum_amount:,} {unit}.\n"
+                f"گام مجاز: {options.increment:,} {unit}.\n\n"
+                "مبلغ بعد از انتخاب، مستقیم از قیمت‌گذاری مرکزی و به‌صورت موقت صادر می‌شود.",
                 [
+                    *rows,
                     [
                         {
                             "text": "◀️ بازگشت به سرویس",
@@ -107,7 +149,86 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
                     *self.renderer.nav_rows(locale),
                 ],
             )
-        return self._callback_message(title, self.renderer.nav_rows(locale))
+        return self._callback_message(
+            "قیمت معتبر این عملیات در حال حاضر قابل دریافت نیست.",
+            self.renderer.nav_rows(locale),
+        )
+
+    @staticmethod
+    def _quote_selection(value: str) -> tuple[str, int] | None:
+        reference, separator, raw_amount = value.rpartition(",")
+        if not separator or not reference or not raw_amount.isascii() or not raw_amount.isdigit():
+            return None
+        amount = int(raw_amount)
+        if amount <= 0:
+            return None
+        return reference, amount
+
+    @staticmethod
+    def _quote_idempotency_key(
+        user: IncomingUser, update_id: int, operation_type: str, amount: int
+    ) -> str:
+        return f"svcq:{user.telegram_user_id}:{update_id}:{operation_type}:{amount}"
+
+    def _quote_screen(
+        self,
+        user: IncomingUser,
+        locale: str,
+        reference: str,
+        operation_type: str,
+        amount: int,
+        update_id: int,
+    ) -> HandlerResult:
+        try:
+            quote = self.service_management.service_operation_quote(
+                self._portal_context(user, locale),
+                reference,
+                operation_type,
+                amount,
+                self._quote_idempotency_key(user, update_id, operation_type, amount),
+            )
+        except AuthoritativePrivateApiError:
+            return self._callback_message(
+                "قیمت این انتخاب دیگر معتبر نیست. گزینه‌های سرویس را دوباره باز کنید.",
+                self.renderer.nav_rows(locale),
+            )
+        except (PrivateApiUnavailable, AttributeError, ValueError):
+            return self._callback_message(
+                "صدور قیمت موقتاً در دسترس نیست. کمی بعد دوباره تلاش کنید.",
+                self.renderer.nav_rows(locale),
+            )
+        return self._render_quote(locale, reference, quote)
+
+    def _render_quote(
+        self, locale: str, reference: str, quote: ServiceOperationQuote
+    ) -> HandlerResult:
+        renewal = quote.operation_type == "RENEW"
+        title = "🔄 قیمت تمدید سرویس" if renewal else "➕ قیمت حجم اضافه"
+        quantity = f"{quote.amount:,} روز" if renewal else f"{quote.amount:,} گیگابایت"
+        back_action = CallbackAction.RENEW if renewal else CallbackAction.EXTRA_TRAFFIC
+        return self._callback_message(
+            f"{title}\n\n"
+            f"مقدار: {quantity}\n"
+            f"مبلغ نهایی: {quote.price_rial:,} ریال\n\n"
+            "این مبلغ از policy فعال سرور صادر شده و تا زمان پرداخت دوباره اعتبارسنجی می‌شود. "
+            "هیچ مبلغی از callback تلگرام پذیرفته نمی‌شود.\n\n"
+            "اتصال همین quote به پرداخت کیف پول، مرحله بعدی توسعه است.",
+            [
+                [
+                    {
+                        "text": "🔁 انتخاب مقدار دیگر",
+                        "callback_data": BotCallback(back_action, reference).pack(),
+                    }
+                ],
+                [
+                    {
+                        "text": "◀️ بازگشت به سرویس",
+                        "callback_data": BotCallback(CallbackAction.OPEN_SERVICE, reference).pack(),
+                    }
+                ],
+                *self.renderer.nav_rows(locale),
+            ],
+        )
 
     def _route_callback(
         self, user: IncomingUser, locale: str, callback: BotCallback, update_id: int
@@ -117,6 +238,16 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
                 return self._stale(locale)
             operation_type = "RENEW" if callback.action == CallbackAction.RENEW else "ADD_TRAFFIC"
             return self._operation_screen(user, locale, callback.value, operation_type)
+
+        if callback.action in {CallbackAction.RENEW_QUOTE, CallbackAction.EXTRA_TRAFFIC_QUOTE}:
+            selection = self._quote_selection(callback.value)
+            if selection is None:
+                return self._stale(locale)
+            reference, amount = selection
+            operation_type = (
+                "RENEW" if callback.action == CallbackAction.RENEW_QUOTE else "ADD_TRAFFIC"
+            )
+            return self._quote_screen(user, locale, reference, operation_type, amount, update_id)
 
         result = super()._route_callback(user, locale, callback, update_id)
         if (
