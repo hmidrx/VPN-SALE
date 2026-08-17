@@ -149,7 +149,9 @@ def panel() -> PanelInstance:
     )
 
 
-def command(*, traffic: int = BASE_TRAFFIC, expiry: datetime = BASE_EXPIRY) -> ProviderMutationCommand:
+def command(
+    *, traffic: int = BASE_TRAFFIC, expiry: datetime = BASE_EXPIRY
+) -> ProviderMutationCommand:
     contract = CERTIFIED_CONTRACTS[ProviderKind.SANAEI_3X_UI]
     inbound = RemoteIdentifier("1")
     return ProviderMutationCommand(
