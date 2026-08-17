@@ -81,7 +81,9 @@ def _settings() -> BotSettings:
     )
 
 
-def _callback(action: CallbackAction, update_id: int, value: str = "svc_opaque") -> IncomingCallback:
+def _callback(
+    action: CallbackAction, update_id: int, value: str = "svc_opaque"
+) -> IncomingCallback:
     user = IncomingUser(42, username="customer", first_name="Customer")
     return IncomingCallback(
         update_id,
@@ -123,9 +125,7 @@ def test_selecting_amount_requests_and_renders_authoritative_quote() -> None:
     assert "قیمت تمدید سرویس" in result.messages[0].text
     assert "30 روز" in result.messages[0].text
     assert "300,000 ریال" in result.messages[0].text
-    assert portal.quote_calls == [
-        ("svc_opaque", "RENEW", 30, "svcq:42:12:RENEW:30")
-    ]
+    assert portal.quote_calls == [("svc_opaque", "RENEW", 30, "svcq:42:12:RENEW:30")]
 
 
 def test_ineligible_service_is_rejected_without_financial_mutation() -> None:
