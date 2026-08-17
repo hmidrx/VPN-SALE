@@ -1,4 +1,4 @@
-"""Telegram-native service management eligibility, quote and payment adapter."""
+"""Telegram-native service management eligibility, quote, payment and status adapter."""
 
 from __future__ import annotations
 
@@ -9,6 +9,26 @@ from typing import Any, Protocol, cast
 from telegram_bot.internal_api import PrivateApiUnavailable
 from telegram_bot.portal import CustomerContext
 from telegram_bot.topup_destination_api import NativeTopupPrivatePlatformClient
+
+_SERVICE_OPERATION_STATUSES = frozenset(
+    {
+        "AWAITING_PAYMENT",
+        "PENDING_APPROVAL",
+        "QUEUED",
+        "EXECUTING",
+        "VERIFYING",
+        "RECONCILING",
+        "SUCCEEDED",
+        "PARTIALLY_APPLIED",
+        "FAILED",
+        "UNCERTAIN",
+        "COMPENSATION_REQUIRED",
+        "COMPENSATED",
+        "MANUAL_REVIEW",
+        "CANCELLED",
+        "EXPIRED",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -55,6 +75,17 @@ class ServiceOperationPaymentResult:
     queued: bool
 
 
+@dataclass(frozen=True)
+class ServiceOperationStatus:
+    operation_reference: str
+    service_reference: str
+    operation_type: str
+    status: str
+    amount: int
+    unit: str
+    updated_at: datetime
+
+
 class ServiceManagementPortal(Protocol):
     def service_management_eligibility(
         self, context: CustomerContext, service_reference: str
@@ -75,6 +106,12 @@ class ServiceManagementPortal(Protocol):
         operation_reference: str,
         idempotency_key: str,
     ) -> ServiceOperationPaymentResult: ...
+
+    def service_operation_status(
+        self,
+        context: CustomerContext,
+        operation_reference: str,
+    ) -> ServiceOperationStatus: ...
 
 
 class ServiceManagementPrivatePlatformClient(
@@ -281,4 +318,54 @@ class ServiceManagementPrivatePlatformClient(
             amount_rial=amount_rial,
             currency="IRR",
             queued=queued,
+        )
+
+    def service_operation_status(
+        self,
+        context: CustomerContext,
+        operation_reference: str,
+    ) -> ServiceOperationStatus:
+        if not operation_reference:
+            raise ValueError("invalid service operation status request")
+        data = self._request(
+            "GET",
+            f"/service-management/operations/{operation_reference}",
+            context.telegram_user_id,
+        )
+        returned_reference = data.get("operation_reference")
+        service_reference = data.get("service_reference")
+        operation_type = data.get("operation_type")
+        status_value = data.get("status")
+        amount = data.get("amount")
+        unit = data.get("unit")
+        updated_at_raw = data.get("updated_at")
+        if (
+            returned_reference != operation_reference
+            or not isinstance(service_reference, str)
+            or not service_reference
+            or operation_type not in {"RENEW", "ADD_TRAFFIC"}
+            or status_value not in _SERVICE_OPERATION_STATUSES
+            or not isinstance(amount, int)
+            or isinstance(amount, bool)
+            or amount <= 0
+            or unit not in {"DAY", "GIB"}
+            or (operation_type == "RENEW" and unit != "DAY")
+            or (operation_type == "ADD_TRAFFIC" and unit != "GIB")
+            or not isinstance(updated_at_raw, str)
+        ):
+            raise PrivateApiUnavailable("پاسخ وضعیت عملیات سرویس معتبر نیست.")
+        try:
+            updated_at = datetime.fromisoformat(updated_at_raw)
+        except ValueError as exc:
+            raise PrivateApiUnavailable("پاسخ وضعیت عملیات سرویس معتبر نیست.") from exc
+        if updated_at.tzinfo is None:
+            raise PrivateApiUnavailable("پاسخ وضعیت عملیات سرویس معتبر نیست.")
+        return ServiceOperationStatus(
+            operation_reference=operation_reference,
+            service_reference=service_reference,
+            operation_type=operation_type,
+            status=status_value,
+            amount=amount,
+            unit=unit,
+            updated_at=updated_at,
         )
