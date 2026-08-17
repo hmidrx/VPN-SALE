@@ -155,7 +155,7 @@ def _desired_state(
         "service_version_base": service.version,
         "traffic_limit_bytes": traffic_target,
         "expires_at": expiry_target.isoformat() if expiry_target is not None else None,
-        "device_limit": cast(int | None, device_limit),
+        "device_limit": device_limit,
     }
 
 
