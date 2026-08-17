@@ -125,7 +125,7 @@ def _locked_spend_plan(
             WalletBalanceBucket(bucket_name)
         except ValueError as exc:
             raise _payment_error(status.HTTP_409_CONFLICT, "wallet_policy_invalid") from exc
-        bucket = _bucket(db, wallet_id, bucket_name)
+        bucket = _bucket(db, wallet.id, bucket_name)
         lots: tuple[WalletCreditLotModel, ...] = ()
         spendable = bucket.balance_rial
         if bucket_name in _LOT_BACKED_BUCKETS:
@@ -375,7 +375,6 @@ def pay_service_operation(
     db.add(payment)
     db.flush()
 
-    operation.payment_id = payment.id
     operation.status = target_status.value
     operation.updated_at = now
     operation.version += 1
