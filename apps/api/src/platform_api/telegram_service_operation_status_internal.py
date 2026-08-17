@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """Private customer-scoped Telegram projection for paid service-operation status."""
 
 from __future__ import annotations
