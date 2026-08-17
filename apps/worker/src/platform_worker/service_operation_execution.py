@@ -1,9 +1,8 @@
 """Crash-safe execution of paid additive service operations.
 
-The worker serializes provider mutations per service, persists deterministic targets
-before provider I/O, and reconciles retries through the provider executor. Financial
-capture happens upstream; definitive execution failures therefore surface as
-compensation/manual-review states rather than silently discarding paid work.
+The worker serializes provider mutations per service, persists deterministic absolute
+provider targets before I/O, and reuses those targets across retries. Financial capture
+happens upstream, so failures after capture surface as explicit compensation/review states.
 """
 
 from __future__ import annotations
@@ -13,19 +12,20 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from math import ceil
 from typing import Protocol, cast
 from uuid import NAMESPACE_URL, uuid5
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from platform_api.order_models import TransactionalOutboxModel
 from platform_api.service_models import (
     ServiceAttachmentModel,
+    ServiceModel,
     ServiceOperationAttachmentPlanModel,
     ServiceOperationModel,
     ServiceStateRevisionModel,
-    ServiceModel,
 )
 from platform_api.service_operation_payment_models import ServiceOperationPaymentModel
 
@@ -37,6 +37,7 @@ MAX_BATCH = 10
 MAX_TRANSIENT_ATTEMPTS = 8
 MAX_AMBIGUOUS_ATTEMPTS = 12
 MAX_BLOCKED_ATTEMPTS = 20
+_SECONDS_PER_DAY = 24 * 60 * 60
 _SUPPORTED_OPERATIONS = frozenset({"RENEW", "ADD_TRAFFIC"})
 _ACTIVE_OPERATION_STATES = frozenset({"EXECUTING", "VERIFYING", "RECONCILING"})
 _TERMINAL_OPERATION_STATES = frozenset(
@@ -102,12 +103,27 @@ def _aware(value: datetime | None, field: str) -> datetime:
     return value
 
 
+def _renewal_target(current_expiry: datetime, now: datetime, duration_seconds: int) -> datetime:
+    """Return a Sanaei-compatible absolute target without shortening purchased time.
+
+    Sanaei bulkAdjust accepts whole addDays. For an already-expired service we first add the
+    minimum whole-day catch-up needed to reach `now`, then add the purchased whole days. The
+    target is therefore replay-safe and may grant less than one extra catch-up day.
+    """
+    if duration_seconds <= 0 or duration_seconds % _SECONDS_PER_DAY != 0:
+        raise ValueError("renewal duration must be positive whole days")
+    purchased_days = duration_seconds // _SECONDS_PER_DAY
+    if current_expiry >= now:
+        return current_expiry + timedelta(days=purchased_days)
+    elapsed_seconds = (now - current_expiry).total_seconds()
+    catch_up_days = ceil(elapsed_seconds / _SECONDS_PER_DAY)
+    return current_expiry + timedelta(days=catch_up_days + purchased_days)
+
+
 def _desired_state(
     service: ServiceModel, operation: ServiceOperationModel, now: datetime
 ) -> dict[str, object]:
     entitlement = service.entitlement_snapshot
-    current_traffic = _positive_int(entitlement, "traffic_quota_bytes")
-    current_expiry = _aware(service.expires_at, "service expiry")
     device_limit = entitlement.get("device_limit")
     if device_limit is not None and (type(device_limit) is not int or device_limit <= 0):
         raise ValueError("invalid device_limit")
@@ -119,34 +135,34 @@ def _desired_state(
     if type(duration_delta) is not int or duration_delta < 0:
         raise ValueError("invalid duration delta")
 
+    traffic_target: int | None = None
+    expiry_target: datetime | None = None
     if operation.operation_type == "RENEW":
-        if duration_delta <= 0 or traffic_delta != 0:
-            raise ValueError("invalid renewal desired change")
-        baseline_expiry = max(current_expiry, now)
-        target_expiry = baseline_expiry + timedelta(seconds=duration_delta)
-        target_traffic = current_traffic
+        if traffic_delta != 0:
+            raise ValueError("renewal cannot change traffic")
+        current_expiry = _aware(service.expires_at, "service expiry")
+        expiry_target = _renewal_target(current_expiry, now, duration_delta)
     elif operation.operation_type == "ADD_TRAFFIC":
-        if traffic_delta <= 0 or duration_delta != 0:
-            raise ValueError("invalid traffic desired change")
-        target_expiry = current_expiry
-        target_traffic = current_traffic + traffic_delta
+        if duration_delta != 0 or traffic_delta <= 0:
+            raise ValueError("traffic purchase desired change invalid")
+        current_traffic = _positive_int(entitlement, "traffic_quota_bytes")
+        traffic_target = current_traffic + traffic_delta
     else:
         raise ValueError("operation unsupported")
 
     return {
         "operation_type": operation.operation_type,
         "service_version_base": service.version,
-        "traffic_limit_bytes": target_traffic,
-        "expires_at": target_expiry.isoformat(),
+        "traffic_limit_bytes": traffic_target,
+        "expires_at": expiry_target.isoformat() if expiry_target is not None else None,
         "device_limit": cast(int | None, device_limit),
     }
 
 
 def _target_digest(operation_id: str, attachment_id: str, desired: dict[str, object]) -> str:
     canonical = json.dumps(desired, sort_keys=True, separators=(",", ":"))
-    return "sha256:" + hashlib.sha256(
-        f"{operation_id}|{attachment_id}|{canonical}".encode()
-    ).hexdigest()
+    payload = f"{operation_id}|{attachment_id}|{canonical}".encode()
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
 class ServiceOperationExecutionWorker:
@@ -206,6 +222,14 @@ class ServiceOperationExecutionWorker:
         else:
             event.available_at = now + (delay or SERIALIZATION_RETRY)
 
+    @staticmethod
+    def _set_operation_status(
+        operation: ServiceOperationModel, status_value: str, now: datetime
+    ) -> None:
+        operation.status = status_value
+        operation.updated_at = now
+        operation.version += 1
+
     def _prepare(self, event_id: str) -> tuple[str, tuple[str, ...]] | None:
         now = self.now()
         with self.factory.begin() as db:
@@ -216,6 +240,7 @@ class ServiceOperationExecutionWorker:
             if not isinstance(operation_id, str):
                 self._fail_event(event, "SERVICE_OPERATION_EVENT_INVALID", now, terminal=True)
                 return None
+
             operation = db.scalar(
                 select(ServiceOperationModel)
                 .where(ServiceOperationModel.id == operation_id)
@@ -236,9 +261,7 @@ class ServiceOperationExecutionWorker:
                 )
                 return None
             if operation.operation_type not in _SUPPORTED_OPERATIONS:
-                operation.status = "MANUAL_REVIEW"
-                operation.updated_at = now
-                operation.version += 1
+                self._set_operation_status(operation, "MANUAL_REVIEW", now)
                 self._fail_event(event, "SERVICE_OPERATION_UNSUPPORTED", now, terminal=True)
                 return None
             if operation.status not in {"QUEUED", "EXECUTING", "RECONCILING"}:
@@ -252,9 +275,7 @@ class ServiceOperationExecutionWorker:
                 )
             )
             if payment is None:
-                operation.status = "MANUAL_REVIEW"
-                operation.updated_at = now
-                operation.version += 1
+                self._set_operation_status(operation, "MANUAL_REVIEW", now)
                 self._fail_event(event, "SERVICE_OPERATION_PAYMENT_MISSING", now, terminal=True)
                 return None
 
@@ -264,9 +285,7 @@ class ServiceOperationExecutionWorker:
                 .with_for_update()
             )
             if service is None:
-                operation.status = "COMPENSATION_REQUIRED"
-                operation.updated_at = now
-                operation.version += 1
+                self._set_operation_status(operation, "COMPENSATION_REQUIRED", now)
                 self._fail_event(event, "SERVICE_MISSING_AFTER_PAYMENT", now, terminal=True)
                 return None
 
@@ -291,18 +310,16 @@ class ServiceOperationExecutionWorker:
 
             plans = list(
                 db.scalars(
-                    select(ServiceOperationAttachmentPlanModel).where(
-                        ServiceOperationAttachmentPlanModel.operation_id == operation.id
-                    )
+                    select(ServiceOperationAttachmentPlanModel)
+                    .where(ServiceOperationAttachmentPlanModel.operation_id == operation.id)
+                    .order_by(ServiceOperationAttachmentPlanModel.id)
                 )
             )
             if not plans:
                 try:
                     desired = _desired_state(service, operation, now)
                 except ValueError:
-                    operation.status = "COMPENSATION_REQUIRED"
-                    operation.updated_at = now
-                    operation.version += 1
+                    self._set_operation_status(operation, "COMPENSATION_REQUIRED", now)
                     self._fail_event(
                         event, "SERVICE_OPERATION_TARGET_INVALID", now, terminal=True
                     )
@@ -320,9 +337,7 @@ class ServiceOperationExecutionWorker:
                 if not attachments or any(
                     not attachment.remote_identity_reference for attachment in attachments
                 ):
-                    operation.status = "COMPENSATION_REQUIRED"
-                    operation.updated_at = now
-                    operation.version += 1
+                    self._set_operation_status(operation, "COMPENSATION_REQUIRED", now)
                     self._fail_event(
                         event, "SERVICE_OPERATION_ATTACHMENTS_UNAVAILABLE", now, terminal=True
                     )
@@ -351,9 +366,8 @@ class ServiceOperationExecutionWorker:
                     db.add(plan)
                     plans.append(plan)
                 db.flush()
-            operation.status = "EXECUTING"
-            operation.updated_at = now
-            operation.version += 1
+
+            self._set_operation_status(operation, "EXECUTING", now)
             return operation.id, tuple(plan.id for plan in plans)
 
     def _load_plan_work(
@@ -374,10 +388,7 @@ class ServiceOperationExecutionWorker:
             if plan is None or plan.status == "SUCCEEDED":
                 return None
             operation = db.get(ServiceOperationModel, plan.operation_id)
-            if operation is None or operation.status not in {
-                "EXECUTING",
-                "RECONCILING",
-            }:
+            if operation is None or operation.status not in {"EXECUTING", "RECONCILING"}:
                 return None
             service = db.get(ServiceModel, operation.service_id)
             attachment = db.get(ServiceAttachmentModel, plan.attachment_id)
@@ -412,13 +423,12 @@ class ServiceOperationExecutionWorker:
             )
             if plan is None:
                 return
-            snapshot = {
+            plan.result_snapshot = {
                 **plan.result_snapshot,
                 "outcome": result.outcome,
                 "safe_code": result.safe_code,
                 "observed_at": now.isoformat(),
             }
-            plan.result_snapshot = snapshot
             if result.outcome == "SUCCESS":
                 plan.status = "SUCCEEDED"
                 plan.verified = True
@@ -462,32 +472,52 @@ class ServiceOperationExecutionWorker:
     ) -> None:
         desired = self._desired_from_plan(plans[0])
         if any(self._desired_from_plan(plan) != desired for plan in plans[1:]):
-            operation.status = "MANUAL_REVIEW"
-            operation.updated_at = now
-            operation.version += 1
+            self._set_operation_status(operation, "MANUAL_REVIEW", now)
             self._fail_event(event, "SERVICE_OPERATION_TARGET_DIVERGED", now, terminal=True)
             return
-        traffic = desired.get("traffic_limit_bytes")
-        expires_raw = desired.get("expires_at")
-        if type(traffic) is not int or traffic <= 0 or not isinstance(expires_raw, str):
-            operation.status = "MANUAL_REVIEW"
-            operation.updated_at = now
-            operation.version += 1
+
+        base_version = desired.get("service_version_base")
+        desired_operation = desired.get("operation_type")
+        if type(base_version) is not int or desired_operation != operation.operation_type:
+            self._set_operation_status(operation, "MANUAL_REVIEW", now)
             self._fail_event(event, "SERVICE_OPERATION_TARGET_INVALID", now, terminal=True)
             return
-        try:
-            expires_at = datetime.fromisoformat(expires_raw)
-        except ValueError:
-            operation.status = "MANUAL_REVIEW"
-            operation.updated_at = now
-            operation.version += 1
-            self._fail_event(event, "SERVICE_OPERATION_TARGET_INVALID", now, terminal=True)
+        if service.version != base_version:
+            self._set_operation_status(operation, "MANUAL_REVIEW", now)
+            self._fail_event(event, "SERVICE_CHANGED_DURING_EXECUTION", now, terminal=True)
             return
-        if expires_at.tzinfo is None:
-            operation.status = "MANUAL_REVIEW"
-            operation.updated_at = now
-            operation.version += 1
-            self._fail_event(event, "SERVICE_OPERATION_TARGET_INVALID", now, terminal=True)
+
+        if operation.operation_type == "RENEW":
+            expires_raw = desired.get("expires_at")
+            if not isinstance(expires_raw, str):
+                self._set_operation_status(operation, "MANUAL_REVIEW", now)
+                self._fail_event(event, "SERVICE_OPERATION_TARGET_INVALID", now, terminal=True)
+                return
+            try:
+                expires_at = datetime.fromisoformat(expires_raw)
+            except ValueError:
+                self._set_operation_status(operation, "MANUAL_REVIEW", now)
+                self._fail_event(event, "SERVICE_OPERATION_TARGET_INVALID", now, terminal=True)
+                return
+            if expires_at.tzinfo is None:
+                self._set_operation_status(operation, "MANUAL_REVIEW", now)
+                self._fail_event(event, "SERVICE_OPERATION_TARGET_INVALID", now, terminal=True)
+                return
+            service.expires_at = expires_at
+            if service.lifecycle == "EXPIRED" and expires_at > now:
+                service.lifecycle = "ACTIVE"
+        elif operation.operation_type == "ADD_TRAFFIC":
+            traffic = desired.get("traffic_limit_bytes")
+            if type(traffic) is not int or traffic <= 0:
+                self._set_operation_status(operation, "MANUAL_REVIEW", now)
+                self._fail_event(event, "SERVICE_OPERATION_TARGET_INVALID", now, terminal=True)
+                return
+            entitlement = dict(service.entitlement_snapshot)
+            entitlement["traffic_quota_bytes"] = traffic
+            service.entitlement_snapshot = entitlement
+        else:
+            self._set_operation_status(operation, "MANUAL_REVIEW", now)
+            self._fail_event(event, "SERVICE_OPERATION_UNSUPPORTED", now, terminal=True)
             return
 
         previous = db.scalar(
@@ -497,12 +527,6 @@ class ServiceOperationExecutionWorker:
             .limit(1)
         )
         revision_number = (previous.revision_number + 1) if previous else 1
-        entitlement = dict(service.entitlement_snapshot)
-        entitlement["traffic_quota_bytes"] = traffic
-        service.entitlement_snapshot = entitlement
-        service.expires_at = expires_at
-        if service.lifecycle == "EXPIRED" and expires_at > now:
-            service.lifecycle = "ACTIVE"
         service.version += 1
         db.add(
             ServiceStateRevisionModel(
@@ -518,9 +542,7 @@ class ServiceOperationExecutionWorker:
                 created_at=now,
             )
         )
-        operation.status = "SUCCEEDED"
-        operation.updated_at = now
-        operation.version += 1
+        self._set_operation_status(operation, "SUCCEEDED", now)
         event.status = "PROCESSED"
         event.processed_at = now
         event.claimed_at = None
@@ -547,9 +569,7 @@ class ServiceOperationExecutionWorker:
                 .with_for_update()
             )
             if service is None:
-                operation.status = "COMPENSATION_REQUIRED"
-                operation.updated_at = now
-                operation.version += 1
+                self._set_operation_status(operation, "COMPENSATION_REQUIRED", now)
                 self._fail_event(event, "SERVICE_MISSING_AFTER_EXECUTION", now, terminal=True)
                 return
             plans = list(
@@ -559,35 +579,36 @@ class ServiceOperationExecutionWorker:
                     .order_by(ServiceOperationAttachmentPlanModel.id)
                 )
             )
-            if not plans:
-                operation.status = "COMPENSATION_REQUIRED"
-                operation.updated_at = now
-                operation.version += 1
+            required = [plan for plan in plans if plan.required]
+            if not required:
+                self._set_operation_status(operation, "COMPENSATION_REQUIRED", now)
                 self._fail_event(event, "SERVICE_OPERATION_PLAN_MISSING", now, terminal=True)
                 return
-            required = [plan for plan in plans if plan.required]
-            if required and all(plan.status == "SUCCEEDED" and plan.verified for plan in required):
-                self._complete_success(db, event, operation, service, plans, now)
+            if all(plan.status == "SUCCEEDED" and plan.verified for plan in required):
+                self._complete_success(db, event, operation, service, required, now)
                 return
 
             succeeded = [plan for plan in required if plan.status == "SUCCEEDED" and plan.verified]
-            uncertain = [plan for plan in required if plan.status == "RECONCILING" or plan.uncertain]
+            uncertain = [
+                plan for plan in required if plan.status == "RECONCILING" or plan.uncertain
+            ]
             blocked = [plan for plan in required if plan.status == "BLOCKED"]
             failed = [plan for plan in required if plan.status == "FAILED"]
-            transient = [plan for plan in required if plan.status in {"PLANNED", "READY", "EXECUTING"}]
+            transient = [
+                plan for plan in required if plan.status in {"PLANNED", "READY", "EXECUTING"}
+            ]
 
             if uncertain:
                 if event.attempt_count >= MAX_AMBIGUOUS_ATTEMPTS:
-                    operation.status = "UNCERTAIN"
-                    operation.updated_at = now
-                    operation.version += 1
+                    self._set_operation_status(operation, "UNCERTAIN", now)
                     self._fail_event(
-                        event, "SERVICE_OPERATION_UNCERTAIN_RETRY_EXHAUSTED", now, terminal=True
+                        event,
+                        "SERVICE_OPERATION_UNCERTAIN_RETRY_EXHAUSTED",
+                        now,
+                        terminal=True,
                     )
                 else:
-                    operation.status = "RECONCILING"
-                    operation.updated_at = now
-                    operation.version += 1
+                    self._set_operation_status(operation, "RECONCILING", now)
                     self._fail_event(
                         event,
                         "SERVICE_OPERATION_RECONCILIATION_REQUIRED",
@@ -597,9 +618,8 @@ class ServiceOperationExecutionWorker:
                     )
                 return
             if failed:
-                operation.status = "PARTIALLY_APPLIED" if succeeded else "COMPENSATION_REQUIRED"
-                operation.updated_at = now
-                operation.version += 1
+                terminal_status = "PARTIALLY_APPLIED" if succeeded else "COMPENSATION_REQUIRED"
+                self._set_operation_status(operation, terminal_status, now)
                 self._fail_event(
                     event,
                     "SERVICE_OPERATION_PARTIAL_FAILURE"
@@ -611,16 +631,15 @@ class ServiceOperationExecutionWorker:
                 return
             if blocked:
                 if event.attempt_count >= MAX_BLOCKED_ATTEMPTS:
-                    operation.status = "MANUAL_REVIEW"
-                    operation.updated_at = now
-                    operation.version += 1
+                    self._set_operation_status(operation, "MANUAL_REVIEW", now)
                     self._fail_event(
-                        event, "SERVICE_OPERATION_BLOCKED_RETRY_EXHAUSTED", now, terminal=True
+                        event,
+                        "SERVICE_OPERATION_BLOCKED_RETRY_EXHAUSTED",
+                        now,
+                        terminal=True,
                     )
                 else:
-                    operation.status = "RECONCILING"
-                    operation.updated_at = now
-                    operation.version += 1
+                    self._set_operation_status(operation, "RECONCILING", now)
                     self._fail_event(
                         event,
                         "SERVICE_OPERATION_PROVIDER_BLOCKED",
@@ -631,16 +650,15 @@ class ServiceOperationExecutionWorker:
                 return
             if transient:
                 if event.attempt_count >= MAX_TRANSIENT_ATTEMPTS:
-                    operation.status = "MANUAL_REVIEW"
-                    operation.updated_at = now
-                    operation.version += 1
+                    self._set_operation_status(operation, "MANUAL_REVIEW", now)
                     self._fail_event(
-                        event, "SERVICE_OPERATION_TRANSIENT_RETRY_EXHAUSTED", now, terminal=True
+                        event,
+                        "SERVICE_OPERATION_TRANSIENT_RETRY_EXHAUSTED",
+                        now,
+                        terminal=True,
                     )
                 else:
-                    operation.status = "RECONCILING"
-                    operation.updated_at = now
-                    operation.version += 1
+                    self._set_operation_status(operation, "RECONCILING", now)
                     self._fail_event(
                         event,
                         "SERVICE_OPERATION_TRANSIENT_FAILURE",
@@ -649,9 +667,7 @@ class ServiceOperationExecutionWorker:
                         delay=retry_delay(event.attempt_count),
                     )
                 return
-            operation.status = "MANUAL_REVIEW"
-            operation.updated_at = now
-            operation.version += 1
+            self._set_operation_status(operation, "MANUAL_REVIEW", now)
             self._fail_event(event, "SERVICE_OPERATION_UNCLASSIFIED", now, terminal=True)
 
     def run_once(self) -> int:
