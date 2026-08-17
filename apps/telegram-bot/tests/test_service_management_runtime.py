@@ -15,6 +15,7 @@ from telegram_bot.service_management_api import (
     ServiceOperationPaymentResult,
     ServiceOperationQuote,
     ServiceOperationQuoteOptions,
+    ServiceOperationStatus,
 )
 
 
@@ -25,7 +26,11 @@ class _ServiceManagementPortal(InMemoryCustomerPortal):
         super().__init__()
         self.quote_calls: list[tuple[str, str, int, str]] = []
         self.payment_calls: list[tuple[str, str]] = []
+        self.status_calls: list[str] = []
         self.payment_status_code: int | None = None
+        self.operation_status = "QUEUED"
+        self.operation_type = "RENEW"
+        self.operation_amount = 30
 
     def service_management_eligibility(
         self, context: CustomerContext, service_reference: str
@@ -93,6 +98,23 @@ class _ServiceManagementPortal(InMemoryCustomerPortal):
             queued=True,
         )
 
+    def service_operation_status(
+        self,
+        context: CustomerContext,
+        operation_reference: str,
+    ) -> ServiceOperationStatus:
+        del context
+        self.status_calls.append(operation_reference)
+        return ServiceOperationStatus(
+            operation_reference=operation_reference,
+            service_reference="svc_opaque",
+            operation_type=self.operation_type,
+            status=self.operation_status,
+            amount=self.operation_amount,
+            unit="DAY" if self.operation_type == "RENEW" else "GIB",
+            updated_at=datetime.now(UTC),
+        )
+
 
 def _settings() -> BotSettings:
     return BotSettings(
@@ -154,7 +176,7 @@ def test_selecting_amount_requests_and_renders_authoritative_quote() -> None:
     assert portal.quote_calls == [("svc_opaque", "RENEW", 30, "svcq:42:12:RENEW:30")]
 
 
-def test_wallet_payment_callback_queues_operation_and_is_server_authoritative() -> None:
+def test_wallet_payment_callback_queues_operation_and_exposes_status_tracking() -> None:
     portal = _ServiceManagementPortal()
     operation_reference = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1"
     result = _handler(portal).handle_callback(
@@ -164,7 +186,63 @@ def test_wallet_payment_callback_queues_operation_and_is_server_authoritative() 
     assert "پرداخت تمدید سرویس ثبت شد" in result.messages[0].text
     assert "300,000 ریال" in result.messages[0].text
     assert "صف اجرای امن" in result.messages[0].text
+    assert "پیگیری وضعیت" in str(result.messages[0].rows)
+    assert CallbackAction.SERVICE_OPERATION_STATUS.value in str(result.messages[0].rows)
     assert portal.payment_calls == [(operation_reference, f"svcp:42:13:{operation_reference}")]
+
+
+def test_status_callback_renders_verified_success_without_provider_details() -> None:
+    portal = _ServiceManagementPortal()
+    portal.operation_status = "SUCCEEDED"
+    operation_reference = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1"
+
+    result = _handler(portal).handle_callback(
+        _callback(CallbackAction.SERVICE_OPERATION_STATUS, 15, operation_reference)
+    )
+
+    text = result.messages[0].text
+    assert "✅ انجام شد" in text
+    assert "با موفقیت" in text
+    assert "30 روز" in text
+    assert "دوباره پرداخت" not in text
+    assert "provider" not in text.lower()
+    assert "Sanaei" not in text
+    assert "بروزرسانی وضعیت" not in str(result.messages[0].rows)
+    assert portal.status_calls == [operation_reference]
+
+
+def test_uncertain_status_warns_against_repayment_and_keeps_refresh_and_support() -> None:
+    portal = _ServiceManagementPortal()
+    portal.operation_status = "UNCERTAIN"
+    portal.operation_type = "ADD_TRAFFIC"
+    portal.operation_amount = 20
+    operation_reference = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1"
+
+    result = _handler(portal).handle_callback(
+        _callback(CallbackAction.SERVICE_OPERATION_STATUS, 16, operation_reference)
+    )
+
+    assert "⚠️ نیازمند بررسی" in result.messages[0].text
+    assert "20 گیگابایت" in result.messages[0].text
+    assert "دوباره پرداخت نکنید" in result.messages[0].text
+    rows = str(result.messages[0].rows)
+    assert "بروزرسانی وضعیت" in rows
+    assert "پشتیبانی" in rows
+    assert "کیف پول" in rows
+
+
+def test_execution_status_is_progress_only_and_never_requests_another_payment() -> None:
+    portal = _ServiceManagementPortal()
+    portal.operation_status = "EXECUTING"
+    operation_reference = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1"
+
+    result = _handler(portal).handle_callback(
+        _callback(CallbackAction.SERVICE_OPERATION_STATUS, 17, operation_reference)
+    )
+
+    assert "⚙️ در حال اجرا" in result.messages[0].text
+    assert "نیازی به پرداخت دوباره نیست" in result.messages[0].text
+    assert "پرداخت از کیف پول" not in str(result.messages[0].rows)
 
 
 def test_insufficient_wallet_payment_routes_customer_to_topup() -> None:
