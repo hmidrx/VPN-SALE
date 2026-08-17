@@ -164,19 +164,20 @@ class SanaeiAdjustExecutor:
                     MutationOutcome.BLOCKED_BY_CONFIGURATION,
                     "FINITE_EXPIRY_BASELINE_REQUIRED",
                 )
-            delta = expiry_target - current.expiry_at
-            seconds = int(delta.total_seconds())
-            if delta <= timedelta(0):
-                return ProviderMutationResult(
-                    MutationOutcome.BLOCKED_BY_CONFIGURATION,
-                    "DESTRUCTIVE_EXPIRY_ADJUSTMENT_BLOCKED",
-                )
-            if delta.microseconds != 0 or seconds % _SECONDS_PER_DAY != 0:
-                return ProviderMutationResult(
-                    MutationOutcome.CONTRACT_MISMATCH,
-                    "EXPIRY_ADJUSTMENT_MUST_BE_WHOLE_DAYS",
-                )
-            add_days = seconds // _SECONDS_PER_DAY
+            if not _same_millisecond(current.expiry_at, expiry_target):
+                delta = expiry_target - current.expiry_at
+                seconds = int(delta.total_seconds())
+                if delta < timedelta(0):
+                    return ProviderMutationResult(
+                        MutationOutcome.BLOCKED_BY_CONFIGURATION,
+                        "DESTRUCTIVE_EXPIRY_ADJUSTMENT_BLOCKED",
+                    )
+                if delta.microseconds != 0 or seconds % _SECONDS_PER_DAY != 0:
+                    return ProviderMutationResult(
+                        MutationOutcome.CONTRACT_MISMATCH,
+                        "EXPIRY_ADJUSTMENT_MUST_BE_WHOLE_DAYS",
+                    )
+                add_days = seconds // _SECONDS_PER_DAY
 
         if add_bytes == 0 and add_days == 0:
             return ProviderMutationResult(
