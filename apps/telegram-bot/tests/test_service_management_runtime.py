@@ -6,11 +6,13 @@ from hashlib import sha256
 from telegram_bot.application.identity import InMemoryTelegramIdentityService
 from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.config import BotMode, BotSettings
+from telegram_bot.internal_api import AuthoritativePrivateApiError
 from telegram_bot.portal import CustomerContext, InMemoryCustomerPortal
 from telegram_bot.runtime.handlers import IncomingCallback, IncomingUser
 from telegram_bot.runtime.service_management import ServiceManagementBotCommandHandler
 from telegram_bot.service_management_api import (
     ServiceOperationEligibility,
+    ServiceOperationPaymentResult,
     ServiceOperationQuote,
     ServiceOperationQuoteOptions,
 )
@@ -22,6 +24,8 @@ class _ServiceManagementPortal(InMemoryCustomerPortal):
     def __init__(self) -> None:
         super().__init__()
         self.quote_calls: list[tuple[str, str, int, str]] = []
+        self.payment_calls: list[tuple[str, str]] = []
+        self.payment_status_code: int | None = None
 
     def service_management_eligibility(
         self, context: CustomerContext, service_reference: str
@@ -57,7 +61,7 @@ class _ServiceManagementPortal(InMemoryCustomerPortal):
         del context
         self.quote_calls.append((service_reference, operation_type, amount, idempotency_key))
         return ServiceOperationQuote(
-            operation_reference="op_quote_1",
+            operation_reference="cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
             service_id="service-id",
             operation_type=operation_type,
             status="AWAITING_PAYMENT",
@@ -66,6 +70,27 @@ class _ServiceManagementPortal(InMemoryCustomerPortal):
             currency="IRR",
             expires_at=datetime.now(UTC) + timedelta(minutes=15),
             policy_version_id="policy-version-id",
+        )
+
+    def service_operation_pay(
+        self,
+        context: CustomerContext,
+        operation_reference: str,
+        idempotency_key: str,
+    ) -> ServiceOperationPaymentResult:
+        del context
+        self.payment_calls.append((operation_reference, idempotency_key))
+        if self.payment_status_code is not None:
+            raise AuthoritativePrivateApiError(self.payment_status_code)
+        return ServiceOperationPaymentResult(
+            payment_reference="payment-id",
+            operation_reference=operation_reference,
+            service_reference="svc_opaque",
+            operation_type="RENEW",
+            status="QUEUED",
+            amount_rial=300_000,
+            currency="IRR",
+            queued=True,
         )
 
 
@@ -125,7 +150,35 @@ def test_selecting_amount_requests_and_renders_authoritative_quote() -> None:
     assert "قیمت تمدید سرویس" in result.messages[0].text
     assert "30 روز" in result.messages[0].text
     assert "300,000 ریال" in result.messages[0].text
+    assert "پرداخت از کیف پول" in str(result.messages[0].rows)
     assert portal.quote_calls == [("svc_opaque", "RENEW", 30, "svcq:42:12:RENEW:30")]
+
+
+def test_wallet_payment_callback_queues_operation_and_is_server_authoritative() -> None:
+    portal = _ServiceManagementPortal()
+    operation_reference = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1"
+    result = _handler(portal).handle_callback(
+        _callback(CallbackAction.SERVICE_OPERATION_PAY, 13, operation_reference)
+    )
+
+    assert "پرداخت تمدید سرویس ثبت شد" in result.messages[0].text
+    assert "300,000 ریال" in result.messages[0].text
+    assert "صف اجرای امن" in result.messages[0].text
+    assert portal.payment_calls == [
+        (operation_reference, f"svcp:42:13:{operation_reference}")
+    ]
+
+
+def test_insufficient_wallet_payment_routes_customer_to_topup() -> None:
+    portal = _ServiceManagementPortal()
+    portal.payment_status_code = 402
+    operation_reference = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1"
+    result = _handler(portal).handle_callback(
+        _callback(CallbackAction.SERVICE_OPERATION_PAY, 14, operation_reference)
+    )
+
+    assert "موجودی کیف پول" in result.messages[0].text
+    assert "شارژ کیف پول" in str(result.messages[0].rows)
 
 
 def test_ineligible_service_is_rejected_without_financial_mutation() -> None:
@@ -136,3 +189,4 @@ def test_ineligible_service_is_rejected_without_financial_mutation() -> None:
     assert "قابل انجام نیست" in result.messages[0].text
     assert "پرداخت" not in result.messages[0].text
     assert portal.quote_calls == []
+    assert portal.payment_calls == []
