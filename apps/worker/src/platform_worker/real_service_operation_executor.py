@@ -33,9 +33,9 @@ from platform_api.provider_runtime_models import ProviderConnectionTestModel
 from platform_api.service_models import (
     AllocationTargetModel,
     ServiceAttachmentModel,
+    ServiceModel,
     ServiceOperationAttachmentPlanModel,
     ServiceOperationModel,
-    ServiceModel,
 )
 from platform_worker.real_activator import DatabaseSanaeiActivator
 from platform_worker.service_operation_execution import ServiceOperationExecutionResult
