@@ -258,7 +258,8 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
             f"✅ پرداخت {operation_label} ثبت شد\n\n"
             f"مبلغ: {payment.amount_rial:,} ریال\n"
             f"{state_text}\n\n"
-            "برداشت وجه و ثبت درخواست به‌صورت اتمیک انجام شده است؛ تکرار درخواست باعث برداشت دوباره نمی‌شود.",
+            "برداشت وجه و ثبت درخواست به‌صورت اتمیک انجام شده است؛ "
+            "تکرار درخواست باعث برداشت دوباره نمی‌شود.",
             [
                 [
                     {
@@ -292,7 +293,8 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
         except AuthoritativePrivateApiError as exc:
             if exc.status_code == 402:
                 return self._callback_message(
-                    "موجودی کیف پول برای این پرداخت کافی نیست. ابتدا کیف پول را شارژ کنید و سپس دوباره همین عملیات را باز کنید.",
+                    "موجودی کیف پول برای این پرداخت کافی نیست. "
+                    "ابتدا کیف پول را شارژ کنید و سپس دوباره همین عملیات را باز کنید.",
                     [
                         [
                             {
@@ -304,12 +306,15 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
                     ],
                 )
             return self._callback_message(
-                "این قیمت یا وضعیت سرویس دیگر برای پرداخت معتبر نیست. سرویس را دوباره باز کنید و قیمت جدید بگیرید.",
+                "این قیمت یا وضعیت سرویس دیگر برای پرداخت معتبر نیست. "
+                "سرویس را دوباره باز کنید و قیمت جدید بگیرید.",
                 self.renderer.nav_rows(locale),
             )
         except (PrivateApiUnavailable, AttributeError, ValueError):
             return self._callback_message(
-                "نتیجه پرداخت موقتاً قابل دریافت نیست. دوباره تلاش کردن امن است؛ اگر پرداخت قبلاً ثبت شده باشد، سیستم همان نتیجه را برمی‌گرداند و دوباره از کیف پول کم نمی‌کند.",
+                "نتیجه پرداخت موقتاً قابل دریافت نیست. دوباره تلاش کردن امن است؛ "
+                "اگر پرداخت قبلاً ثبت شده باشد، سیستم همان نتیجه را برمی‌گرداند "
+                "و دوباره از کیف پول کم نمی‌کند.",
                 self.renderer.nav_rows(locale),
             )
         return self._render_payment_success(locale, payment)
