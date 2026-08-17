@@ -8,14 +8,17 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
+import httpx
 from panel_adapters.contracts import CERTIFIED_CONTRACTS, EndpointValidator
 from panel_adapters.sanaei_adjust_execution import (
     SanaeiAdjustExecutor,
     execute_certified_sanaei_adjust,
 )
 from panel_adapters.write_execution import MutationOutcome, SanaeiAuthenticatedTransport
+from sqlalchemy.orm import Session, sessionmaker
 from vpnsale_domain.providers import (
     DesiredRemoteIdentity,
+    PanelInstance,
     ProviderCertificationStatus,
     ProviderError,
     ProviderKind,
@@ -26,7 +29,9 @@ from vpnsale_domain.providers import (
     RemoteTrafficLimit,
 )
 
+from platform_api.provider_runtime_models import ProviderConnectionTestModel
 from platform_api.service_models import (
+    AllocationTargetModel,
     ServiceAttachmentModel,
     ServiceOperationAttachmentPlanModel,
     ServiceOperationModel,
@@ -37,27 +42,40 @@ from platform_worker.service_operation_execution import ServiceOperationExecutio
 
 
 class DatabaseSanaeiServiceOperationExecutor:
-    def __init__(self, factory, writes_enabled: bool) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, factory: sessionmaker[Session], writes_enabled: bool) -> None:
         self.factory = factory
         self.writes_enabled = writes_enabled
         self.context_loader = DatabaseSanaeiActivator(factory, writes_enabled)
 
     @staticmethod
-    def _desired(plan: ServiceOperationAttachmentPlanModel) -> tuple[int, datetime, int | None]:
+    def _desired(
+        operation: ServiceOperationModel,
+        plan: ServiceOperationAttachmentPlanModel,
+    ) -> tuple[int | None, datetime | None, int | None]:
         desired_raw = plan.result_snapshot.get("desired_state")
         if not isinstance(desired_raw, dict):
             raise ValueError("desired state unavailable")
         desired = cast(dict[str, object], desired_raw)
-        traffic = desired.get("traffic_limit_bytes")
+        traffic_raw = desired.get("traffic_limit_bytes")
         expires_raw = desired.get("expires_at")
         device_limit = desired.get("device_limit")
-        if type(traffic) is not int or traffic <= 0 or not isinstance(expires_raw, str):
-            raise ValueError("desired state invalid")
         if device_limit is not None and (type(device_limit) is not int or device_limit <= 0):
             raise ValueError("desired device limit invalid")
-        expires_at = datetime.fromisoformat(expires_raw)
-        if expires_at.tzinfo is None:
-            raise ValueError("desired expiry must be timezone aware")
+
+        traffic: int | None = None
+        expires_at: datetime | None = None
+        if operation.operation_type == "RENEW":
+            if not isinstance(expires_raw, str):
+                raise ValueError("renewal expiry target unavailable")
+            expires_at = datetime.fromisoformat(expires_raw)
+            if expires_at.tzinfo is None:
+                raise ValueError("desired expiry must be timezone aware")
+        elif operation.operation_type == "ADD_TRAFFIC":
+            if type(traffic_raw) is not int or traffic_raw <= 0:
+                raise ValueError("traffic target unavailable")
+            traffic = traffic_raw
+        else:
+            raise ValueError("service operation unsupported")
         return traffic, expires_at, cast(int | None, device_limit)
 
     def execute(
@@ -73,7 +91,7 @@ class DatabaseSanaeiServiceOperationExecutor:
             )
         try:
             panel, target, certification, username, password = self.context_loader._select(attachment)
-            traffic, expires_at, device_limit = self._desired(plan)
+            traffic, expires_at, device_limit = self._desired(operation, plan)
             if not attachment.remote_identity_reference or not plan.provider_operation_id:
                 raise ValueError("remote or provider operation identity unavailable")
             remote_identity = str(UUID(attachment.remote_identity_reference))
@@ -110,16 +128,16 @@ class DatabaseSanaeiServiceOperationExecutor:
         self,
         operation: ServiceOperationModel,
         service: ServiceModel,
-        panel,
-        target,
-        certification,
+        panel: PanelInstance,
+        target: AllocationTargetModel,
+        certification: ProviderConnectionTestModel,
         username: str,
         password: str,
         base_url: str,
         remote_identity: str,
         operation_uuid: UUID,
-        traffic: int,
-        expires_at: datetime,
+        traffic: int | None,
+        expires_at: datetime | None,
         device_limit: int | None,
         plan: ServiceOperationAttachmentPlanModel,
     ) -> ServiceOperationExecutionResult:
@@ -144,6 +162,16 @@ class DatabaseSanaeiServiceOperationExecutor:
             contract = CERTIFIED_CONTRACTS[ProviderKind.SANAEI_3X_UI]
             inbound = RemoteIdentifier(target.inbound_id)
             provider_label = f"svc-{remote_identity.replace('-', '')[:20]}"
+            traffic_policy = (
+                RemoteTrafficLimit(traffic)
+                if traffic is not None
+                else RemoteTrafficLimit(None, unlimited=True)
+            )
+            expiry_policy = (
+                RemoteExpiryPolicy(expires_at)
+                if expires_at is not None
+                else RemoteExpiryPolicy(None, no_expiry=True)
+            )
             command = ProviderMutationCommand(
                 operation_id=operation_uuid,
                 operation=ProviderMutationOperation.UPDATE_REMOTE_IDENTITY,
@@ -158,8 +186,8 @@ class DatabaseSanaeiServiceOperationExecutor:
                     shop_identity_reference=service.public_reference,
                     protocol=target.required_protocol,
                     enabled=True,
-                    traffic_limit=RemoteTrafficLimit(traffic),
-                    expiry=RemoteExpiryPolicy(expires_at),
+                    traffic_limit=traffic_policy,
+                    expiry=expiry_policy,
                     device_or_ip_limit=device_limit,
                     customer_safe_remark="customer service",
                     provider_safe_label=provider_label,
@@ -173,15 +201,24 @@ class DatabaseSanaeiServiceOperationExecutor:
                 correlation_reference=f"service-operation:{operation.id}",
                 causation_reference=operation.id,
             )
-            result = await execute_certified_sanaei_adjust(
-                SanaeiAdjustExecutor(transport, panel),
-                panel,
-                command,
-                writes_enabled=True,
-                detected_version=certification.detected_version,
-                detected_digest=certification.contract_digest,
-                certification_status=ProviderCertificationStatus(certification.status),
-            )
+            try:
+                result = await execute_certified_sanaei_adjust(
+                    SanaeiAdjustExecutor(transport, panel),
+                    panel,
+                    command,
+                    writes_enabled=True,
+                    detected_version=certification.detected_version,
+                    detected_digest=certification.contract_digest,
+                    certification_status=ProviderCertificationStatus(certification.status),
+                )
+            except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError, ConnectionError):
+                return ServiceOperationExecutionResult(
+                    "TRANSIENT_FAILURE", "PROVIDER_EXECUTION_UNAVAILABLE"
+                )
+            except ProviderError:
+                return ServiceOperationExecutionResult(
+                    "BLOCKED_BY_CONFIGURATION", "PROVIDER_EXECUTION_BLOCKED"
+                )
             if result.outcome is MutationOutcome.SUCCESS:
                 return ServiceOperationExecutionResult("SUCCESS", result.safe_code)
             return ServiceOperationExecutionResult(result.outcome.value, result.safe_code)
