@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -31,6 +32,7 @@ class _ServiceManagementPortal(InMemoryCustomerPortal):
         self.operation_status = "QUEUED"
         self.operation_type = "RENEW"
         self.operation_amount = 30
+        self.reason_codes: tuple[str, ...] = ()
 
     def service_management_eligibility(
         self, context: CustomerContext, service_reference: str
@@ -42,7 +44,7 @@ class _ServiceManagementPortal(InMemoryCustomerPortal):
                 self.eligible,
                 True,
                 True,
-                (),
+                self.reason_codes,
                 ServiceOperationQuoteOptions("DAY", 1, 365, 1, (7, 30, 90)),
             ),
             ServiceOperationEligibility(
@@ -50,7 +52,7 @@ class _ServiceManagementPortal(InMemoryCustomerPortal):
                 self.eligible,
                 True,
                 True,
-                (),
+                self.reason_codes,
                 ServiceOperationQuoteOptions("GIB", 5, 100, 5, (5, 10, 20, 50)),
             ),
         )
@@ -266,3 +268,58 @@ def test_ineligible_service_is_rejected_without_financial_mutation() -> None:
     assert "پرداخت" not in result.messages[0].text
     assert portal.quote_calls == []
     assert portal.payment_calls == []
+
+
+def test_in_progress_blocker_explains_no_new_payment_or_request() -> None:
+    portal = _ServiceManagementPortal()
+    portal.eligible = False
+    portal.reason_codes = ("SERVICE_OPERATION_IN_PROGRESS",)
+
+    result = _handler(portal).handle_callback(_callback(CallbackAction.RENEW, 21))
+
+    text = result.messages[0].text
+    rows = str(result.messages[0].rows)
+    assert "یک عملیات دیگر" in text
+    assert "در حال انجام" in text
+    assert "درخواست یا پرداخت جدید ثبت نکنید" in text
+    assert "بررسی دوباره سرویس" in rows
+    assert "پرداخت از کیف پول" not in rows
+    assert portal.quote_calls == []
+    assert portal.payment_calls == []
+
+
+def test_review_required_blocker_routes_to_support_and_forbids_repayment() -> None:
+    portal = _ServiceManagementPortal()
+    portal.eligible = False
+    portal.reason_codes = ("SERVICE_OPERATION_REVIEW_REQUIRED",)
+
+    result = _handler(portal).handle_callback(_callback(CallbackAction.EXTRA_TRAFFIC, 22))
+
+    text = result.messages[0].text
+    rows = str(result.messages[0].rows)
+    assert "نیاز به بررسی" in text
+    assert "دوباره پرداخت نکنید" in text
+    assert "پشتیبانی" in rows
+    assert "بررسی دوباره سرویس" in rows
+    assert "پرداخت از کیف پول" not in rows
+    assert portal.quote_calls == []
+    assert portal.payment_calls == []
+
+
+def test_service_management_rows_replace_financial_actions_while_blocked() -> None:
+    handler = _handler(_ServiceManagementPortal())
+    eligibility = (
+        ServiceOperationEligibility(
+            "RENEW", False, True, True, ("SERVICE_OPERATION_IN_PROGRESS",), None
+        ),
+        ServiceOperationEligibility(
+            "ADD_TRAFFIC", False, True, True, ("SERVICE_OPERATION_IN_PROGRESS",), None
+        ),
+    )
+
+    rows = handler._management_rows("svc_opaque", eligibility)
+    rendered = str(rows)
+
+    assert "عملیات سرویس در حال انجام است" in rendered
+    assert "تمدید سرویس" not in rendered
+    assert "خرید حجم اضافه" not in rendered
