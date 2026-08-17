@@ -164,9 +164,7 @@ def test_wallet_payment_callback_queues_operation_and_is_server_authoritative() 
     assert "پرداخت تمدید سرویس ثبت شد" in result.messages[0].text
     assert "300,000 ریال" in result.messages[0].text
     assert "صف اجرای امن" in result.messages[0].text
-    assert portal.payment_calls == [
-        (operation_reference, f"svcp:42:13:{operation_reference}")
-    ]
+    assert portal.payment_calls == [(operation_reference, f"svcp:42:13:{operation_reference}")]
 
 
 def test_insufficient_wallet_payment_routes_customer_to_topup() -> None:
