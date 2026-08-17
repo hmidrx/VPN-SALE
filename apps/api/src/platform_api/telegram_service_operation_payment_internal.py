@@ -44,6 +44,10 @@ router = APIRouter(
 )
 
 _LOT_BACKED_BUCKETS = frozenset({"PROMOTIONAL", "REFERRAL", "GIFT"})
+_ELIGIBLE_LIFECYCLES = frozenset({"ACTIVE", "EXPIRED", "SUSPENDED", "DEGRADED"})
+_POST_PAYMENT_STATUSES = frozenset(
+    {ServiceOperationStatus.QUEUED.value, ServiceOperationStatus.PENDING_APPROVAL.value}
+)
 
 
 @dataclass(frozen=True)
@@ -174,17 +178,20 @@ def _payment_view(
     operation: ServiceOperationModel,
     service: ServiceModel,
 ) -> dict[str, object]:
+    post_payment_status = payment.spend_snapshot.get("post_payment_operation_status")
+    if post_payment_status not in _POST_PAYMENT_STATUSES:
+        raise _payment_error(status.HTTP_409_CONFLICT, "payment_snapshot_invalid")
     return {
         "payment_reference": payment.id,
         "operation_reference": operation.id,
         "service_reference": service.public_reference,
         "operation_type": operation.operation_type,
-        "status": operation.status,
+        "status": post_payment_status,
         "amount_rial": payment.amount_rial,
         "currency": payment.currency,
         "reservation_reference": payment.reservation_id,
         "capture_journal_reference": payment.capture_journal_id,
-        "queued": operation.status == ServiceOperationStatus.QUEUED.value,
+        "queued": post_payment_status == ServiceOperationStatus.QUEUED.value,
     }
 
 
@@ -222,6 +229,8 @@ def pay_service_operation(
         _no_store(response)
         return _payment_view(existing, operation, service)
 
+    if service.lifecycle not in _ELIGIBLE_LIFECYCLES:
+        raise _payment_error(status.HTTP_409_CONFLICT, "service_not_eligible")
     price_rial, quote_expires_at, quoted_service_version, quote_id = _quote_fields(operation)
     if service.version != quoted_service_version:
         raise _payment_error(status.HTTP_409_CONFLICT, "service_changed_since_quote")
@@ -234,10 +243,10 @@ def pay_service_operation(
             quote_expires_at=quote_expires_at,
             now=datetime.now(UTC),
         )
-    except (ValueError, ServiceOperationDomainError) as exc:
+        RialAmount(price_rial)
+    except (ValueError, OverflowError, ServiceOperationDomainError) as exc:
         raise _payment_error(status.HTTP_409_CONFLICT, "service_operation_payment_invalid") from exc
 
-    RialAmount(price_rial)
     wallet = _ensure_wallet(db, customer_id)
     if wallet.status != "ACTIVE":
         raise _payment_error(status.HTTP_409_CONFLICT, "wallet_not_active")
@@ -321,6 +330,7 @@ def pay_service_operation(
         projection.posted_balance_rial - projection.reserved_balance_rial
     )
     projection.version += 1
+    projection.updated_at = now
     reservation.status = "CAPTURED"
     reservation.captured_at = now
 
@@ -337,10 +347,11 @@ def pay_service_operation(
         idempotency_key_hash=hashlib.sha256(idempotency_key.encode()).hexdigest(),
         request_fingerprint=fingerprint,
         spend_snapshot={
+            "post_payment_operation_status": target_status.value,
             "buckets": [
                 {"bucket_type": spend.bucket_type, "amount_rial": spend.amount_rial}
                 for spend in spend_plan
-            ]
+            ],
         },
         created_at=now,
         completed_at=now,
