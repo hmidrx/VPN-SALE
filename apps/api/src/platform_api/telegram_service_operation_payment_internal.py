@@ -6,7 +6,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import APIRouter, Header, HTTPException, Response, status
 from sqlalchemy import or_, select
@@ -97,7 +97,7 @@ def _high_risk_operations(operation: ServiceOperationModel) -> frozenset[Service
     if not isinstance(raw, list):
         raise _payment_error(status.HTTP_409_CONFLICT, "policy_snapshot_invalid")
     result: set[ServiceOperationType] = set()
-    for value in raw:
+    for value in cast(list[object], raw):
         if not isinstance(value, str):
             raise _payment_error(status.HTTP_409_CONFLICT, "policy_snapshot_invalid")
         try:
