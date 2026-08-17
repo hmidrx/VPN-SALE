@@ -335,9 +335,7 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
             int(data["verified_amount_toman"])
             if data.get("verified_amount_toman") is not None
             else None,
-            int(data["bonus_amount_toman"])
-            if data.get("bonus_amount_toman") is not None
-            else None,
+            int(data["bonus_amount_toman"]) if data.get("bonus_amount_toman") is not None else None,
             int(data["total_credited_toman"])
             if data.get("total_credited_toman") is not None
             else None,
