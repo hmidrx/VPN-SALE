@@ -256,9 +256,7 @@ class ServiceOperationExecutionWorker:
                 event.failure_category = None
                 return None
             if operation.status in _TERMINAL_OPERATION_STATES:
-                self._fail_event(
-                    event, f"SERVICE_OPERATION_{operation.status}", now, terminal=True
-                )
+                self._fail_event(event, f"SERVICE_OPERATION_{operation.status}", now, terminal=True)
                 return None
             if operation.operation_type not in _SUPPORTED_OPERATIONS:
                 self._set_operation_status(operation, "MANUAL_REVIEW", now)
@@ -320,9 +318,7 @@ class ServiceOperationExecutionWorker:
                     desired = _desired_state(service, operation, now)
                 except ValueError:
                     self._set_operation_status(operation, "COMPENSATION_REQUIRED", now)
-                    self._fail_event(
-                        event, "SERVICE_OPERATION_TARGET_INVALID", now, terminal=True
-                    )
+                    self._fail_event(event, "SERVICE_OPERATION_TARGET_INVALID", now, terminal=True)
                     return None
                 attachments = list(
                     db.scalars(
@@ -372,12 +368,15 @@ class ServiceOperationExecutionWorker:
 
     def _load_plan_work(
         self, plan_id: str
-    ) -> tuple[
-        ServiceOperationModel,
-        ServiceModel,
-        ServiceAttachmentModel,
-        ServiceOperationAttachmentPlanModel,
-    ] | None:
+    ) -> (
+        tuple[
+            ServiceOperationModel,
+            ServiceModel,
+            ServiceAttachmentModel,
+            ServiceOperationAttachmentPlanModel,
+        ]
+        | None
+    ):
         now = self.now()
         with self.factory.begin() as db:
             plan = db.scalar(
@@ -411,9 +410,7 @@ class ServiceOperationExecutionWorker:
                 db.expunge(row)
             return operation, service, attachment, plan
 
-    def _record_plan_result(
-        self, plan_id: str, result: ServiceOperationExecutionResult
-    ) -> None:
+    def _record_plan_result(self, plan_id: str, result: ServiceOperationExecutionResult) -> None:
         now = self.now()
         with self.factory.begin() as db:
             plan = db.scalar(
