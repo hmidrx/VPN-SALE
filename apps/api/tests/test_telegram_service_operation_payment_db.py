@@ -159,7 +159,9 @@ def payment_app(tmp_path: Path) -> PaymentApp:
     return app, factory
 
 
-def _headers(telegram_id: int = TELEGRAM_ID, key: str = "payment-idempotency-key-001") -> dict[str, str]:
+def _headers(
+    telegram_id: int = TELEGRAM_ID, key: str = "payment-idempotency-key-001"
+) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {TOKEN}",
         "X-Telegram-Subject": str(telegram_id),
@@ -229,6 +231,7 @@ async def test_stale_service_version_is_rejected_before_wallet_mutation(
     with factory.begin() as db:
         operation = db.get(ServiceOperationModel, OPERATION_ID)
         assert operation is not None
+        assert isinstance(operation.quote_snapshot, dict)
         operation.quote_snapshot = {**operation.quote_snapshot, "service_version": 2}
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://private") as client:
@@ -249,7 +252,9 @@ async def test_insufficient_wallet_balance_creates_no_financial_records(
     app, factory = payment_app
     with factory.begin() as db:
         projection = db.scalar(select(WalletBalanceProjectionModel))
-        bucket = db.scalar(select(WalletBalanceBucketModel).where(WalletBalanceBucketModel.bucket_type == "CASH"))
+        bucket = db.scalar(
+            select(WalletBalanceBucketModel).where(WalletBalanceBucketModel.bucket_type == "CASH")
+        )
         assert projection is not None and bucket is not None
         projection.posted_balance_rial = PRICE_RIAL - 1
         projection.available_balance_rial = PRICE_RIAL - 1
