@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
-from sqlalchemy import or_, select
+from sqlalchemy import String, cast, exists, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from platform_api.identity.models import TelegramAccountModel
@@ -40,6 +40,7 @@ _TERMINAL_STATUSES = frozenset(
 )
 _PAYMENT_STATUSES = frozenset({"CAPTURED", "REFUNDED"})
 _CALLBACK_PREFIX = "b:v1:svst:"
+_EVENT_KEY_PREFIX = "tg-svc-op:"
 
 
 class InvalidServiceOperationNotification(RuntimeError):
@@ -66,7 +67,7 @@ class ServiceOperationNotificationTarget:
 
 
 def _event_key(operation: ServiceOperationModel) -> str:
-    return f"tg-svc-op:{operation.id}:{operation.status}"
+    return f"{_EVENT_KEY_PREFIX}{operation.id}:{operation.status}"
 
 
 def _callback_data(operation_reference: str) -> str:
@@ -94,7 +95,7 @@ def _notification_text(target: ServiceOperationNotificationTarget) -> str:
     if target.status == "COMPENSATION_REQUIRED":
         return (
             f"⚠️ {label} برای سرویس {reference} نیاز به بررسی و جبران دارد.\n"
-            "برای جلوگیری از برداشت تکراری، دوباره پرداخت نکنید."
+            "برای جلوگیری از اقدام مالی تکراری، دوباره پرداخت نکنید."
         )
     if target.status == "COMPENSATED":
         return (
@@ -109,7 +110,7 @@ def _notification_text(target: ServiceOperationNotificationTarget) -> str:
     if target.status == "FAILED":
         return (
             f"❌ {label} برای سرویس {reference} با خطا متوقف شد.\n"
-            "چون پرداخت قبلاً ثبت شده، دوباره پرداخت نکنید و وضعیت را پیگیری کنید."
+            "برای جلوگیری از اقدام مالی تکراری، دوباره پرداخت نکنید و وضعیت را پیگیری کنید."
         )
     if target.status == "CANCELLED":
         return (
@@ -137,6 +138,15 @@ class ServiceOperationNotificationWorker:
 
     @staticmethod
     def _enqueue(db: Session, now: datetime) -> int:
+        event_key_expression = (
+            _EVENT_KEY_PREFIX
+            + cast(ServiceOperationModel.id, String)
+            + ":"
+            + ServiceOperationModel.status
+        )
+        already_enqueued = exists().where(
+            TransactionalOutboxModel.event_key == event_key_expression
+        )
         operations = list(
             db.scalars(
                 select(ServiceOperationModel)
@@ -150,27 +160,21 @@ class ServiceOperationNotificationWorker:
                     ServiceOperationModel.status.in_(_TERMINAL_STATUSES),
                     ServiceOperationModel.requester_type == "CUSTOMER",
                     ServiceOperationPaymentModel.status.in_(_PAYMENT_STATUSES),
-                    ServiceOperationPaymentModel.customer_id == ServiceOperationModel.requester_id,
-                    ServiceModel.beneficiary_customer_id == ServiceOperationModel.requester_id,
+                    cast(ServiceOperationPaymentModel.customer_id, String)
+                    == ServiceOperationModel.requester_id,
+                    ServiceOperationPaymentModel.customer_id
+                    == ServiceModel.beneficiary_customer_id,
+                    ~already_enqueued,
                 )
                 .order_by(ServiceOperationModel.updated_at, ServiceOperationModel.id)
                 .limit(BATCH_SIZE)
-                .with_for_update(skip_locked=True)
+                .with_for_update(skip_locked=True, of=ServiceOperationModel)
             )
         )
-        added = 0
         for operation in operations:
-            key = _event_key(operation)
-            existing = db.scalar(
-                select(TransactionalOutboxModel.id).where(
-                    TransactionalOutboxModel.event_key == key
-                )
-            )
-            if existing is not None:
-                continue
             db.add(
                 TransactionalOutboxModel(
-                    event_key=key,
+                    event_key=_event_key(operation),
                     event_type=EVENT_TYPE,
                     status="PENDING",
                     payload={
@@ -181,9 +185,8 @@ class ServiceOperationNotificationWorker:
                     available_at=now,
                 )
             )
-            added += 1
         db.flush()
-        return added
+        return len(operations)
 
     @staticmethod
     def _claim(db: Session, now: datetime) -> list[str]:
@@ -285,11 +288,15 @@ class ServiceOperationNotificationWorker:
                 else None
             )
             service = db.get(ServiceModel, operation.service_id) if operation is not None else None
-            payment = db.scalar(
-                select(ServiceOperationPaymentModel).where(
-                    ServiceOperationPaymentModel.operation_id == operation.id
+            payment = (
+                db.scalar(
+                    select(ServiceOperationPaymentModel).where(
+                        ServiceOperationPaymentModel.operation_id == operation.id
+                    )
                 )
-            ) if operation is not None else None
+                if operation is not None
+                else None
+            )
             try:
                 target = self._target(event, operation, service, payment)
                 text = _notification_text(target)
