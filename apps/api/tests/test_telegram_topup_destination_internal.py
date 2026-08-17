@@ -6,9 +6,9 @@ from typing import Any, cast
 import pytest
 from fastapi import HTTPException, Response
 
+from platform_api import telegram_topup_destination_internal as destination_api
 from platform_api.config import Settings
 from platform_api.identity.security import EncryptedSecret
-from platform_api import telegram_topup_destination_internal as destination_api
 
 
 class FakeEncryptor:
