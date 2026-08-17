@@ -14,8 +14,6 @@ down_revision: str = "0045_service_op_wallet_payment"
 branch_labels: None = None
 depends_on: None = None
 
-_EVENT_TYPE = "service_operation.telegram_notification.v1"
-
 
 def upgrade() -> None:
     # Existing completed/failed paid operations predate proactive Telegram delivery.
@@ -23,7 +21,7 @@ def upgrade() -> None:
     # cannot flood customers with stale notifications. Later status transitions use
     # a different event_key and remain eligible for a fresh notification.
     op.execute(
-        f"""
+        """
         INSERT INTO transactional_outbox (
             id,
             event_key,
@@ -41,7 +39,7 @@ def upgrade() -> None:
                 'tg-svc-op-baseline:' || operation.id::text || ':' || operation.status
             )::uuid,
             'tg-svc-op:' || operation.id::text || ':' || operation.status,
-            '{_EVENT_TYPE}',
+            'service_operation.telegram_notification.v1',
             'PROCESSED',
             jsonb_build_object(
                 'operation_id', operation.id::text,
@@ -83,15 +81,15 @@ def downgrade() -> None:
     # Remove only rows owned by this migration. Notifications created by the
     # runtime after rollout are intentionally preserved.
     op.execute(
-        f"""
+        """
         DELETE FROM transactional_outbox
-        WHERE event_type = '{_EVENT_TYPE}'
+        WHERE event_type = 'service_operation.telegram_notification.v1'
           AND status = 'PROCESSED'
           AND failure_category = 'BASELINED'
           AND payload ->> 'baseline' = 'true'
           AND id = md5(
-              'tg-svc-op-baseline:' || payload ->> 'operation_id' || ':' ||
-              payload ->> 'terminal_status'
+              'tg-svc-op-baseline:' || (payload ->> 'operation_id') || ':' ||
+              (payload ->> 'terminal_status')
           )::uuid
         """
     )
