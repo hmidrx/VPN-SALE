@@ -15,11 +15,19 @@ from platform_worker.service_operation_execution import (
     DisabledServiceOperationExecutor,
     ServiceOperationExecutionWorker,
     _desired_state,
+    _renewal_target,
     retry_delay,
 )
 
+_DAY = 24 * 60 * 60
 
-def _service(*, expires_at: datetime, traffic: int = 10 * 1024**3, version: int = 4):
+
+def _service(
+    *,
+    expires_at: datetime | None,
+    traffic: int = 10 * 1024**3,
+    version: int = 4,
+) -> ServiceModel:
     return cast(
         ServiceModel,
         SimpleNamespace(
@@ -30,7 +38,12 @@ def _service(*, expires_at: datetime, traffic: int = 10 * 1024**3, version: int 
     )
 
 
-def _operation(kind: str, *, traffic_delta: int = 0, duration_delta: int = 0):
+def _operation(
+    kind: str,
+    *,
+    traffic_delta: int = 0,
+    duration_delta: int = 0,
+) -> ServiceOperationModel:
     return cast(
         ServiceOperationModel,
         SimpleNamespace(
@@ -49,28 +62,50 @@ def test_retry_is_bounded_and_blocked_provider_is_not_hammered() -> None:
     assert BLOCKED_RETRY == timedelta(hours=6)
 
 
-def test_expired_renewal_target_starts_from_now_not_stale_expiry() -> None:
+def test_active_renewal_adds_exact_purchased_whole_days() -> None:
     now = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
-    service = _service(expires_at=now - timedelta(days=10))
-    operation = _operation("RENEW", duration_delta=30 * 24 * 60 * 60)
+    expiry = now + timedelta(days=10, hours=3)
+    operation = _operation("RENEW", duration_delta=30 * _DAY)
 
-    desired = _desired_state(service, operation, now)
+    desired = _desired_state(_service(expires_at=expiry), operation, now)
 
-    assert desired["expires_at"] == (now + timedelta(days=30)).isoformat()
-    assert desired["traffic_limit_bytes"] == 10 * 1024**3
+    assert desired["expires_at"] == (expiry + timedelta(days=30)).isoformat()
+    assert desired["traffic_limit_bytes"] is None
     assert desired["service_version_base"] == 4
 
 
-def test_add_traffic_target_is_additive_and_preserves_expiry() -> None:
+def test_expired_renewal_uses_whole_day_catch_up_without_losing_purchased_time() -> None:
     now = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
-    expiry = now + timedelta(days=20)
-    service = _service(expires_at=expiry, traffic=25 * 1024**3)
+    stale_expiry = now - timedelta(days=10, hours=6)
+    target = _renewal_target(stale_expiry, now, 30 * _DAY)
+
+    provider_delta = target - stale_expiry
+    assert provider_delta.total_seconds() % _DAY == 0
+    assert target >= now + timedelta(days=30)
+    assert target < now + timedelta(days=31)
+
+
+def test_renewal_rejects_non_whole_day_duration() -> None:
+    now = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
+    operation = _operation("RENEW", duration_delta=30 * _DAY + 1)
+
+    try:
+        _desired_state(_service(expires_at=now + timedelta(days=2)), operation, now)
+    except ValueError as exc:
+        assert "whole days" in str(exc)
+    else:
+        raise AssertionError("non-whole-day renewal must be rejected")
+
+
+def test_add_traffic_target_is_additive_and_does_not_target_expiry() -> None:
+    now = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
+    service = _service(expires_at=None, traffic=25 * 1024**3)
     operation = _operation("ADD_TRAFFIC", traffic_delta=15 * 1024**3)
 
     desired = _desired_state(service, operation, now)
 
     assert desired["traffic_limit_bytes"] == 40 * 1024**3
-    assert desired["expires_at"] == expiry.isoformat()
+    assert desired["expires_at"] is None
 
 
 def test_worker_claim_is_postgres_safe_and_provider_io_is_outside_claim() -> None:
@@ -92,15 +127,24 @@ def test_target_is_persisted_before_provider_execution_for_crash_safe_replay() -
     assert "expected_snapshot_digest" in source
 
 
-def test_success_updates_service_version_only_after_all_required_plans_verify() -> None:
-    source = getsource(ServiceOperationExecutionWorker._settle)
-    all_verified = source.index('all(plan.status == "SUCCEEDED" and plan.verified for plan in required)')
-    complete = source.index("self._complete_success")
-    assert all_verified < complete
+def test_success_requires_all_required_plans_and_unchanged_service_version() -> None:
+    settle_source = getsource(ServiceOperationExecutionWorker._settle)
+    expected = 'all(plan.status == "SUCCEEDED" and plan.verified for plan in required)'
+    assert expected in settle_source
     complete_source = getsource(ServiceOperationExecutionWorker._complete_success)
+    assert "service.version != base_version" in complete_source
     assert "service.version += 1" in complete_source
-    assert 'operation.status = "SUCCEEDED"' in complete_source
+    assert 'self._set_operation_status(operation, "SUCCEEDED", now)' in complete_source
     assert 'event.status = "PROCESSED"' in complete_source
+
+
+def test_success_applies_only_the_purchased_local_dimension() -> None:
+    source = getsource(ServiceOperationExecutionWorker._complete_success)
+    renewal_branch = source.index('if operation.operation_type == "RENEW"')
+    traffic_branch = source.index('elif operation.operation_type == "ADD_TRAFFIC"')
+    expiry_write = source.index("service.expires_at = expires_at")
+    traffic_write = source.index('entitlement["traffic_quota_bytes"] = traffic')
+    assert renewal_branch < expiry_write < traffic_branch < traffic_write
 
 
 def test_real_executor_uses_certified_additive_adjustment_path() -> None:
@@ -110,6 +154,12 @@ def test_real_executor_uses_certified_additive_adjustment_path() -> None:
     assert "SanaeiAuthenticatedTransport.authenticate" in source
     assert "UPDATE_REMOTE_IDENTITY" in source
     assert "CREATE_REMOTE_IDENTITY" not in source
+
+
+def test_real_executor_ignores_unpurchased_provider_dimension() -> None:
+    source = getsource(real_service_operation_executor.DatabaseSanaeiServiceOperationExecutor)
+    assert "RemoteTrafficLimit(None, unlimited=True)" in source
+    assert "RemoteExpiryPolicy(None, no_expiry=True)" in source
 
 
 def test_production_composition_reaches_real_executor_only_when_writes_enabled() -> None:
