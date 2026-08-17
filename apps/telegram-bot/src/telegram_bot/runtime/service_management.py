@@ -39,6 +39,8 @@ _REVIEW_STATUSES = frozenset(
 )
 _BLOCKER_IN_PROGRESS = "SERVICE_OPERATION_IN_PROGRESS"
 _BLOCKER_REVIEW_REQUIRED = "SERVICE_OPERATION_REVIEW_REQUIRED"
+_API_BLOCKER_IN_PROGRESS = "service_operation_in_progress"
+_API_BLOCKER_REVIEW_REQUIRED = "service_operation_review_required"
 _SERVICE_NOT_ELIGIBLE = "SERVICE_NOT_ELIGIBLE"
 _POLICY_UNAVAILABLE = "POLICY_UNAVAILABLE"
 
@@ -159,6 +161,55 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
             ]
         )
         return [*rows, *self.renderer.nav_rows(locale)]
+
+    def _authoritative_blocker_screen(
+        self,
+        locale: str,
+        safe_code: str | None,
+        service_reference: str | None,
+    ) -> HandlerResult | None:
+        if safe_code not in {_API_BLOCKER_IN_PROGRESS, _API_BLOCKER_REVIEW_REQUIRED}:
+            return None
+        rows: list[list[dict[str, str]]] = []
+        if safe_code == _API_BLOCKER_REVIEW_REQUIRED:
+            text = (
+                "⚠️ عملیات قبلی این سرویس هنوز نیازمند بررسی است.\n\n"
+                "درخواست جدید ادامه داده نشد. تا مشخص‌شدن نتیجه نهایی دوباره پرداخت نکنید."
+            )
+            rows.append(
+                [
+                    {
+                        "text": "💬 پشتیبانی",
+                        "callback_data": BotCallback(CallbackAction.SUPPORT).pack(),
+                    }
+                ]
+            )
+        else:
+            text = (
+                "⏳ هم‌زمان یک عملیات دیگر برای این سرویس در حال انجام است.\n\n"
+                "درخواست جدید ادامه داده نشد. تا نهایی‌شدن عملیات قبلی دوباره پرداخت نکنید."
+            )
+        if service_reference:
+            rows.append(
+                [
+                    {
+                        "text": "🔄 بررسی دوباره سرویس",
+                        "callback_data": BotCallback(
+                            CallbackAction.OPEN_SERVICE, service_reference
+                        ).pack(),
+                    }
+                ]
+            )
+        else:
+            rows.append(
+                [
+                    {
+                        "text": "📦 سرویس‌های من",
+                        "callback_data": BotCallback(CallbackAction.MY_SERVICES).pack(),
+                    }
+                ]
+            )
+        return self._callback_message(text, [*rows, *self.renderer.nav_rows(locale)])
 
     @staticmethod
     def _amount_label(amount: int, options: ServiceOperationQuoteOptions) -> str:
@@ -283,7 +334,10 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
                 amount,
                 self._quote_idempotency_key(user, update_id, operation_type, amount),
             )
-        except AuthoritativePrivateApiError:
+        except AuthoritativePrivateApiError as exc:
+            blocked = self._authoritative_blocker_screen(locale, exc.safe_code, reference)
+            if blocked is not None:
+                return blocked
             return self._callback_message(
                 "قیمت این انتخاب دیگر معتبر نیست. گزینه‌های سرویس را دوباره باز کنید.",
                 self.renderer.nav_rows(locale),
@@ -531,6 +585,9 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
                         *self.renderer.nav_rows(locale),
                     ],
                 )
+            blocked = self._authoritative_blocker_screen(locale, exc.safe_code, None)
+            if blocked is not None:
+                return blocked
             return self._callback_message(
                 "این قیمت یا وضعیت سرویس دیگر برای پرداخت معتبر نیست. "
                 "سرویس را دوباره باز کنید و قیمت جدید بگیرید.",

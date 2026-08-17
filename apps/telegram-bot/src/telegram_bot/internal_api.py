@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -27,6 +28,9 @@ from telegram_bot.portal import (
     WalletTransaction,
 )
 
+_SAFE_REJECTION_CODE = re.compile(r"^[a-z0-9_]{1,80}$")
+_MAX_REJECTION_BODY_BYTES = 4096
+
 
 class PrivateApiUnavailable(RuntimeError):
     """Customer-safe boundary: response bodies and credentials never escape."""
@@ -39,9 +43,10 @@ class PurchaseOutcomeUnknown(PrivateApiUnavailable):
 class AuthoritativePrivateApiError(PrivateApiUnavailable):
     """Sanitized HTTP rejection proving that the server returned a response."""
 
-    def __init__(self, status_code: int) -> None:
+    def __init__(self, status_code: int, safe_code: str | None = None) -> None:
         super().__init__("درخواست خرید از طرف سرور رد شد.")
         self.status_code = status_code
+        self.safe_code = safe_code
 
 
 class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
@@ -54,6 +59,27 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
         self._base = base_url.rstrip("/") + "/api/v1/internal/telegram"
         self._token = token
         self._timeout = timeout
+
+    @staticmethod
+    def _safe_http_rejection_code(exc: urllib.error.HTTPError) -> str | None:
+        """Extract one bounded machine code without retaining or exposing response bodies."""
+        try:
+            raw = exc.read(_MAX_REJECTION_BODY_BYTES + 1)
+        except OSError:
+            return None
+        if len(raw) > _MAX_REJECTION_BODY_BYTES:
+            return None
+        try:
+            decoded: object = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        if not isinstance(decoded, dict):
+            return None
+        payload = cast(dict[str, object], decoded)
+        detail = payload.get("detail")
+        if not isinstance(detail, str) or _SAFE_REJECTION_CODE.fullmatch(detail) is None:
+            return None
+        return detail
 
     def _request(
         self,
@@ -86,9 +112,11 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
                 return cast(dict[str, Any], json.loads(response.read(1_048_576).decode()))
         except urllib.error.HTTPError as exc:
             # HTTPError subclasses URLError, but it proves the server authoritatively rejected the
-            # request. Never mislabel a deterministic 4xx as a possibly committed mutation.
+            # request. Preserve only a tiny validated machine code; never propagate raw bodies.
             if 400 <= exc.code < 500:
-                raise AuthoritativePrivateApiError(exc.code) from exc
+                raise AuthoritativePrivateApiError(
+                    exc.code, self._safe_http_rejection_code(exc)
+                ) from exc
             raise PrivateApiUnavailable("سرویس موقتاً در دسترس نیست.") from exc
         except (urllib.error.URLError, ValueError, OSError) as exc:
             raise PrivateApiUnavailable("سرویس موقتاً در دسترس نیست.") from exc
