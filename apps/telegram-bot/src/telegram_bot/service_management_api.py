@@ -1,13 +1,23 @@
-"""Telegram-native service management eligibility adapter."""
+"""Telegram-native service management eligibility and quote adapter."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Protocol, cast
 
 from telegram_bot.internal_api import PrivateApiUnavailable
 from telegram_bot.portal import CustomerContext
 from telegram_bot.topup_destination_api import NativeTopupPrivatePlatformClient
+
+
+@dataclass(frozen=True)
+class ServiceOperationQuoteOptions:
+    unit: str
+    minimum_amount: int
+    maximum_amount: int
+    increment: int
+    suggested_amounts: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -17,6 +27,20 @@ class ServiceOperationEligibility:
     billable: bool
     requires_authoritative_quote: bool
     safe_reason_codes: tuple[str, ...]
+    quote_options: ServiceOperationQuoteOptions | None = None
+
+
+@dataclass(frozen=True)
+class ServiceOperationQuote:
+    operation_reference: str
+    service_id: str
+    operation_type: str
+    status: str
+    amount: int
+    price_rial: int
+    currency: str
+    expires_at: datetime
+    policy_version_id: str
 
 
 class ServiceManagementPortal(Protocol):
@@ -24,10 +48,61 @@ class ServiceManagementPortal(Protocol):
         self, context: CustomerContext, service_reference: str
     ) -> tuple[ServiceOperationEligibility, ...]: ...
 
+    def service_operation_quote(
+        self,
+        context: CustomerContext,
+        service_reference: str,
+        operation_type: str,
+        amount: int,
+        idempotency_key: str,
+    ) -> ServiceOperationQuote: ...
+
 
 class ServiceManagementPrivatePlatformClient(
     NativeTopupPrivatePlatformClient, ServiceManagementPortal
 ):
+    @staticmethod
+    def _quote_options(value: object) -> ServiceOperationQuoteOptions | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise PrivateApiUnavailable("گزینه‌های قیمت‌گذاری سرویس قابل استفاده نیست.")
+        item = cast(dict[str, Any], value)
+        unit = item.get("unit")
+        minimum = item.get("minimum_amount")
+        maximum = item.get("maximum_amount")
+        increment = item.get("increment")
+        raw_suggestions = item.get("suggested_amounts")
+        if (
+            unit not in {"DAY", "GIB"}
+            or not isinstance(minimum, int)
+            or isinstance(minimum, bool)
+            or not isinstance(maximum, int)
+            or isinstance(maximum, bool)
+            or not isinstance(increment, int)
+            or isinstance(increment, bool)
+            or minimum <= 0
+            or maximum < minimum
+            or increment <= 0
+            or not isinstance(raw_suggestions, list)
+        ):
+            raise PrivateApiUnavailable("گزینه‌های قیمت‌گذاری سرویس قابل استفاده نیست.")
+        suggestions = cast(list[object], raw_suggestions)
+        if not suggestions or len(suggestions) > 8:
+            raise PrivateApiUnavailable("گزینه‌های قیمت‌گذاری سرویس قابل استفاده نیست.")
+        parsed: list[int] = []
+        for raw in suggestions:
+            if (
+                not isinstance(raw, int)
+                or isinstance(raw, bool)
+                or raw < minimum
+                or raw > maximum
+                or raw % increment != 0
+            ):
+                raise PrivateApiUnavailable("گزینه‌های قیمت‌گذاری سرویس قابل استفاده نیست.")
+            parsed.append(raw)
+        return ServiceOperationQuoteOptions(unit, minimum, maximum, increment, tuple(parsed))
+
     def service_management_eligibility(
         self, context: CustomerContext, service_reference: str
     ) -> tuple[ServiceOperationEligibility, ...]:
@@ -64,6 +139,9 @@ class ServiceManagementPrivatePlatformClient(
                 or any(not isinstance(code, str) or len(code) > 80 for code in reason_codes)
             ):
                 raise PrivateApiUnavailable("وضعیت مدیریت سرویس قابل استفاده نیست.")
+            quote_options = self._quote_options(item.get("quote_options"))
+            if eligible and quote_required and quote_options is None:
+                raise PrivateApiUnavailable("گزینه‌های قیمت‌گذاری سرویس قابل استفاده نیست.")
             result.append(
                 ServiceOperationEligibility(
                     operation_type=operation_type,
@@ -71,6 +149,67 @@ class ServiceManagementPrivatePlatformClient(
                     billable=billable,
                     requires_authoritative_quote=quote_required,
                     safe_reason_codes=tuple(cast(list[str], reason_codes)),
+                    quote_options=quote_options,
                 )
             )
         return tuple(result)
+
+    def service_operation_quote(
+        self,
+        context: CustomerContext,
+        service_reference: str,
+        operation_type: str,
+        amount: int,
+        idempotency_key: str,
+    ) -> ServiceOperationQuote:
+        if operation_type not in {"RENEW", "ADD_TRAFFIC"} or amount <= 0:
+            raise ValueError("invalid service operation quote request")
+        data = self._request(
+            "POST",
+            f"/service-management/{service_reference}/quotes",
+            context.telegram_user_id,
+            {"operation_type": operation_type, "amount": amount},
+            idempotency_key,
+        )
+        returned_operation = data.get("operation_type")
+        returned_amount = data.get("amount")
+        price_rial = data.get("price_rial")
+        currency = data.get("currency")
+        if (
+            returned_operation != operation_type
+            or not isinstance(returned_amount, int)
+            or isinstance(returned_amount, bool)
+            or returned_amount != amount
+            or not isinstance(price_rial, int)
+            or isinstance(price_rial, bool)
+            or price_rial <= 0
+            or currency != "IRR"
+        ):
+            raise PrivateApiUnavailable("پاسخ قیمت‌گذاری سرویس معتبر نیست.")
+        try:
+            expires_at = datetime.fromisoformat(str(data["expires_at"]))
+            operation_reference = str(data["operation_reference"])
+            service_id = str(data["service_id"])
+            status_value = str(data["status"])
+            policy_version_id = str(data["policy_version_id"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PrivateApiUnavailable("پاسخ قیمت‌گذاری سرویس معتبر نیست.") from exc
+        if (
+            expires_at.tzinfo is None
+            or not operation_reference
+            or not service_id
+            or status_value != "AWAITING_PAYMENT"
+            or not policy_version_id
+        ):
+            raise PrivateApiUnavailable("پاسخ قیمت‌گذاری سرویس معتبر نیست.")
+        return ServiceOperationQuote(
+            operation_reference=operation_reference,
+            service_id=service_id,
+            operation_type=operation_type,
+            status=status_value,
+            amount=returned_amount,
+            price_rial=price_rial,
+            currency=currency,
+            expires_at=expires_at,
+            policy_version_id=policy_version_id,
+        )
