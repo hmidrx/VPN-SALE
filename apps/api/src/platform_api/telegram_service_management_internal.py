@@ -117,9 +117,9 @@ def _optional_positive_int(snapshot: dict[str, object], key: str) -> int | None:
     value = snapshot.get(key)
     if value is None:
         return None
-    if type(value) is not int or cast(int, value) <= 0:
+    if type(value) is not int or value <= 0:
         raise ValueError(f"invalid {key}")
-    return cast(int, value)
+    return value
 
 
 def _optional_cooldown(snapshot: dict[str, object]) -> timedelta | None:
@@ -128,15 +128,13 @@ def _optional_cooldown(snapshot: dict[str, object]) -> timedelta | None:
         value = snapshot.get("cooldown")
     if value is None:
         return None
-    if type(value) is not int or cast(int, value) < 0:
+    if type(value) is not int or value < 0:
         raise ValueError("invalid cooldown")
-    return timedelta(seconds=cast(int, value))
+    return timedelta(seconds=value)
 
 
 def _policy_domain(row: ServiceOperationPolicyVersionModel) -> ServiceOperationPolicyVersion:
     snapshot = row.immutable_snapshot
-    if not isinstance(snapshot, dict):
-        raise ValueError("invalid policy snapshot")
     rule_raw = snapshot.get("price_rule", "NONE")
     if not isinstance(rule_raw, str):
         raise ValueError("invalid price_rule")
@@ -165,8 +163,8 @@ def _policy_domain(row: ServiceOperationPolicyVersionModel) -> ServiceOperationP
         high_risk_operations=_operation_set(snapshot, "high_risk_operations"),
         required_permissions=_required_permissions(snapshot),
         price_rule=ServiceOperationPriceRule(rule_raw),
-        fixed_price_rial=cast(int, fixed_price),
-        unit_price_rial=cast(int, unit_price),
+        fixed_price_rial=fixed_price,
+        unit_price_rial=unit_price,
         min_amount=_optional_positive_int(snapshot, "min_amount"),
         max_amount=_optional_positive_int(snapshot, "max_amount"),
         increment=_optional_positive_int(snapshot, "increment"),
@@ -326,7 +324,7 @@ def service_management_eligibility(
             reason_codes.append("SERVICE_NOT_ELIGIBLE")
         else:
             try:
-                _, policy = _published_customer_policy(db, operation_type)
+                policy = _published_customer_policy(db, operation_type)[1]
             except HTTPException:
                 reason_codes.append("POLICY_UNAVAILABLE")
             else:
