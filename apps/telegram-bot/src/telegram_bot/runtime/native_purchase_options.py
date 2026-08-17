@@ -162,9 +162,7 @@ class NativePurchaseBotCommandHandler(NativeSupportAttachmentBotCommandHandler):
             [
                 {
                     "text": "✍️ مقدار دلخواه",
-                    "callback_data": BotCallback(
-                        CallbackAction.SELECT_PLAN, f"c{prefix}"
-                    ).pack(),
+                    "callback_data": BotCallback(CallbackAction.SELECT_PLAN, f"c{prefix}").pack(),
                 }
             ]
         )
@@ -430,9 +428,7 @@ class NativePurchaseBotCommandHandler(NativeSupportAttachmentBotCommandHandler):
                     [
                         {
                             "text": "❌ لغو خرید",
-                            "callback_data": BotCallback(
-                                CallbackAction.CANCEL_CONVERSATION
-                            ).pack(),
+                            "callback_data": BotCallback(CallbackAction.CANCEL_CONVERSATION).pack(),
                         }
                     ]
                 ],
