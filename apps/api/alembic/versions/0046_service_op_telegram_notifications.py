@@ -1,6 +1,6 @@
 """Baseline paid service operations before Telegram terminal notifications.
 
-Revision ID: 0046_service_op_telegram_notifications
+Revision ID: 0046_service_op_tg_notify
 Revises: 0045_service_op_wallet_payment
 Create Date: 2026-08-17
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from alembic import op
 
-revision: str = "0046_service_op_telegram_notifications"
+revision: str = "0046_service_op_tg_notify"
 down_revision: str = "0045_service_op_wallet_payment"
 branch_labels: None = None
 depends_on: None = None
