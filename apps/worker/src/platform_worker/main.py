@@ -25,6 +25,7 @@ from .service_operation_execution import (
     DisabledServiceOperationExecutor,
     ServiceOperationExecutionWorker,
 )
+from .service_operation_notification import ServiceOperationNotificationWorker
 from .support_reply_delivery import SupportDeliverySettings, SupportReplyDeliveryWorker
 from .support_sla_escalation import SupportSlaEscalationWorker
 
@@ -65,7 +66,19 @@ class BotApiTransport:
 
     @staticmethod
     def _reply_markup(mini_app_url: str) -> dict[str, object]:
-        return {"inline_keyboard": [[{"text": "مشاهده درخواست", "web_app": {"url": mini_app_url}}]]}
+        return {
+            "inline_keyboard": [
+                [{"text": "مشاهده درخواست", "web_app": {"url": mini_app_url}}]
+            ]
+        }
+
+    @staticmethod
+    def _callback_reply_markup(button_text: str, callback_data: str) -> dict[str, object]:
+        return {
+            "inline_keyboard": [
+                [{"text": button_text, "callback_data": callback_data}]
+            ]
+        }
 
     def send(self, telegram_user_id: int, text: str, mini_app_url: str) -> None:
         try:
@@ -75,6 +88,28 @@ class BotApiTransport:
                     "chat_id": telegram_user_id,
                     "text": text,
                     "reply_markup": self._reply_markup(mini_app_url),
+                },
+                timeout=10,
+            )
+            if response.status_code >= 400:
+                raise TelegramDeliveryError("telegram delivery failed")
+        except httpx.HTTPError as exc:
+            raise TelegramDeliveryError("telegram delivery failed") from exc
+
+    def send_callback(
+        self,
+        telegram_user_id: int,
+        text: str,
+        button_text: str,
+        callback_data: str,
+    ) -> None:
+        try:
+            response = httpx.post(
+                self._message_endpoint,
+                json={
+                    "chat_id": telegram_user_id,
+                    "text": text,
+                    "reply_markup": self._callback_reply_markup(button_text, callback_data),
                 },
                 timeout=10,
             )
@@ -132,6 +167,11 @@ def main() -> None:
     transport = BotApiTransport(token)
     manual_topup = ManualTopupDeliveryWorker(factory, transport, delivery_settings)
     support_reply = SupportReplyDeliveryWorker(factory, transport, support_delivery_settings)
+    service_operation_notifications = ServiceOperationNotificationWorker(
+        factory,
+        transport,
+        enabled,
+    )
     support_sla = SupportSlaEscalationWorker(factory)
     provider_writes_enabled = (
         os.getenv("VPN_SALE_PROVIDER_WRITES_ENABLED", "false").lower() == "true"
@@ -159,6 +199,10 @@ def main() -> None:
             processed += support_reply.run_once()
         except Exception:
             print("support_reply_worker_cycle_failed", flush=True)
+        try:
+            processed += service_operation_notifications.run_once()
+        except Exception:
+            print("service_operation_notification_worker_cycle_failed", flush=True)
         try:
             processed += support_sla.run_once()
         except Exception:
