@@ -197,8 +197,8 @@ def test_configurable_plan_is_fully_purchasable_without_mini_app() -> None:
 
     first = bot.handle_callback(callback(9, CallbackAction.CONFIRM_PURCHASE))
     replay = bot.handle_callback(callback(10, CallbackAction.CONFIRM_PURCHASE))
-    assert "سفارش پذیرفته شد" in first.messages[0].text
-    assert "سفارش پذیرفته شد" in replay.messages[0].text
+    assert "ساخت سرویس در حال انجام است" in first.messages[0].text
+    assert "ساخت سرویس در حال انجام است" in replay.messages[0].text
     assert portal.confirm_calls == 1
 
 
