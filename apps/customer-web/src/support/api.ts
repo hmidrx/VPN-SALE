@@ -38,6 +38,17 @@ export type SupportCsatState = {
   score: number | null;
 };
 
+export type SupportUnreadItem = {
+  reference: string;
+  unread_count: number;
+};
+
+export type SupportUnreadSummary = {
+  total_unread: number;
+  tickets_with_unread: number;
+  items: SupportUnreadItem[];
+};
+
 export class SupportApiError extends Error {
   constructor(public readonly status: number, public readonly code: string) {
     super(code);
@@ -69,6 +80,13 @@ function object(value: unknown): Record<string, unknown> {
 
 function string(value: unknown, field: string): string {
   if (typeof value !== "string") throw new Error(`invalid_${field}`);
+  return value;
+}
+
+function integer(value: unknown, field: string, minimum = 0): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < minimum) {
+    throw new Error(`invalid_${field}`);
+  }
   return value;
 }
 
@@ -139,6 +157,30 @@ function csatState(value: unknown): SupportCsatState {
     submitted: item.submitted,
     score: item.score as number | null,
   };
+}
+
+function unreadSummary(value: unknown): SupportUnreadSummary {
+  const item = object(value);
+  if (!Array.isArray(item.items)) throw new Error("invalid_unread_items");
+  const items = item.items.map((value): SupportUnreadItem => {
+    const row = object(value);
+    return {
+      reference: string(row.reference, "unread_reference"),
+      unread_count: integer(row.unread_count, "unread_count"),
+    };
+  });
+  const total = integer(item.total_unread, "total_unread");
+  const tickets = integer(item.tickets_with_unread, "tickets_with_unread");
+  if (items.reduce((sum, row) => sum + row.unread_count, 0) !== total) {
+    throw new Error("invalid_unread_total");
+  }
+  if (items.length !== tickets) throw new Error("invalid_unread_ticket_count");
+  return { total_unread: total, tickets_with_unread: tickets, items };
+}
+
+function markReadResult(value: unknown): { unread_count: number } {
+  const item = object(value);
+  return { unread_count: integer(item.unread_count, "unread_count") };
 }
 
 async function parseError(response: Response): Promise<never> {
@@ -237,4 +279,21 @@ export const submitSupportCsat = (
     method: "POST",
     headers: headers(true, idempotencyKey("web-csat")),
     body: JSON.stringify({ score, feedback }),
+  }, fetcher);
+
+export const getSupportUnreadSummary = (
+  signal?: AbortSignal,
+  fetcher: Fetcher = fetch,
+): Promise<SupportUnreadSummary> =>
+  request("/unread", unreadSummary, { signal }, fetcher);
+
+export const markSupportTicketRead = (
+  reference: string,
+  throughSequence: number,
+  fetcher: Fetcher = fetch,
+): Promise<{ unread_count: number }> =>
+  request(`/tickets/${encodeURIComponent(reference)}/read`, markReadResult, {
+    method: "POST",
+    headers: headers(true),
+    body: JSON.stringify({ through_sequence: throughSequence }),
   }, fetcher);

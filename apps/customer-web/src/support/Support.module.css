@@ -2,6 +2,8 @@
 .sidebar, .thread { display: grid; gap: 12px; }
 .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .ticketButton { width: 100%; border: 0; background: transparent; color: inherit; text-align: right; cursor: pointer; padding: 0; }
+.ticketTitleRow { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.unreadPill { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; font-size: .76rem; font-weight: 700; background: color-mix(in srgb, currentColor 14%, transparent); border: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
 .ticketMeta { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-top: 8px; }
 .ticketMeta small { opacity: .7; }
 .messages { display: grid; gap: 10px; max-height: 58vh; overflow: auto; padding: 4px; }

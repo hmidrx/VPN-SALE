@@ -91,6 +91,17 @@ support_messages = sa.Table(
     sa.Column("redacted_at", sa.DateTime(timezone=True)),
 )
 
+support_message_deliveries = sa.Table(
+    "support_message_deliveries",
+    metadata,
+    sa.Column("id", uuid, primary_key=True),
+    sa.Column("message_id", uuid, nullable=False),
+    sa.Column("participant_type", sa.String(24), nullable=False),
+    sa.Column("participant_id", uuid, nullable=False),
+    sa.Column("delivered_at", sa.DateTime(timezone=True)),
+    sa.Column("read_at", sa.DateTime(timezone=True)),
+)
+
 support_attachments = sa.Table(
     "support_attachments",
     metadata,

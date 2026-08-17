@@ -1,0 +1,2 @@
+.label { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.badge { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; font-size: .72rem; font-weight: 800; line-height: 1; background: color-mix(in srgb, currentColor 16%, transparent); border: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
