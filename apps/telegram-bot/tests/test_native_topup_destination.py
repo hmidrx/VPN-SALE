@@ -103,7 +103,7 @@ def test_direct_card_topup_shows_destination_and_never_requires_mini_app() -> No
     receipt = handler.handle_receipt(
         IncomingReceipt(5, "private", IncomingUser(42), b"safe-image", "image/jpeg")
     )
-    assert "فیش دریافت شد" in receipt.messages[0].text
+    assert "فیش شما دریافت شد" in receipt.messages[0].text
     assert "6037-9912-3456-7890" not in receipt.messages[0].text
     assert_no_web_app(receipt)
 
