@@ -12,7 +12,9 @@ from vpnsale_domain.service_operations import ServiceOperationType
 
 from .database import get_db_session
 from .management import require_perm
+from .order_models import TransactionalOutboxModel
 from .service_models import ServiceModel, ServiceOperationModel, ServiceOperationPolicyVersionModel
+from .service_operation_payment_models import ServiceOperationPaymentModel
 
 admin_router = APIRouter(
     prefix="/api/v1/admin/service-operations", tags=["admin-service-operations"]
@@ -22,6 +24,10 @@ customer_router = APIRouter(
 )
 reseller_router = APIRouter(
     prefix="/api/v1/reseller/service-operations", tags=["reseller-service-operations"]
+)
+
+_EXECUTABLE_PAID_OPERATIONS = frozenset(
+    {ServiceOperationType.RENEW.value, ServiceOperationType.ADD_TRAFFIC.value}
 )
 
 
@@ -71,6 +77,58 @@ def _operation_status(row: ServiceOperationModel) -> OperationStatus:
         order_id=row.order_id,
         invoice_id=row.invoice_id,
         payment_id=row.payment_id,
+    )
+
+
+def _enqueue_paid_operation_ready(
+    db: Session,
+    operation: ServiceOperationModel,
+    service: ServiceModel,
+    now: datetime,
+) -> None:
+    """Emit the execution event after a paid high-risk operation is approved.
+
+    Direct wallet payment already emits this event when it can transition straight to
+    QUEUED. High-risk operations first stop in PENDING_APPROVAL, so the approval
+    transaction is the only safe place to emit the same durable execution contract.
+    """
+    if operation.operation_type not in _EXECUTABLE_PAID_OPERATIONS:
+        return
+    payment = db.scalar(
+        select(ServiceOperationPaymentModel).where(
+            ServiceOperationPaymentModel.operation_id == operation.id,
+            ServiceOperationPaymentModel.status == "CAPTURED",
+        )
+    )
+    if payment is None:
+        return
+    operation.payment_id = payment.id
+    event_key = f"service_operation.ready:{operation.id}"
+    existing_event = db.scalar(
+        select(TransactionalOutboxModel.id).where(
+            TransactionalOutboxModel.event_key == event_key
+        )
+    )
+    if existing_event is not None:
+        return
+    db.add(
+        TransactionalOutboxModel(
+            event_key=event_key,
+            event_type="service_operation.ready.v1",
+            status="PENDING",
+            payload={
+                "event_version": 1,
+                "operation_id": operation.id,
+                "service_id": service.id,
+                "service_reference": service.public_reference,
+                "customer_id": payment.customer_id,
+                "operation_type": operation.operation_type,
+                "payment_id": payment.id,
+                "correlation_id": f"service-operation:{operation.id}",
+                "occurred_at": now.isoformat(),
+            },
+            available_at=now,
+        )
     )
 
 
@@ -162,8 +220,6 @@ def create_customer_operation(
         ServiceOperationType.CHANGE_DEVICE_LIMIT,
     }
     if billable:
-        # A browser-provided amount can never be an authoritative quote. Billable
-        # operations remain unavailable until the pricing authority issues quotes.
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail={"code": "OPERATION_AUTHORITATIVE_QUOTE_REQUIRED"},
@@ -210,7 +266,11 @@ def approve_operation(
     _: Annotated[object, Depends(require_perm("service_operations.approve"))],
     db: Annotated[Session, Depends(get_db_session)],
 ) -> OperationStatus:
-    row = db.get(ServiceOperationModel, operation_id)
+    row = db.scalar(
+        select(ServiceOperationModel)
+        .where(ServiceOperationModel.id == operation_id)
+        .with_for_update()
+    )
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "OPERATION_NOT_FOUND"})
     if row.requester_id == x_admin_actor:
@@ -219,9 +279,14 @@ def approve_operation(
         )
     if row.status != "PENDING_APPROVAL":
         raise HTTPException(status.HTTP_409_CONFLICT, detail={"code": "OPERATION_STATUS_INVALID"})
+    service = db.get(ServiceModel, row.service_id)
+    if service is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail={"code": "SERVICE_NOT_FOUND"})
+    now = datetime.now(UTC)
     row.status = "QUEUED"
     row.version += 1
-    row.updated_at = datetime.now(UTC)
+    row.updated_at = now
+    _enqueue_paid_operation_ready(db, row, service, now)
     db.commit()
     db.refresh(row)
     return _operation_status(row)
