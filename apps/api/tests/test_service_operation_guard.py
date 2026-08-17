@@ -55,9 +55,7 @@ def test_blocker_reason_prefers_customer_safe_progress_and_review_codes() -> Non
     )
     assert (
         blocker_http_detail(
-            ServiceOperationBlocker(
-                "op", "UNCERTAIN", "SERVICE_OPERATION_REVIEW_REQUIRED"
-            )
+            ServiceOperationBlocker("op", "UNCERTAIN", "SERVICE_OPERATION_REVIEW_REQUIRED")
         )
         == "service_operation_review_required"
     )
