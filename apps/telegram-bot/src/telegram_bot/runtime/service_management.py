@@ -19,6 +19,7 @@ from telegram_bot.runtime.native_topup_destination import (
 from telegram_bot.service_management_api import (
     ServiceManagementPortal,
     ServiceOperationEligibility,
+    ServiceOperationPaymentResult,
     ServiceOperationQuote,
     ServiceOperationQuoteOptions,
 )
@@ -170,6 +171,12 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
     ) -> str:
         return f"svcq:{user.telegram_user_id}:{update_id}:{operation_type}:{amount}"
 
+    @staticmethod
+    def _payment_idempotency_key(
+        user: IncomingUser, update_id: int, operation_reference: str
+    ) -> str:
+        return f"svcp:{user.telegram_user_id}:{update_id}:{operation_reference}"
+
     def _quote_screen(
         self,
         user: IncomingUser,
@@ -210,10 +217,18 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
             f"{title}\n\n"
             f"مقدار: {quantity}\n"
             f"مبلغ نهایی: {quote.price_rial:,} ریال\n\n"
-            "این مبلغ از policy فعال سرور صادر شده و تا زمان پرداخت دوباره اعتبارسنجی می‌شود. "
-            "هیچ مبلغی از callback تلگرام پذیرفته نمی‌شود.\n\n"
-            "اتصال همین quote به پرداخت کیف پول، مرحله بعدی توسعه است.",
+            "این مبلغ از policy فعال سرور صادر شده و هنگام پرداخت دوباره اعتبارسنجی می‌شود. "
+            "هیچ مبلغی از callback تلگرام پذیرفته نمی‌شود.",
             [
+                [
+                    {
+                        "text": "💳 پرداخت از کیف پول",
+                        "callback_data": BotCallback(
+                            CallbackAction.SERVICE_OPERATION_PAY,
+                            quote.operation_reference,
+                        ).pack(),
+                    }
+                ],
                 [
                     {
                         "text": "🔁 انتخاب مقدار دیگر",
@@ -229,6 +244,80 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
                 *self.renderer.nav_rows(locale),
             ],
         )
+
+    def _render_payment_success(
+        self, locale: str, payment: ServiceOperationPaymentResult
+    ) -> HandlerResult:
+        operation_label = "تمدید سرویس" if payment.operation_type == "RENEW" else "افزایش حجم"
+        state_text = (
+            "درخواست وارد صف اجرای امن شد."
+            if payment.status == "QUEUED"
+            else "پرداخت ثبت شد و درخواست منتظر تأیید است."
+        )
+        return self._callback_message(
+            f"✅ پرداخت {operation_label} ثبت شد\n\n"
+            f"مبلغ: {payment.amount_rial:,} ریال\n"
+            f"{state_text}\n\n"
+            "برداشت وجه و ثبت درخواست به‌صورت اتمیک انجام شده است؛ "
+            "تکرار درخواست باعث برداشت دوباره نمی‌شود.",
+            [
+                [
+                    {
+                        "text": "📦 مشاهده سرویس",
+                        "callback_data": BotCallback(
+                            CallbackAction.OPEN_SERVICE, payment.service_reference
+                        ).pack(),
+                    },
+                    {
+                        "text": "💰 کیف پول",
+                        "callback_data": BotCallback(CallbackAction.WALLET).pack(),
+                    },
+                ],
+                *self.renderer.nav_rows(locale),
+            ],
+        )
+
+    def _payment_screen(
+        self,
+        user: IncomingUser,
+        locale: str,
+        operation_reference: str,
+        update_id: int,
+    ) -> HandlerResult:
+        try:
+            payment = self.service_management.service_operation_pay(
+                self._portal_context(user, locale),
+                operation_reference,
+                self._payment_idempotency_key(user, update_id, operation_reference),
+            )
+        except AuthoritativePrivateApiError as exc:
+            if exc.status_code == 402:
+                return self._callback_message(
+                    "موجودی کیف پول برای این پرداخت کافی نیست. "
+                    "ابتدا کیف پول را شارژ کنید و سپس دوباره همین عملیات را باز کنید.",
+                    [
+                        [
+                            {
+                                "text": "➕ شارژ کیف پول",
+                                "callback_data": BotCallback(CallbackAction.TOP_UP).pack(),
+                            }
+                        ],
+                        *self.renderer.nav_rows(locale),
+                    ],
+                )
+            return self._callback_message(
+                "این قیمت یا وضعیت سرویس دیگر برای پرداخت معتبر نیست. "
+                "سرویس را دوباره باز کنید و قیمت جدید بگیرید.",
+                self.renderer.nav_rows(locale),
+            )
+        except (PrivateApiUnavailable, AttributeError, ValueError):
+            return self._callback_message(
+                "نتیجه پرداخت موقتاً قابل دریافت نیست. دوباره تلاش کردن امن است؛ "
+                "اگر پرداخت قبلاً ثبت شده باشد، سیستم همان نتیجه را برمی‌گرداند "
+                "و دوباره از کیف پول کم نمی‌کند.",
+                self.renderer.nav_rows(locale),
+            )
+        return self._render_payment_success(locale, payment)
 
     def _route_callback(
         self, user: IncomingUser, locale: str, callback: BotCallback, update_id: int
@@ -248,6 +337,11 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
                 "RENEW" if callback.action == CallbackAction.RENEW_QUOTE else "ADD_TRAFFIC"
             )
             return self._quote_screen(user, locale, reference, operation_type, amount, update_id)
+
+        if callback.action == CallbackAction.SERVICE_OPERATION_PAY:
+            if not callback.value:
+                return self._stale(locale)
+            return self._payment_screen(user, locale, callback.value, update_id)
 
         result = super()._route_callback(user, locale, callback, update_id)
         if (

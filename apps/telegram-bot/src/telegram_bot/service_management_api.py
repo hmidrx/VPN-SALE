@@ -1,4 +1,4 @@
-"""Telegram-native service management eligibility and quote adapter."""
+"""Telegram-native service management eligibility, quote and payment adapter."""
 
 from __future__ import annotations
 
@@ -43,6 +43,18 @@ class ServiceOperationQuote:
     policy_version_id: str
 
 
+@dataclass(frozen=True)
+class ServiceOperationPaymentResult:
+    payment_reference: str
+    operation_reference: str
+    service_reference: str
+    operation_type: str
+    status: str
+    amount_rial: int
+    currency: str
+    queued: bool
+
+
 class ServiceManagementPortal(Protocol):
     def service_management_eligibility(
         self, context: CustomerContext, service_reference: str
@@ -56,6 +68,13 @@ class ServiceManagementPortal(Protocol):
         amount: int,
         idempotency_key: str,
     ) -> ServiceOperationQuote: ...
+
+    def service_operation_pay(
+        self,
+        context: CustomerContext,
+        operation_reference: str,
+        idempotency_key: str,
+    ) -> ServiceOperationPaymentResult: ...
 
 
 class ServiceManagementPrivatePlatformClient(
@@ -212,4 +231,54 @@ class ServiceManagementPrivatePlatformClient(
             currency=currency,
             expires_at=expires_at,
             policy_version_id=policy_version_id,
+        )
+
+    def service_operation_pay(
+        self,
+        context: CustomerContext,
+        operation_reference: str,
+        idempotency_key: str,
+    ) -> ServiceOperationPaymentResult:
+        if not operation_reference:
+            raise ValueError("invalid service operation payment request")
+        data = self._request(
+            "POST",
+            f"/service-management/operations/{operation_reference}/pay",
+            context.telegram_user_id,
+            {},
+            idempotency_key,
+        )
+        returned_operation_reference = data.get("operation_reference")
+        service_reference = data.get("service_reference")
+        operation_type = data.get("operation_type")
+        status_value = data.get("status")
+        amount_rial = data.get("amount_rial")
+        currency = data.get("currency")
+        queued = data.get("queued")
+        payment_reference = data.get("payment_reference")
+        if (
+            returned_operation_reference != operation_reference
+            or not isinstance(service_reference, str)
+            or not service_reference
+            or operation_type not in {"RENEW", "ADD_TRAFFIC"}
+            or status_value not in {"QUEUED", "PENDING_APPROVAL"}
+            or not isinstance(amount_rial, int)
+            or isinstance(amount_rial, bool)
+            or amount_rial <= 0
+            or currency != "IRR"
+            or not isinstance(queued, bool)
+            or queued != (status_value == "QUEUED")
+            or not isinstance(payment_reference, str)
+            or not payment_reference
+        ):
+            raise PrivateApiUnavailable("پاسخ پرداخت عملیات سرویس معتبر نیست.")
+        return ServiceOperationPaymentResult(
+            payment_reference=payment_reference,
+            operation_reference=operation_reference,
+            service_reference=service_reference,
+            operation_type=operation_type,
+            status=status_value,
+            amount_rial=amount_rial,
+            currency="IRR",
+            queued=queued,
         )

@@ -64,6 +64,7 @@ class CallbackAction(StrEnum):
     UPGRADE = "upgrade"
     EXTRA_TRAFFIC = "extra"
     EXTRA_TRAFFIC_QUOTE = "xtrq"
+    SERVICE_OPERATION_PAY = "svcp"
     REVOKE_SESSION = "revoke"
     CONFIRM_REVOKE = "confirm_revoke"
     TOGGLE_NOTIFICATION = "ntf"
