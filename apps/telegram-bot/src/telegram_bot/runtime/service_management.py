@@ -22,8 +22,21 @@ from telegram_bot.service_management_api import (
     ServiceOperationPaymentResult,
     ServiceOperationQuote,
     ServiceOperationQuoteOptions,
+    ServiceOperationStatus,
 )
 from telegram_bot.transport.polling import TelegramTransport
+
+_REVIEW_STATUSES = frozenset(
+    {
+        "PARTIALLY_APPLIED",
+        "FAILED",
+        "UNCERTAIN",
+        "COMPENSATION_REQUIRED",
+        "MANUAL_REVIEW",
+        "CANCELLED",
+        "EXPIRED",
+    }
+)
 
 
 class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler):
@@ -258,9 +271,18 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
             f"✅ پرداخت {operation_label} ثبت شد\n\n"
             f"مبلغ: {payment.amount_rial:,} ریال\n"
             f"{state_text}\n\n"
-            "برداشت وجه و ثبت درخواست به‌صورت اتمیک انجام شده است؛ "
-            "تکرار درخواست باعث برداشت دوباره نمی‌شود.",
+            "از این مرحله به بعد وضعیت واقعی اجرا را از دکمه پیگیری ببینید. "
+            "تکرار پرداخت لازم نیست و باعث نتیجه سریع‌تر نمی‌شود.",
             [
+                [
+                    {
+                        "text": "⏳ پیگیری وضعیت",
+                        "callback_data": BotCallback(
+                            CallbackAction.SERVICE_OPERATION_STATUS,
+                            payment.operation_reference,
+                        ).pack(),
+                    }
+                ],
                 [
                     {
                         "text": "📦 مشاهده سرویس",
@@ -276,6 +298,137 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
                 *self.renderer.nav_rows(locale),
             ],
         )
+
+    @staticmethod
+    def _status_copy(status: ServiceOperationStatus) -> tuple[str, str]:
+        if status.status == "AWAITING_PAYMENT":
+            return "⏳ منتظر پرداخت", "این درخواست هنوز پرداخت نشده است."
+        if status.status == "PENDING_APPROVAL":
+            return (
+                "🕓 منتظر تأیید",
+                "پرداخت ثبت شده و درخواست منتظر تأیید است. نیازی به پرداخت دوباره نیست.",
+            )
+        if status.status == "QUEUED":
+            return (
+                "🕓 در صف اجرا",
+                "پرداخت ثبت شده و درخواست در صف اجرای امن است. نیازی به پرداخت دوباره نیست.",
+            )
+        if status.status == "EXECUTING":
+            return (
+                "⚙️ در حال اجرا",
+                "تغییر در حال اعمال روی سرویس است. نیازی به پرداخت دوباره نیست.",
+            )
+        if status.status == "VERIFYING":
+            return (
+                "🔍 در حال تأیید نتیجه",
+                "سامانه در حال بررسی نتیجه نهایی تغییر روی سرویس است.",
+            )
+        if status.status == "RECONCILING":
+            return (
+                "🔍 در حال تطبیق نتیجه",
+                "نتیجه با وضعیت واقعی سرویس در حال تطبیق است. دوباره پرداخت نکنید.",
+            )
+        if status.status == "SUCCEEDED":
+            return "✅ انجام شد", "عملیات با موفقیت روی سرویس اعمال و تأیید شد."
+        if status.status == "COMPENSATED":
+            return (
+                "↩️ عملیات جبران شد",
+                "فرآیند جبران ثبت شده است. برای وضعیت مالی، کیف پول را بررسی کنید.",
+            )
+        return (
+            "⚠️ نیازمند بررسی",
+            "پرداخت یا درخواست قبلی محفوظ است و وضعیت برای بررسی ثبت شده است. "
+            "لطفاً دوباره پرداخت نکنید.",
+        )
+
+    def _render_operation_status(
+        self, locale: str, operation_status: ServiceOperationStatus
+    ) -> HandlerResult:
+        renewal = operation_status.operation_type == "RENEW"
+        operation_label = "تمدید سرویس" if renewal else "افزایش حجم"
+        quantity = (
+            f"{operation_status.amount:,} روز"
+            if operation_status.unit == "DAY"
+            else f"{operation_status.amount:,} گیگابایت"
+        )
+        title, detail = self._status_copy(operation_status)
+        rows: list[list[dict[str, str]]] = []
+        if operation_status.status != "SUCCEEDED":
+            rows.append(
+                [
+                    {
+                        "text": "🔄 بروزرسانی وضعیت",
+                        "callback_data": BotCallback(
+                            CallbackAction.SERVICE_OPERATION_STATUS,
+                            operation_status.operation_reference,
+                        ).pack(),
+                    }
+                ]
+            )
+        rows.append(
+            [
+                {
+                    "text": "📦 مشاهده سرویس",
+                    "callback_data": BotCallback(
+                        CallbackAction.OPEN_SERVICE, operation_status.service_reference
+                    ).pack(),
+                }
+            ]
+        )
+        if operation_status.status in _REVIEW_STATUSES:
+            rows.append(
+                [
+                    {
+                        "text": "💬 پشتیبانی",
+                        "callback_data": BotCallback(CallbackAction.SUPPORT).pack(),
+                    },
+                    {
+                        "text": "💰 کیف پول",
+                        "callback_data": BotCallback(CallbackAction.WALLET).pack(),
+                    },
+                ]
+            )
+        return self._callback_message(
+            f"{title}\n\n"
+            f"عملیات: {operation_label}\n"
+            f"مقدار: {quantity}\n\n"
+            f"{detail}",
+            [*rows, *self.renderer.nav_rows(locale)],
+        )
+
+    def _status_screen(
+        self,
+        user: IncomingUser,
+        locale: str,
+        operation_reference: str,
+    ) -> HandlerResult:
+        try:
+            operation_status = self.service_management.service_operation_status(
+                self._portal_context(user, locale), operation_reference
+            )
+        except AuthoritativePrivateApiError:
+            return self._callback_message(
+                "این درخواست برای حساب شما پیدا نشد یا دیگر قابل مشاهده نیست.",
+                self.renderer.nav_rows(locale),
+            )
+        except (PrivateApiUnavailable, AttributeError, ValueError):
+            return self._callback_message(
+                "وضعیت عملیات موقتاً قابل دریافت نیست. کمی بعد دوباره بررسی کنید؛ "
+                "اگر پرداخت ثبت شده باشد، دوباره پرداخت نکنید.",
+                [
+                    [
+                        {
+                            "text": "🔄 تلاش دوباره",
+                            "callback_data": BotCallback(
+                                CallbackAction.SERVICE_OPERATION_STATUS,
+                                operation_reference,
+                            ).pack(),
+                        }
+                    ],
+                    *self.renderer.nav_rows(locale),
+                ],
+            )
+        return self._render_operation_status(locale, operation_status)
 
     def _payment_screen(
         self,
@@ -342,6 +495,11 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
             if not callback.value:
                 return self._stale(locale)
             return self._payment_screen(user, locale, callback.value, update_id)
+
+        if callback.action == CallbackAction.SERVICE_OPERATION_STATUS:
+            if not callback.value:
+                return self._stale(locale)
+            return self._status_screen(user, locale, callback.value)
 
         result = super()._route_callback(user, locale, callback, update_id)
         if (
