@@ -91,9 +91,9 @@ def test_payment_serializes_on_service_and_blocks_before_any_wallet_mutation() -
     service_lock = source.index("select(ServiceModel)")
     blocker = source.index("find_service_operation_blocker")
     wallet = source.index("_ensure_wallet")
-    payment_link = source.index("operation.payment_id = payment.id")
 
-    assert service_lock < blocker < wallet < payment_link
+    assert service_lock < blocker < wallet
     assert ".with_for_update()" in source[service_lock:blocker]
     assert "exclude_operation_id=operation.id" in source
     assert "blocker_http_detail(blocker)" in source
+    assert "operation.payment_id = payment.id" not in source
