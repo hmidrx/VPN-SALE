@@ -24,6 +24,7 @@ from vpnsale_domain.service_operations import (
 )
 
 from .service_models import ServiceModel, ServiceOperationModel, ServiceOperationPolicyVersionModel
+from .service_operation_guard import blocker_http_detail, find_service_operation_blocker
 from .telegram_internal import Database, InternalAuth, _customer_id, _no_store
 
 router = APIRouter(
@@ -316,13 +317,16 @@ def service_management_eligibility(
     customer_id = _customer_id(db, x_telegram_subject)
     service = _service(db, customer_id, service_reference)
     lifecycle_eligible = service.lifecycle in _ELIGIBLE_LIFECYCLES
+    blocker = find_service_operation_blocker(db, service.id)
     operations: list[dict[str, object]] = []
     for operation_type in CUSTOMER_NATIVE_OPERATION_TYPES:
         reason_codes: list[str] = []
         options: dict[str, object] | None = None
         if not lifecycle_eligible:
             reason_codes.append("SERVICE_NOT_ELIGIBLE")
-        else:
+        if blocker is not None:
+            reason_codes.append(blocker.reason_code)
+        if not reason_codes:
             try:
                 policy = _published_customer_policy(db, operation_type)[1]
             except HTTPException:
@@ -381,6 +385,10 @@ def create_service_operation_quote(
             raise HTTPException(status.HTTP_409_CONFLICT, detail="idempotency_conflict")
         _no_store(response)
         return _quote_view(existing)
+
+    blocker = find_service_operation_blocker(db, service.id)
+    if blocker is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=blocker_http_detail(blocker))
 
     policy_row, policy = _published_customer_policy(db, body.operation_type)
     now = datetime.now(UTC)
