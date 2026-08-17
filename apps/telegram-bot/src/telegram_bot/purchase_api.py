@@ -166,10 +166,13 @@ class NativePurchasePrivatePlatformClient(SupportPrivatePlatformClient, NativePu
     def native_purchase_catalog(self, context: CustomerContext) -> list[NativePurchaseCatalogItem]:
         data = self._request("GET", "/purchase-native/catalog", context.telegram_user_id)
         raw_items = data.get("items")
-        if not isinstance(raw_items, list) or len(raw_items) > 100:
+        if not isinstance(raw_items, list):
+            raise PrivateApiUnavailable("فهرست پلن‌ها قابل استفاده نیست.")
+        items = cast(list[object], raw_items)
+        if len(items) > 100:
             raise PrivateApiUnavailable("فهرست پلن‌ها قابل استفاده نیست.")
         result: list[NativePurchaseCatalogItem] = []
-        for item in cast(list[object], raw_items):
+        for item in items:
             if not isinstance(item, dict):
                 raise PrivateApiUnavailable("فهرست پلن‌ها قابل استفاده نیست.")
             value = cast(dict[str, Any], item)
