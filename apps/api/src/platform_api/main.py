@@ -70,6 +70,7 @@ from .support_sla_admin import router as admin_support_sla_router
 from .telegram_account_internal import router as telegram_account_internal_router
 from .telegram_delivery_internal import router as telegram_delivery_internal_router
 from .telegram_internal import router as telegram_internal_router
+from .telegram_purchase_native_internal import router as telegram_purchase_native_internal_router
 from .telegram_support_csat_internal import router as telegram_support_csat_internal_router
 from .telegram_support_internal import router as telegram_support_internal_router
 from .usage import admin_router as admin_usage_router
@@ -222,6 +223,7 @@ def create_app(settings: Settings) -> FastAPI:
         reseller_fleet_router,
         system_router,
         telegram_internal_router,
+        telegram_purchase_native_internal_router,
         telegram_delivery_internal_router,
         telegram_account_internal_router,
         telegram_support_internal_router,

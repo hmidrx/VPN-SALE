@@ -7,12 +7,10 @@ import signal
 from telegram_bot.cli import load_settings_from_environment
 from telegram_bot.config import BotMode, BotSettings
 from telegram_bot.conversation import RedisConversationStore
+from telegram_bot.purchase_api import NativePurchasePrivatePlatformClient
 from telegram_bot.runtime.lifecycle import BotRuntime
-from telegram_bot.runtime.native_support_attachments import (
-    NativeSupportAttachmentTelegramPollingRuntime,
-)
+from telegram_bot.runtime.native_purchase_options import NativePurchaseTelegramPollingRuntime
 from telegram_bot.runtime.subscription_delivery import PrivacyAwareTelegramTransport
-from telegram_bot.support_api import SupportPrivatePlatformClient
 
 
 def configure_logging() -> None:
@@ -40,8 +38,10 @@ async def _serve_until_stopped(runtime: BotRuntime) -> None:
 
 
 async def _run_polling(settings: BotSettings) -> None:
-    platform = SupportPrivatePlatformClient(settings.internal_api_url, settings.internal_token_file)
-    polling = NativeSupportAttachmentTelegramPollingRuntime(
+    platform = NativePurchasePrivatePlatformClient(
+        settings.internal_api_url, settings.internal_token_file
+    )
+    polling = NativePurchaseTelegramPollingRuntime(
         settings,
         platform,
         PrivacyAwareTelegramTransport(settings.token),
