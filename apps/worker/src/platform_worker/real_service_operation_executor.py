@@ -90,7 +90,9 @@ class DatabaseSanaeiServiceOperationExecutor:
                 "BLOCKED_BY_CONFIGURATION", "PROVIDER_WRITES_DISABLED"
             )
         try:
-            panel, target, certification, username, password = self.context_loader._select(attachment)
+            panel, target, certification, username, password = self.context_loader._select(
+                attachment
+            )
             traffic, expires_at, device_limit = self._desired(operation, plan)
             if not attachment.remote_identity_reference or not plan.provider_operation_id:
                 raise ValueError("remote or provider operation identity unavailable")
