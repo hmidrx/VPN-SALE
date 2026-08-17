@@ -9,13 +9,14 @@ from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from vpnsale_domain.service_operations import (
     ServiceOperation,
     ServiceOperationActorType,
     ServiceOperationAttachmentSuccessPolicy,
     ServiceOperationCommercialOrigin,
+    ServiceOperationDesiredChange,
     ServiceOperationDomainError,
     ServiceOperationPolicyVersion,
     ServiceOperationPriceRule,
@@ -48,6 +49,8 @@ _MAX_ADD_TRAFFIC_GIB = 10 * 1024
 
 
 class OperationQuoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     operation_type: ServiceOperationType
     amount: int = Field(gt=0)
 
@@ -76,6 +79,36 @@ def _operation_set(snapshot: dict[str, object], key: str) -> frozenset[ServiceOp
     return frozenset(values)
 
 
+def _string_set(snapshot: dict[str, object], key: str) -> frozenset[str]:
+    raw = snapshot.get(key)
+    if raw is None:
+        return frozenset()
+    if not isinstance(raw, list):
+        raise ValueError(f"invalid {key}")
+    values: set[str] = set()
+    for value in cast(list[object], raw):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"invalid {key}")
+        values.add(value)
+    return frozenset(values)
+
+
+def _required_permissions(
+    snapshot: dict[str, object],
+) -> dict[ServiceOperationType, str]:
+    raw = snapshot.get("required_permissions")
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("invalid required_permissions")
+    permissions: dict[ServiceOperationType, str] = {}
+    for operation, permission in cast(dict[object, object], raw).items():
+        if not isinstance(operation, str) or not isinstance(permission, str) or not permission.strip():
+            raise ValueError("invalid required_permissions")
+        permissions[ServiceOperationType(operation)] = permission
+    return permissions
+
+
 def _optional_positive_int(snapshot: dict[str, object], key: str) -> int | None:
     value = snapshot.get(key)
     if value is None:
@@ -83,6 +116,17 @@ def _optional_positive_int(snapshot: dict[str, object], key: str) -> int | None:
     if type(value) is not int or cast(int, value) <= 0:
         raise ValueError(f"invalid {key}")
     return cast(int, value)
+
+
+def _optional_cooldown(snapshot: dict[str, object]) -> timedelta | None:
+    value = snapshot.get("cooldown_seconds")
+    if value is None:
+        value = snapshot.get("cooldown")
+    if value is None:
+        return None
+    if type(value) is not int or cast(int, value) < 0:
+        raise ValueError("invalid cooldown")
+    return timedelta(seconds=cast(int, value))
 
 
 def _policy_domain(row: ServiceOperationPolicyVersionModel) -> ServiceOperationPolicyVersion:
@@ -115,16 +159,38 @@ def _policy_domain(row: ServiceOperationPolicyVersionModel) -> ServiceOperationP
         admin_only=_operation_set(snapshot, "admin_only"),
         billable_operations=_operation_set(snapshot, "billable_operations"),
         high_risk_operations=_operation_set(snapshot, "high_risk_operations"),
-        required_permissions={},
+        required_permissions=_required_permissions(snapshot),
         price_rule=ServiceOperationPriceRule(rule_raw),
         fixed_price_rial=cast(int, fixed_price),
         unit_price_rial=cast(int, unit_price),
         min_amount=_optional_positive_int(snapshot, "min_amount"),
         max_amount=_optional_positive_int(snapshot, "max_amount"),
         increment=_optional_positive_int(snapshot, "increment"),
+        cooldown=_optional_cooldown(snapshot),
+        maximum_operation_count=_optional_positive_int(snapshot, "maximum_operation_count"),
         attachment_success_policy=ServiceOperationAttachmentSuccessPolicy(success_raw),
+        at_least_n=_optional_positive_int(snapshot, "at_least_n"),
+        required_provider_capabilities=_string_set(snapshot, "required_provider_capabilities"),
         published_at=published_at,
     )
+
+
+def _price_rule_compatible(
+    operation_type: ServiceOperationType, policy: ServiceOperationPolicyVersion
+) -> bool:
+    if policy.price_rule is ServiceOperationPriceRule.FIXED_RIAL:
+        return policy.fixed_price_rial > 0
+    if operation_type is ServiceOperationType.RENEW:
+        return (
+            policy.price_rule is ServiceOperationPriceRule.PER_DAY_RIAL
+            and policy.unit_price_rial > 0
+        )
+    if operation_type is ServiceOperationType.ADD_TRAFFIC:
+        return (
+            policy.price_rule is ServiceOperationPriceRule.PER_GIB_RIAL
+            and policy.unit_price_rial > 0
+        )
+    return False
 
 
 def _published_customer_policy(
@@ -149,6 +215,7 @@ def _published_customer_policy(
             operation_type in policy.allowed_operation_types
             and operation_type in policy.customer_self_service
             and operation_type in policy.billable_operations
+            and _price_rule_compatible(operation_type, policy)
         ):
             return row, policy
     raise HTTPException(
@@ -269,9 +336,7 @@ def create_service_operation_quote(
             requester_type=ServiceOperationActorType.CUSTOMER,
             requester_id=customer_id,
             policy_version=policy,
-            desired_change=__import__(
-                "vpnsale_domain.service_operations", fromlist=["ServiceOperationDesiredChange"]
-            ).ServiceOperationDesiredChange(
+            desired_change=ServiceOperationDesiredChange(
                 traffic_delta_bytes=cast(int, desired_change.get("traffic_delta_bytes", 0)),
                 duration_delta_seconds=cast(int, desired_change.get("duration_delta_seconds", 0)),
             ),
