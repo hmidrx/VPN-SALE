@@ -389,10 +389,7 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
                 ]
             )
         return self._callback_message(
-            f"{title}\n\n"
-            f"عملیات: {operation_label}\n"
-            f"مقدار: {quantity}\n\n"
-            f"{detail}",
+            f"{title}\n\n" f"عملیات: {operation_label}\n" f"مقدار: {quantity}\n\n" f"{detail}",
             [*rows, *self.renderer.nav_rows(locale)],
         )
 
