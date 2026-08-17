@@ -92,9 +92,7 @@ def test_direct_card_topup_shows_destination_and_never_requires_mini_app() -> No
     confirm = handler.handle_callback(callback(2, CallbackAction.CONFIRM_TOP_UP))
     assert "6037-9912-3456-7890" in confirm.messages[0].text
     assert "فروشگاه تست" in confirm.messages[0].text
-    assert "📎 ارسال فیش" in [
-        button["text"] for row in confirm.messages[0].rows for button in row
-    ]
+    assert "📎 ارسال فیش" in [button["text"] for row in confirm.messages[0].rows for button in row]
     assert_no_web_app(confirm)
 
     reference = next(iter(portal._manual_topups))
