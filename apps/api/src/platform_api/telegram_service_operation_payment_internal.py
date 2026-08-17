@@ -20,6 +20,7 @@ from vpnsale_domain.wallet import RialAmount, WalletBalanceBucket
 
 from .order_models import TransactionalOutboxModel
 from .service_models import ServiceModel, ServiceOperationModel
+from .service_operation_guard import blocker_http_detail, find_service_operation_blocker
 from .service_operation_payment_models import ServiceOperationPaymentModel
 from .telegram_internal import Database, InternalAuth, _customer_id, _no_store
 from .wallet import (
@@ -216,8 +217,15 @@ def pay_service_operation(
     )
     if operation is None:
         raise _payment_error(status.HTTP_404_NOT_FOUND, "service_operation_not_found")
-    service = db.get(ServiceModel, operation.service_id)
-    if service is None or service.beneficiary_customer_id != customer_id:
+    service = db.scalar(
+        select(ServiceModel)
+        .where(
+            ServiceModel.id == operation.service_id,
+            ServiceModel.beneficiary_customer_id == customer_id,
+        )
+        .with_for_update()
+    )
+    if service is None:
         raise _payment_error(status.HTTP_404_NOT_FOUND, "service_operation_not_found")
 
     existing = db.scalar(
@@ -231,6 +239,14 @@ def pay_service_operation(
 
     if service.lifecycle not in _ELIGIBLE_LIFECYCLES:
         raise _payment_error(status.HTTP_409_CONFLICT, "service_not_eligible")
+    blocker = find_service_operation_blocker(
+        db,
+        service.id,
+        exclude_operation_id=operation.id,
+    )
+    if blocker is not None:
+        raise _payment_error(status.HTTP_409_CONFLICT, blocker_http_detail(blocker))
+
     price_rial, quote_expires_at, quoted_service_version, quote_id = _quote_fields(operation)
     if service.version != quoted_service_version:
         raise _payment_error(status.HTTP_409_CONFLICT, "service_changed_since_quote")
@@ -359,6 +375,7 @@ def pay_service_operation(
     db.add(payment)
     db.flush()
 
+    operation.payment_id = payment.id
     operation.status = target_status.value
     operation.updated_at = now
     operation.version += 1
