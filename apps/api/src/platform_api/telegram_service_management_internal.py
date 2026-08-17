@@ -228,6 +228,43 @@ def _published_customer_policy(
     )
 
 
+def _quote_options(
+    operation_type: ServiceOperationType, policy: ServiceOperationPolicyVersion
+) -> dict[str, object] | None:
+    if operation_type is ServiceOperationType.RENEW:
+        hard_max = _MAX_RENEW_DAYS
+        unit = "DAY"
+        candidates = (1, 7, 15, 30, 60, 90, 180, 365)
+    elif operation_type is ServiceOperationType.ADD_TRAFFIC:
+        hard_max = _MAX_ADD_TRAFFIC_GIB
+        unit = "GIB"
+        candidates = (1, 5, 10, 20, 50, 100, 200, 500)
+    else:
+        return None
+    minimum = max(policy.min_amount or 1, 1)
+    maximum = min(policy.max_amount or hard_max, hard_max)
+    increment = policy.increment or 1
+    if minimum > maximum:
+        return None
+    suggestions = [
+        amount
+        for amount in candidates
+        if minimum <= amount <= maximum and amount % increment == 0
+    ]
+    if not suggestions:
+        first = ((minimum + increment - 1) // increment) * increment
+        if first > maximum:
+            return None
+        suggestions = [first]
+    return {
+        "unit": unit,
+        "minimum_amount": minimum,
+        "maximum_amount": maximum,
+        "increment": increment,
+        "suggested_amounts": suggestions[:8],
+    }
+
+
 def _desired_change(operation_type: ServiceOperationType, amount: int) -> dict[str, object]:
     if operation_type is ServiceOperationType.RENEW:
         if amount > _MAX_RENEW_DAYS:
@@ -282,21 +319,37 @@ def service_management_eligibility(
 ) -> dict[str, object]:
     customer_id = _customer_id(db, x_telegram_subject)
     service = _service(db, customer_id, service_reference)
-    eligible = service.lifecycle in _ELIGIBLE_LIFECYCLES
+    lifecycle_eligible = service.lifecycle in _ELIGIBLE_LIFECYCLES
+    operations: list[dict[str, object]] = []
+    for operation_type in CUSTOMER_NATIVE_OPERATION_TYPES:
+        reason_codes: list[str] = []
+        options: dict[str, object] | None = None
+        if not lifecycle_eligible:
+            reason_codes.append("SERVICE_NOT_ELIGIBLE")
+        else:
+            try:
+                _, policy = _published_customer_policy(db, operation_type)
+            except HTTPException:
+                reason_codes.append("POLICY_UNAVAILABLE")
+            else:
+                options = _quote_options(operation_type, policy)
+                if options is None:
+                    reason_codes.append("POLICY_UNAVAILABLE")
+        operations.append(
+            {
+                "operation_type": operation_type.value,
+                "eligible": not reason_codes,
+                "billable": operation_type in _BILLABLE,
+                "requires_authoritative_quote": operation_type in _BILLABLE,
+                "safe_reason_codes": reason_codes,
+                "quote_options": options,
+            }
+        )
     _no_store(response)
     return {
         "service_reference": service.public_reference,
         "lifecycle": service.lifecycle,
-        "operations": [
-            {
-                "operation_type": operation.value,
-                "eligible": eligible,
-                "billable": operation in _BILLABLE,
-                "requires_authoritative_quote": operation in _BILLABLE,
-                "safe_reason_codes": [] if eligible else ["SERVICE_NOT_ELIGIBLE"],
-            }
-            for operation in CUSTOMER_NATIVE_OPERATION_TYPES
-        ],
+        "operations": operations,
     }
 
 
