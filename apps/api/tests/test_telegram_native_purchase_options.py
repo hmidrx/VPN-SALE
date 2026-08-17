@@ -5,7 +5,7 @@ from collections.abc import Generator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
@@ -327,7 +327,7 @@ async def test_confirm_replay_debits_once_and_persists_exact_selected_entitlemen
         )
         order = db.scalar(select(OrderModel))
         assert order is not None
-        display = order.snapshot["telegram_purchase_display"]
+        display = cast(dict[str, Any], order.snapshot["telegram_purchase_display"])
         assert display["traffic_gb"] == 20
         assert display["duration_days"] == 60
         assert display["device_limit"] == 2
