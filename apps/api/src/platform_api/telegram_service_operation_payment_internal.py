@@ -22,7 +22,14 @@ from .order_models import TransactionalOutboxModel
 from .service_models import ServiceModel, ServiceOperationModel
 from .service_operation_payment_models import ServiceOperationPaymentModel
 from .telegram_internal import Database, InternalAuth, _customer_id, _no_store
-from .wallet import _bucket, _ensure_wallet, _projection, _system_account, _wallet_account, wallet_policy
+from .wallet import (
+    _bucket,
+    _ensure_wallet,
+    _projection,
+    _system_account,
+    _wallet_account,
+    wallet_policy,
+)
 from .wallet_models import (
     JournalEntryModel,
     LedgerPostingModel,
@@ -317,9 +324,7 @@ def pay_service_operation(
     reservation.status = "CAPTURED"
     reservation.captured_at = now
 
-    fingerprint = hashlib.sha256(
-        f"{operation.id}|{quote_id}|{price_rial}|IRR".encode()
-    ).hexdigest()
+    fingerprint = hashlib.sha256(f"{operation.id}|{quote_id}|{price_rial}|IRR".encode()).hexdigest()
     payment = ServiceOperationPaymentModel(
         operation_id=operation.id,
         customer_id=customer_id,
