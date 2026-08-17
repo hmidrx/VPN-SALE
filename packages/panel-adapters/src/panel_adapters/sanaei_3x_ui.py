@@ -145,7 +145,7 @@ def _client_snapshot(
         (inbound_id,),
         optional_bool(first_present(item, ("enable", "enabled")), f"{field}.enabled"),
         optional_non_negative_int(
-            first_present(item, ("total", "data_limit")), f"{field}.traffic_limit"
+            first_present(item, ("totalGB", "total", "data_limit")), f"{field}.traffic_limit"
         ),
         optional_non_negative_int(item.get("up"), f"{field}.up"),
         optional_non_negative_int(item.get("down"), f"{field}.down"),
