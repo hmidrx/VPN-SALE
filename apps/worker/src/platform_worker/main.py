@@ -66,19 +66,11 @@ class BotApiTransport:
 
     @staticmethod
     def _reply_markup(mini_app_url: str) -> dict[str, object]:
-        return {
-            "inline_keyboard": [
-                [{"text": "مشاهده درخواست", "web_app": {"url": mini_app_url}}]
-            ]
-        }
+        return {"inline_keyboard": [[{"text": "مشاهده درخواست", "web_app": {"url": mini_app_url}}]]}
 
     @staticmethod
     def _callback_reply_markup(button_text: str, callback_data: str) -> dict[str, object]:
-        return {
-            "inline_keyboard": [
-                [{"text": button_text, "callback_data": callback_data}]
-            ]
-        }
+        return {"inline_keyboard": [[{"text": button_text, "callback_data": callback_data}]]}
 
     def send(self, telegram_user_id: int, text: str, mini_app_url: str) -> None:
         try:
@@ -200,10 +192,6 @@ def main() -> None:
         except Exception:
             print("support_reply_worker_cycle_failed", flush=True)
         try:
-            processed += service_operation_notifications.run_once()
-        except Exception:
-            print("service_operation_notification_worker_cycle_failed", flush=True)
-        try:
             processed += support_sla.run_once()
         except Exception:
             print("support_sla_worker_cycle_failed", flush=True)
@@ -219,6 +207,10 @@ def main() -> None:
             processed += service_operations.run_once()
         except Exception:
             print("service_operation_worker_cycle_failed", flush=True)
+        try:
+            processed += service_operation_notifications.run_once()
+        except Exception:
+            print("service_operation_notification_worker_cycle_failed", flush=True)
         time.sleep(1 if processed else 5)
 
 
