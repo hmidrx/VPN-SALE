@@ -9,7 +9,7 @@ replacing unrelated client fields.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import cast
 
 import httpx
@@ -36,11 +36,9 @@ from panel_adapters.write_execution import (
 _SECONDS_PER_DAY = 24 * 60 * 60
 
 
-def _same_millisecond(left: object, right: object) -> bool:
+def _same_millisecond(left: datetime | None, right: datetime | None) -> bool:
     if left is None or right is None:
         return left is right
-    if not hasattr(left, "timestamp") or not hasattr(right, "timestamp"):
-        return False
     return int(left.timestamp() * 1000) == int(right.timestamp() * 1000)
 
 
@@ -92,14 +90,8 @@ class SanaeiAdjustExecutor:
         desired = command.desired_state
         traffic_target = desired.traffic_limit.bytes_limit
         expiry_target = desired.expiry.expires_at
-        traffic_ok = (
-            traffic_target is None
-            or client.traffic_limit_bytes == traffic_target
-        )
-        expiry_ok = (
-            expiry_target is None
-            or _same_millisecond(client.expiry_at, expiry_target)
-        )
+        traffic_ok = traffic_target is None or client.traffic_limit_bytes == traffic_target
+        expiry_ok = expiry_target is None or _same_millisecond(client.expiry_at, expiry_target)
         return traffic_ok and expiry_ok
 
     async def reconcile(self, command: ProviderMutationCommand) -> ProviderMutationResult | None:
@@ -199,18 +191,14 @@ class SanaeiAdjustExecutor:
             "flow": "",
         }
         try:
-            response = await self.transport.post_json(
-                "/panel/api/clients/bulkAdjust", payload
-            )
+            response = await self.transport.post_json("/panel/api/clients/bulkAdjust", payload)
         except (TimeoutError, httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError):
             reconciled, available = await self._safe_reconcile(command)
             if reconciled is not None:
                 return reconciled
             return ProviderMutationResult(
                 MutationOutcome.AMBIGUOUS if available else MutationOutcome.TRANSIENT_FAILURE,
-                "PROVIDER_RESPONSE_LOST"
-                if available
-                else "PROVIDER_RECONCILIATION_UNAVAILABLE",
+                "PROVIDER_RESPONSE_LOST" if available else "PROVIDER_RECONCILIATION_UNAVAILABLE",
             )
 
         if response.status_code == 429 or response.status_code >= 500:
@@ -225,9 +213,7 @@ class SanaeiAdjustExecutor:
         body = response.json_body
         envelope = cast(Mapping[str, object], body) if isinstance(body, Mapping) else None
         accepted = (
-            response.status_code < 400
-            and envelope is not None
-            and envelope.get("success") is True
+            response.status_code < 400 and envelope is not None and envelope.get("success") is True
         )
         verified, available = await self._safe_reconcile(command)
         if verified is not None:
@@ -240,9 +226,7 @@ class SanaeiAdjustExecutor:
             return ProviderMutationResult(
                 MutationOutcome.PERMANENT_FAILURE, "PROVIDER_REJECTED_ADJUSTMENT"
             )
-        return ProviderMutationResult(
-            MutationOutcome.AMBIGUOUS, "READ_AFTER_WRITE_NOT_VERIFIED"
-        )
+        return ProviderMutationResult(MutationOutcome.AMBIGUOUS, "READ_AFTER_WRITE_NOT_VERIFIED")
 
 
 async def execute_certified_sanaei_adjust(
@@ -278,9 +262,7 @@ async def execute_certified_sanaei_adjust(
             "PROVIDER_RECERTIFICATION_REQUIRED",
         )
     if preflight.status is MutationPreflightStatus.CONTRACT_MISMATCH:
-        return ProviderMutationResult(
-            MutationOutcome.CONTRACT_MISMATCH, "CONTRACT_MISMATCH"
-        )
+        return ProviderMutationResult(MutationOutcome.CONTRACT_MISMATCH, "CONTRACT_MISMATCH")
     if preflight.status is not MutationPreflightStatus.READY:
         return ProviderMutationResult(
             MutationOutcome.BLOCKED_BY_CONFIGURATION, "PROVIDER_PREFLIGHT_BLOCKED"
