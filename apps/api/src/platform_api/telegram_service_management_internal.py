@@ -24,7 +24,7 @@ _BILLABLE = {
     ServiceOperationType.EXTEND_EXPIRY,
     ServiceOperationType.CHANGE_DEVICE_LIMIT,
 }
-_CUSTOMER_NATIVE = (
+CUSTOMER_NATIVE_OPERATION_TYPES = (
     ServiceOperationType.RENEW,
     ServiceOperationType.ADD_TRAFFIC,
 )
@@ -66,6 +66,6 @@ def service_management_eligibility(
                 "requires_authoritative_quote": operation in _BILLABLE,
                 "safe_reason_codes": [] if eligible else ["SERVICE_NOT_ELIGIBLE"],
             }
-            for operation in _CUSTOMER_NATIVE
+            for operation in CUSTOMER_NATIVE_OPERATION_TYPES
         ],
     }
