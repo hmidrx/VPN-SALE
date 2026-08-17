@@ -37,6 +37,10 @@ _REVIEW_STATUSES = frozenset(
         "EXPIRED",
     }
 )
+_BLOCKER_IN_PROGRESS = "SERVICE_OPERATION_IN_PROGRESS"
+_BLOCKER_REVIEW_REQUIRED = "SERVICE_OPERATION_REVIEW_REQUIRED"
+_SERVICE_NOT_ELIGIBLE = "SERVICE_NOT_ELIGIBLE"
+_POLICY_UNAVAILABLE = "POLICY_UNAVAILABLE"
 
 
 class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler):
@@ -60,11 +64,37 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
     ) -> ServiceOperationEligibility | None:
         return next((row for row in rows if row.operation_type == operation_type), None)
 
+    @staticmethod
+    def _reason_codes(rows: tuple[ServiceOperationEligibility, ...]) -> frozenset[str]:
+        return frozenset(code for row in rows for code in row.safe_reason_codes)
+
     def _management_rows(
         self,
         reference: str,
         eligibility: tuple[ServiceOperationEligibility, ...],
     ) -> list[list[dict[str, str]]]:
+        reason_codes = self._reason_codes(eligibility)
+        if _BLOCKER_REVIEW_REQUIRED in reason_codes:
+            return [
+                [
+                    {
+                        "text": "⚠️ عملیات قبلی نیازمند بررسی است",
+                        "callback_data": BotCallback(CallbackAction.SUPPORT).pack(),
+                    }
+                ]
+            ]
+        if _BLOCKER_IN_PROGRESS in reason_codes:
+            return [
+                [
+                    {
+                        "text": "⏳ عملیات سرویس در حال انجام است",
+                        "callback_data": BotCallback(
+                            CallbackAction.OPEN_SERVICE, reference
+                        ).pack(),
+                    }
+                ]
+            ]
+
         buttons: list[dict[str, str]] = []
         renewal = self._operation(eligibility, "RENEW")
         traffic = self._operation(eligibility, "ADD_TRAFFIC")
@@ -83,6 +113,54 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
                 }
             )
         return [buttons] if buttons else []
+
+    @staticmethod
+    def _ineligible_copy(operation: ServiceOperationEligibility) -> str:
+        reason_codes = frozenset(operation.safe_reason_codes)
+        if _BLOCKER_REVIEW_REQUIRED in reason_codes:
+            return (
+                "⚠️ نتیجه عملیات قبلی این سرویس نیاز به بررسی دارد.\n\n"
+                "تا مشخص‌شدن نتیجه نهایی، برای تمدید یا خرید حجم اضافه دوباره پرداخت نکنید. "
+                "در صورت نیاز از بخش پشتیبانی پیگیری کنید."
+            )
+        if _BLOCKER_IN_PROGRESS in reason_codes:
+            return (
+                "⏳ یک عملیات دیگر برای این سرویس در حال انجام است.\n\n"
+                "تا نهایی‌شدن آن، درخواست یا پرداخت جدید ثبت نکنید. "
+                "کمی بعد وضعیت سرویس را دوباره بررسی کنید."
+            )
+        if _SERVICE_NOT_ELIGIBLE in reason_codes:
+            return "این عملیات برای وضعیت فعلی سرویس قابل انجام نیست."
+        if _POLICY_UNAVAILABLE in reason_codes:
+            return "قیمت‌گذاری این عملیات موقتاً در دسترس نیست. کمی بعد دوباره تلاش کنید."
+        return "این عملیات برای وضعیت فعلی سرویس قابل انجام نیست."
+
+    def _ineligible_rows(
+        self,
+        locale: str,
+        reference: str,
+        operation: ServiceOperationEligibility,
+    ) -> list[list[dict[str, str]]]:
+        rows: list[list[dict[str, str]]] = []
+        reason_codes = frozenset(operation.safe_reason_codes)
+        if _BLOCKER_REVIEW_REQUIRED in reason_codes:
+            rows.append(
+                [
+                    {
+                        "text": "💬 پشتیبانی",
+                        "callback_data": BotCallback(CallbackAction.SUPPORT).pack(),
+                    }
+                ]
+            )
+        rows.append(
+            [
+                {
+                    "text": "🔄 بررسی دوباره سرویس",
+                    "callback_data": BotCallback(CallbackAction.OPEN_SERVICE, reference).pack(),
+                }
+            ]
+        )
+        return [*rows, *self.renderer.nav_rows(locale)]
 
     @staticmethod
     def _amount_label(amount: int, options: ServiceOperationQuoteOptions) -> str:
@@ -131,8 +209,8 @@ class ServiceManagementBotCommandHandler(NativeTopupDestinationBotCommandHandler
             )
         if not operation.eligible:
             return self._callback_message(
-                "این عملیات برای وضعیت فعلی سرویس قابل انجام نیست.",
-                self.renderer.nav_rows(locale),
+                self._ineligible_copy(operation),
+                self._ineligible_rows(locale, reference, operation),
             )
         title = "🔄 تمدید سرویس" if operation_type == "RENEW" else "➕ خرید حجم اضافه"
         options = operation.quote_options
