@@ -155,12 +155,14 @@ def test_payment_race_review_blocker_routes_to_support_and_services() -> None:
         )
     )
 
-    text = result.messages[0].text
-    rows = str(result.messages[0].rows)
+    message = result.messages[0]
+    text = message.text
+    rows = str(message.rows)
+    callbacks = [button.get("callback_data") for row in message.rows for button in row]
     assert "نیازمند بررسی" in text
     assert "دوباره پرداخت نکنید" in text
     assert "پشتیبانی" in rows
-    assert "سرویس‌های من" in rows
+    assert BotCallback(CallbackAction.MY_SERVICES).pack() in callbacks
     assert "پرداخت از کیف پول" not in rows
     assert "service_operation_review_required" not in text
 
