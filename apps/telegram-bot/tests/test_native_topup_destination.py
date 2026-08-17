@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from hashlib import sha256
 
 from telegram_bot.application.identity import InMemoryTelegramIdentityService
