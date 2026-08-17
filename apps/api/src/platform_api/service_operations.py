@@ -105,9 +105,7 @@ def _enqueue_paid_operation_ready(
     operation.payment_id = payment.id
     event_key = f"service_operation.ready:{operation.id}"
     existing_event = db.scalar(
-        select(TransactionalOutboxModel.id).where(
-            TransactionalOutboxModel.event_key == event_key
-        )
+        select(TransactionalOutboxModel.id).where(TransactionalOutboxModel.event_key == event_key)
     )
     if existing_event is not None:
         return
