@@ -3,7 +3,15 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,7 +54,9 @@ class ServiceOperationPaymentModel(IdentityBase):
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
-    spend_snapshot: Mapped[dict[str, object]] = mapped_column(JSON_TYPE, nullable=False, default=dict)
+    spend_snapshot: Mapped[dict[str, object]] = mapped_column(
+        JSON_TYPE, nullable=False, default=dict
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -54,7 +64,9 @@ class ServiceOperationPaymentModel(IdentityBase):
     __table_args__ = (
         UniqueConstraint("operation_id", name="uq_service_operation_payments_operation"),
         UniqueConstraint("reservation_id", name="uq_service_operation_payments_reservation"),
-        UniqueConstraint("capture_journal_id", name="uq_service_operation_payments_capture_journal"),
+        UniqueConstraint(
+            "capture_journal_id", name="uq_service_operation_payments_capture_journal"
+        ),
         CheckConstraint("amount_rial > 0", name="ck_service_operation_payments_amount"),
         CheckConstraint("currency = 'IRR'", name="ck_service_operation_payments_currency"),
         CheckConstraint(
