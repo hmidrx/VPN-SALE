@@ -77,6 +77,9 @@ from .telegram_service_management_internal import (
 from .telegram_service_operation_payment_internal import (
     router as telegram_service_operation_payment_internal_router,
 )
+from .telegram_service_operation_status_internal import (
+    router as telegram_service_operation_status_internal_router,
+)
 from .telegram_support_csat_internal import router as telegram_support_csat_internal_router
 from .telegram_support_internal import router as telegram_support_internal_router
 from .telegram_topup_destination_internal import (
@@ -236,6 +239,7 @@ def create_app(settings: Settings) -> FastAPI:
         telegram_topup_destination_internal_router,
         telegram_service_management_internal_router,
         telegram_service_operation_payment_internal_router,
+        telegram_service_operation_status_internal_router,
         telegram_delivery_internal_router,
         telegram_account_internal_router,
         telegram_support_internal_router,
