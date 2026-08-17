@@ -256,11 +256,13 @@ class ServiceExpiryNotificationWorker:
         if (
             service.lifecycle != "ACTIVE"
             or service.expires_at is None
-            or service.expires_at <= now
             or _expiry_token(service.expires_at) != expiry_token
         ):
             raise StaleServiceExpiryNotification("service reminder is stale")
-        if stage == _STAGE_72H and service.expires_at <= now + _WINDOW_24H:
+        current_stage = _stage_for(service.expires_at, now)
+        if current_stage is None:
+            raise StaleServiceExpiryNotification("service reminder is no longer due")
+        if stage == _STAGE_72H and current_stage != _STAGE_72H:
             raise StaleServiceExpiryNotification("72-hour reminder was superseded")
         return ServiceExpiryNotificationTarget(
             service_reference=service.public_reference,
