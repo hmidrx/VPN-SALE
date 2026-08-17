@@ -103,7 +103,11 @@ def _required_permissions(
         raise ValueError("invalid required_permissions")
     permissions: dict[ServiceOperationType, str] = {}
     for operation, permission in cast(dict[object, object], raw).items():
-        if not isinstance(operation, str) or not isinstance(permission, str) or not permission.strip():
+        if (
+            not isinstance(operation, str)
+            or not isinstance(permission, str)
+            or not permission.strip()
+        ):
             raise ValueError("invalid required_permissions")
         permissions[ServiceOperationType(operation)] = permission
     return permissions
@@ -227,7 +231,9 @@ def _published_customer_policy(
 def _desired_change(operation_type: ServiceOperationType, amount: int) -> dict[str, object]:
     if operation_type is ServiceOperationType.RENEW:
         if amount > _MAX_RENEW_DAYS:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="renew_amount_too_large")
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, detail="renew_amount_too_large"
+            )
         return {
             "traffic_delta_bytes": 0,
             "duration_delta_seconds": amount * 24 * 60 * 60,
