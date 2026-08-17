@@ -91,7 +91,7 @@ def test_owned_request_returns_only_customer_safe_formatted_destination(
     assert captured == {"reference": "mtp-owned", "customer_id": "customer-a"}
     assert result == {
         "mode": "DIRECT_CARD",
-        "formatted_card_number": "6037-9912-3456-7890",
+        "formatted_card_number": "6037 9912 3456 7890",
         "card_holder_name": "فروشگاه تست",
         "support_required": False,
     }
