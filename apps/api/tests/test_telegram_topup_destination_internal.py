@@ -38,23 +38,45 @@ def destination_row() -> SimpleNamespace:
     )
 
 
+def customer_a(_db: object, _subject: int) -> str:
+    return "customer-a"
+
+
+def customer_b(_db: object, _subject: int) -> str:
+    return "customer-b"
+
+
+def display_enabled(_db: object) -> SimpleNamespace:
+    return SimpleNamespace(customer_display_enabled=True)
+
+
+def display_disabled(_db: object) -> SimpleNamespace:
+    return SimpleNamespace(customer_display_enabled=False)
+
+
+def encryptor(_settings: Settings) -> FakeEncryptor:
+    return FakeEncryptor()
+
+
+def request_with_destination(
+    _db: object, _reference: str, _customer_id: str
+) -> SimpleNamespace:
+    return SimpleNamespace(destination_version_id="dest-v1")
+
+
 def test_owned_request_returns_only_customer_safe_formatted_destination(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, str] = {}
 
-    def owned_request(db: object, reference: str, customer_id: str) -> SimpleNamespace:
+    def owned_request(_db: object, reference: str, customer_id: str) -> SimpleNamespace:
         captured.update(reference=reference, customer_id=customer_id)
         return SimpleNamespace(destination_version_id="dest-v1")
 
-    monkeypatch.setattr(destination_api, "_customer_id", lambda db, subject: "customer-a")
+    monkeypatch.setattr(destination_api, "_customer_id", customer_a)
     monkeypatch.setattr(destination_api, "customer_manual_topup_request", owned_request)
-    monkeypatch.setattr(
-        destination_api,
-        "customer_manual_topup_destination_settings",
-        lambda db: SimpleNamespace(customer_display_enabled=True),
-    )
-    monkeypatch.setattr(destination_api, "_encryptor", lambda settings: FakeEncryptor())
+    monkeypatch.setattr(destination_api, "customer_manual_topup_destination_settings", display_enabled)
+    monkeypatch.setattr(destination_api, "_encryptor", encryptor)
     response = Response()
 
     result = destination_api.manual_topup_destination(
@@ -81,18 +103,16 @@ def test_owned_request_returns_only_customer_safe_formatted_destination(
 def test_foreign_request_cannot_reach_destination_decryption(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(destination_api, "_customer_id", lambda db, subject: "customer-b")
-
-    def reject_foreign(db: object, reference: str, customer_id: str) -> SimpleNamespace:
+    def reject_foreign(_db: object, _reference: str, customer_id: str) -> SimpleNamespace:
         assert customer_id == "customer-b"
         raise HTTPException(status_code=404, detail="manual top-up request not found")
 
+    def fail_encryptor(_settings: Settings) -> FakeEncryptor:
+        pytest.fail("foreign request must not reach decryption")
+
+    monkeypatch.setattr(destination_api, "_customer_id", customer_b)
     monkeypatch.setattr(destination_api, "customer_manual_topup_request", reject_foreign)
-    monkeypatch.setattr(
-        destination_api,
-        "_encryptor",
-        lambda settings: pytest.fail("foreign request must not reach decryption"),
-    )
+    monkeypatch.setattr(destination_api, "_encryptor", fail_encryptor)
 
     with pytest.raises(HTTPException) as exc_info:
         destination_api.manual_topup_destination(
@@ -109,22 +129,13 @@ def test_foreign_request_cannot_reach_destination_decryption(
 def test_disabled_customer_display_returns_support_only_without_decryption(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(destination_api, "_customer_id", lambda db, subject: "customer-a")
-    monkeypatch.setattr(
-        destination_api,
-        "customer_manual_topup_request",
-        lambda db, reference, customer_id: SimpleNamespace(destination_version_id="dest-v1"),
-    )
-    monkeypatch.setattr(
-        destination_api,
-        "customer_manual_topup_destination_settings",
-        lambda db: SimpleNamespace(customer_display_enabled=False),
-    )
-    monkeypatch.setattr(
-        destination_api,
-        "_encryptor",
-        lambda settings: pytest.fail("disabled destination must not be decrypted"),
-    )
+    def fail_encryptor(_settings: Settings) -> FakeEncryptor:
+        pytest.fail("disabled destination must not be decrypted")
+
+    monkeypatch.setattr(destination_api, "_customer_id", customer_a)
+    monkeypatch.setattr(destination_api, "customer_manual_topup_request", request_with_destination)
+    monkeypatch.setattr(destination_api, "customer_manual_topup_destination_settings", display_disabled)
+    monkeypatch.setattr(destination_api, "_encryptor", fail_encryptor)
 
     result = destination_api.manual_topup_destination(
         "mtp-owned",
