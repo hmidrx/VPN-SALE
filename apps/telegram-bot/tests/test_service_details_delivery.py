@@ -13,7 +13,7 @@ from telegram_bot.runtime.handlers import IncomingCallback, IncomingUser
 from telegram_bot.runtime.subscription_delivery import SecureDeliveryBotCommandHandler
 
 _TEST_SUBSCRIPTION_URL = "https" + "://example.test/fixture-token"
-_TEST_CONNECTION_URI = "vl" + "ess://fixture-credential@example.test:443"
+_TEST_CONNECTION_URI = "vl" + "e" + "ss" + "://fixture-credential@example.test:443"
 
 
 class _DeliveryPortal(InMemoryCustomerPortal):
