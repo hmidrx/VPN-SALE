@@ -69,42 +69,35 @@ The following are existing capabilities and should be treated as foundations, no
 - Durable fixed-role heartbeat for the main Telegram production worker so a dead/stale worker is distinguishable from a healthy empty queue.
 - Bounded worker cycle success/failure counters and repeated-cycle failure escalation without hostname/process/instance metric dimensions.
 - Recovery guidance for bounded health and worker-liveness signals in `docs/ALERTING.md`; recovery must preserve idempotency, reconciliation and provider-write gates.
+- Repeatable non-production recovery drill covering stale durable claims, terminal outbox non-replay, unresolved paid-operation admission, unknown-on-provider-read-failure behavior and heartbeat/restart safety.
+- `scripts/verify-recovery-drill.sh` refuses production/provider-write mode and runs the focused recovery contract suite; `docs/RECOVERY_DRILL.md` documents the smallest safe operator actions.
 
 ## Next — ordered priorities
 
-### 1. OPS-RECOVERY-DRILL — prove recovery paths without unsafe automatic mutation
-Worker liveness and queue/provider health are now observable. The next step is to exercise the existing stale-claim, retry, reconciliation, manual-review and compensation paths in controlled tests/runbooks. Do not add a generic "retry everything" control.
+### 1. PROD-READINESS — provider-enabled staging and real end-to-end smoke
+Repository recovery contracts are now exercised without unsafe automatic mutation. The next milestone is a provider-enabled **staging-only** harness plus a real smoke against a disposable certified Sanaei environment. CI must remain restrictive and must never become a provider-writing environment.
 
 Target outcome:
-- verify stale claims recover through existing lease/claim rules;
-- verify terminal outbox failures are not blindly replayed;
-- verify unresolved service-operation states continue to block unsafe repeat payment;
-- verify provider-read failures leave usage unknown rather than fabricated;
-- verify worker restart/liveness recovery does not duplicate durable financial/provider work;
-- document the smallest operator action for each intentionally non-automatic state.
-
-### 2. PROD-READINESS — provider-enabled staging and real end-to-end smoke
-Do this only in an operator-controlled staging environment with valid external configuration and an explicit decision to enable provider writes. CI remains restrictive and must never become a real provider-writing environment.
-
-Minimum staging sequence:
+- add a staging-only preflight/verification path that refuses CI/test/production misuse and requires explicit provider-write opt-in;
+- keep all credentials/tokens outside Git and avoid secret-bearing CLI arguments where practical;
 - Telegram purchase -> authoritative quote/payment -> worker -> Sanaei provisioning -> activation -> secure subscription/config delivery;
 - renewal and add-traffic against a disposable service;
 - authoritative usage sync and lifecycle/traffic notifications;
 - restart/retry/idempotency checks around worker/provider boundaries;
 - verify unresolved service-operation admission remains safe under real provider timing;
-- verify the provider-write gate is enabled only in the intended staging environment.
+- clearly separate repository-harness readiness from the external real-smoke result: do not call the system production-ready until the external staging smoke passes.
 
-### 3. BOT-OPERATOR — selected Telegram-native operator/admin actions only if they remove a real dependency
-A full admin bot is **not** required to call customer Telegram v1 complete. If the product goal becomes "no Admin Web dependency at all," add only selected operator flows that materially help support/recovery. Reuse existing backend authorization, audit and approval rules; Telegram must not become a second admin authority model.
+### 2. BOT-OPERATOR — Telegram-native operator/admin path
+The requested end-state includes removing the routine Admin Web dependency for selected support/recovery operations. Build the smallest safe operator surface and reuse backend admin authorization/audit/approval rules; Telegram must not become a second admin authority model.
 
 Target outcome:
-- identify the smallest high-value operator actions that currently require Admin Web during support/recovery;
-- expose read-only health/status first, then only audited mutations already protected by backend authorization/approval rules;
-- require explicit operator identity/linking and never trust a caller-supplied Telegram ID as admin authority;
-- keep provider credentials, raw errors and customer secrets out of Telegram;
-- do not create a second business-rule implementation in the bot.
+- explicit operator identity/linking backed by existing admin authority; never trust a caller-supplied Telegram ID as admin authority;
+- Telegram-native read-only operational health and attention summaries first;
+- selected high-value support/recovery actions only when an existing backend permission/audit/approval rule can be reused;
+- provider credentials, raw errors and customer connection secrets never enter Telegram;
+- no duplicated financial/provider business rules in the bot.
 
-### 4. MULTI-PROVIDER — only after Sanaei is stable in staging/production
+### 3. MULTI-PROVIDER — only after Sanaei is stable in staging/production
 Preserve provider-neutral contracts now, but add another real provider only from verified API behavior and dedicated contract tests. Do not infer a panel API or claim compatibility from similarity to 3x-ui.
 
 ## Deferred while Telegram-first priority is active
@@ -130,6 +123,7 @@ Customer-facing Telegram v1 can be considered functionally complete when all of 
 - unresolved provider-operation states cannot be compounded by a later unsafe paid mutation;
 - notification preferences are not authorized from an unauthenticated caller-supplied Telegram ID;
 - bounded operational health and explicit main-worker liveness are observable without exposing customer/provider secrets;
+- recovery contracts are repeatably verified without replay-all or provider-write shortcuts;
 - required repository CI is green;
 - before production use, provider-enabled staging/live smoke validates the real end-to-end path and recovery behavior.
 
