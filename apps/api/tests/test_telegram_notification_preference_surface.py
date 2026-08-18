@@ -16,9 +16,7 @@ _PRIVATE_PREFERENCE_PATCH_PATH = (
 def test_raw_telegram_id_notification_preference_routes_are_not_public() -> None:
     schema = create_app(Settings()).openapi()
 
-    assert not any(
-        path.startswith(_PUBLIC_TELEGRAM_PREFERENCE_PREFIX) for path in schema["paths"]
-    )
+    assert not any(path.startswith(_PUBLIC_TELEGRAM_PREFERENCE_PREFIX) for path in schema["paths"])
 
 
 def test_private_telegram_notification_preference_routes_remain_registered() -> None:
