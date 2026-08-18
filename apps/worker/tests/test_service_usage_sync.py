@@ -9,9 +9,7 @@ _ATTACHMENT_ID = "22222222-2222-4222-8222-222222222222"
 _GIB = 1024**3
 
 
-def _projection(
-    *, combined: int | None, previous: int | None = None, allowance: int = 100 * _GIB
-):
+def _projection(*, combined: int | None, previous: int | None = None, allowance: int = 100 * _GIB):
     return build_safe_usage_projection(
         service_id=_SERVICE_ID,
         attachment_id=_ATTACHMENT_ID,
