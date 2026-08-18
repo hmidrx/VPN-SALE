@@ -15,6 +15,12 @@ def _factory() -> sessionmaker[Session]:
     return sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
 
 
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
 def test_worker_heartbeat_persists_cycle_outcomes_without_instance_dimensions() -> None:
     factory = _factory()
     recorder = WorkerHeartbeatRecorder(factory)
@@ -36,9 +42,9 @@ def test_worker_heartbeat_persists_cycle_outcomes_without_instance_dimensions() 
         assert heartbeat.successful_cycles == 1
         assert heartbeat.failed_cycles == 1
         assert heartbeat.consecutive_failures == 1
-        assert heartbeat.last_seen_at == started + timedelta(seconds=5)
-        assert heartbeat.last_success_at == started
-        assert heartbeat.last_failure_at == started + timedelta(seconds=5)
+        assert _as_utc(heartbeat.last_seen_at) == started + timedelta(seconds=5)
+        assert _as_utc(heartbeat.last_success_at) == started
+        assert _as_utc(heartbeat.last_failure_at) == started + timedelta(seconds=5)
 
 
 def test_duplicate_role_recorders_share_one_safe_row_and_success_clears_streak() -> None:
@@ -59,4 +65,4 @@ def test_duplicate_role_recorders_share_one_safe_row_and_success_clears_streak()
         assert heartbeat.successful_cycles == 1
         assert heartbeat.failed_cycles == 2
         assert heartbeat.consecutive_failures == 0
-        assert heartbeat.last_seen_at == started + timedelta(seconds=2)
+        assert _as_utc(heartbeat.last_seen_at) == started + timedelta(seconds=2)
