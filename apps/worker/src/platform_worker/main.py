@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from platform_api.database import sync_database_url
 
+from .heartbeat import WorkerHeartbeatRecorder
 from .manual_topup_delivery import (
     DeliverySettings,
     ManualTopupDeliveryWorker,
@@ -182,6 +183,7 @@ def main() -> None:
         os.getenv("VPN_SALE_PROVIDER_WRITES_ENABLED", "false").lower() == "true"
     )
     worker_id = f"{socket.gethostname()}:{os.getpid()}"
+    heartbeat = WorkerHeartbeatRecorder(factory)
     usage_sync = ServiceUsageSyncWorker(factory, f"usage:{worker_id}")
     provisioner = build_order_provisioner(factory, provider_writes_enabled)
     fulfillment = OrderFulfillmentWorker(factory, provisioner, worker_id)
@@ -197,46 +199,61 @@ def main() -> None:
     )
     while True:
         processed = 0
+        cycle_failed = False
         try:
             processed += manual_topup.run_once()
         except Exception:
+            cycle_failed = True
             print("manual_topup_worker_cycle_failed", flush=True)
         try:
             processed += support_reply.run_once()
         except Exception:
+            cycle_failed = True
             print("support_reply_worker_cycle_failed", flush=True)
         try:
             processed += support_sla.run_once()
         except Exception:
+            cycle_failed = True
             print("support_sla_worker_cycle_failed", flush=True)
         try:
             processed += fulfillment.run_once()
         except Exception:
+            cycle_failed = True
             print("order_fulfillment_worker_cycle_failed", flush=True)
         try:
             processed += activation.run_once()
         except Exception:
+            cycle_failed = True
             print("service_activation_worker_cycle_failed", flush=True)
         try:
             processed += service_operations.run_once()
         except Exception:
+            cycle_failed = True
             print("service_operation_worker_cycle_failed", flush=True)
         try:
             processed += usage_sync.run_once()
         except Exception:
+            cycle_failed = True
             print("service_usage_sync_worker_cycle_failed", flush=True)
         try:
             processed += service_traffic_notifications.run_once()
         except Exception:
+            cycle_failed = True
             print("service_traffic_notification_worker_cycle_failed", flush=True)
         try:
             processed += service_expiry_notifications.run_once()
         except Exception:
+            cycle_failed = True
             print("service_expiry_notification_worker_cycle_failed", flush=True)
         try:
             processed += service_operation_notifications.run_once()
         except Exception:
+            cycle_failed = True
             print("service_operation_notification_worker_cycle_failed", flush=True)
+        try:
+            heartbeat.record_cycle(success=not cycle_failed)
+        except Exception:
+            print("worker_heartbeat_write_failed", flush=True)
         time.sleep(1 if processed else 5)
 
 
