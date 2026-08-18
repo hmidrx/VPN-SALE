@@ -17,12 +17,14 @@ from platform_api.ops_observability import (
 )
 
 
-def _healthy_parts() -> tuple[
-    OutboxHealth,
-    FulfillmentHealth,
-    ServiceOperationHealth,
-    UsageSyncHealth,
-]:
+def _healthy_parts() -> (
+    tuple[
+        OutboxHealth,
+        FulfillmentHealth,
+        ServiceOperationHealth,
+        UsageSyncHealth,
+    ]
+):
     return (
         OutboxHealth(
             pending_due=0,
@@ -95,11 +97,7 @@ def test_prometheus_output_is_bounded_and_contains_no_sensitive_dimensions() -> 
 
 
 def test_operational_health_routes_require_authenticated_admin_dependency() -> None:
-    routes = {
-        route.path: route
-        for route in router.routes
-        if isinstance(route, APIRoute)
-    }
+    routes = {route.path: route for route in router.routes if isinstance(route, APIRoute)}
     for path in (
         "/api/v1/admin/management/operations/health",
         "/api/v1/admin/management/operations/metrics",
