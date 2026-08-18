@@ -62,22 +62,36 @@ The following are existing capabilities and should be treated as foundations, no
 - Account security and customer session revocation.
 - Service-operation concurrency, admission and recovery UX hardening from PRs #138-#140 is complete and must not be reimplemented.
 
+### Operational hardening
+- Authenticated admin-only Telegram production-path health snapshot.
+- Prometheus-compatible low-cardinality metrics for due/retrying/failed outbox work, stale claims, fulfillment attention states, unresolved paid service operations and authoritative usage-sync freshness.
+- Fixed `HEALTHY` / `DEGRADED` / `ACTION_REQUIRED` classification without customer IDs, Telegram IDs, provider endpoints, remote identities or credential-bearing labels.
+- Recovery guidance for each bounded signal in `docs/ALERTING.md`; recovery must preserve idempotency, reconciliation and provider-write gates.
+
 ## Next — ordered priorities
 
-### 1. OPS-HARDENING — bounded observability and recovery for the Telegram production path
-The normal customer lifecycle is functionally broad enough that the next codeable work should make failures visible and recoverable without adding a second product surface.
+### 1. OPS-WORKER-HEARTBEAT — explicit worker liveness and cycle-failure visibility
+The aggregate database snapshot can show stuck or failed durable work, but an idle or dead worker should also be distinguishable from a healthy empty queue.
 
 Target outcome:
-- bounded metrics/alerts for failed and retrying durable work;
-- transactional-outbox/worker lag visibility without high-cardinality customer identifiers;
-- provider-read/write health and stale-usage visibility without leaking endpoint or credential material;
-- clear operator classification for automated retry versus reconciliation/manual intervention;
-- concise recovery runbooks linked to the states automation intentionally cannot resolve;
-- focused tests proving telemetry does not expose customer/provider secrets and does not mutate business state.
+- add a bounded durable worker heartbeat/lease signal for the main Telegram production worker loop;
+- record only safe worker role, last-seen time and bounded cycle-success/failure counters, never host secrets or customer/provider identifiers;
+- distinguish worker-not-running from queue-empty and provider-read degradation;
+- expose the heartbeat through the existing authenticated operational snapshot/metrics instead of creating another monitoring surface;
+- make restarts and duplicate workers safe through deterministic worker-role semantics;
+- add focused tests for stale-heartbeat classification, bounded cardinality and failure isolation.
 
-Prefer extending existing metrics, worker state and recovery primitives over creating parallel monitoring models.
+### 2. OPS-RECOVERY-DRILL — prove recovery paths without unsafe automatic mutation
+After worker liveness is explicit, exercise the existing stale-claim, retry, reconciliation, manual-review and compensation paths in controlled tests/runbooks. Do not add a generic "retry everything" control.
 
-### 2. PROD-READINESS — provider-enabled staging and real end-to-end smoke
+Target outcome:
+- verify stale claims recover through existing lease/claim rules;
+- verify terminal outbox failures are not blindly replayed;
+- verify unresolved service-operation states continue to block unsafe repeat payment;
+- verify provider-read failures leave usage unknown rather than fabricated;
+- document the smallest operator action for each intentionally non-automatic state.
+
+### 3. PROD-READINESS — provider-enabled staging and real end-to-end smoke
 Do this only in an operator-controlled staging environment with valid external configuration and an explicit decision to enable provider writes. CI remains restrictive and must never become a real provider-writing environment.
 
 Minimum staging sequence:
@@ -88,10 +102,10 @@ Minimum staging sequence:
 - verify unresolved service-operation admission remains safe under real provider timing;
 - verify the provider-write gate is enabled only in the intended staging environment.
 
-### 3. BOT-OPERATOR — selected Telegram-native operator/admin actions only if they remove a real dependency
+### 4. BOT-OPERATOR — selected Telegram-native operator/admin actions only if they remove a real dependency
 A full admin bot is **not** required to call customer Telegram v1 complete. If the product goal later becomes "no Admin Web dependency at all," add only selected operator flows that materially help support/recovery. Reuse existing backend authorization, audit and approval rules; Telegram must not become a second admin authority model.
 
-### 4. MULTI-PROVIDER — only after Sanaei is stable in staging/production
+### 5. MULTI-PROVIDER — only after Sanaei is stable in staging/production
 Preserve provider-neutral contracts now, but add another real provider only from verified API behavior and dedicated contract tests. Do not infer a panel API or claim compatibility from similarity to 3x-ui.
 
 ## Deferred while Telegram-first priority is active
@@ -116,6 +130,7 @@ Customer-facing Telegram v1 can be considered functionally complete when all of 
 - customer can open and continue support tickets natively;
 - unresolved provider-operation states cannot be compounded by a later unsafe paid mutation;
 - notification preferences are not authorized from an unauthenticated caller-supplied Telegram ID;
+- bounded operational health is observable without exposing customer/provider secrets;
 - required repository CI is green;
 - before production use, provider-enabled staging/live smoke validates the real end-to-end path and recovery behavior.
 

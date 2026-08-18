@@ -32,6 +32,7 @@ from .manual_topups import admin_router as admin_manual_topup_router
 from .manual_topups import customer_router as customer_manual_topup_router
 from .operations import assert_startup_configuration
 from .operations import router as operations_router
+from .ops_observability import router as admin_ops_observability_router
 from .orders import (
     admin_checkout_router,
     admin_commerce_router,
@@ -228,6 +229,7 @@ def create_app(settings: Settings) -> FastAPI:
         admin_usage_anomaly_router,
         admin_lifecycle_automation_router,
         operations_router,
+        admin_ops_observability_router,
         admin_fleet_router,
         customer_fleet_router,
         reseller_fleet_router,
