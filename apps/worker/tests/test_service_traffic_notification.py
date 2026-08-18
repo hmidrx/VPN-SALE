@@ -196,9 +196,7 @@ def test_confirmed_exhaustion_allows_percent_over_100_from_real_overage() -> Non
     )
     event = _event(service, account, source, "EXHAUSTED")
 
-    target = ServiceTrafficNotificationWorker._target(
-        event, service, account, source, source, _NOW
-    )
+    target = ServiceTrafficNotificationWorker._target(event, service, account, source, source, _NOW)
     assert target.stage == "EXHAUSTED"
     assert target.consumed_percent == 104
 
