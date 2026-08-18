@@ -21,11 +21,14 @@ def test_worker_heartbeat_persists_cycle_outcomes_without_instance_dimensions() 
     started = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
 
     assert recorder.record_cycle(success=True, now=started, force=True) is True
-    assert recorder.record_cycle(
-        success=False,
-        now=started + timedelta(seconds=5),
-        force=True,
-    ) is True
+    assert (
+        recorder.record_cycle(
+            success=False,
+            now=started + timedelta(seconds=5),
+            force=True,
+        )
+        is True
+    )
 
     with factory() as db:
         heartbeat = db.get(WorkerHeartbeatModel, TELEGRAM_PRODUCTION_WORKER_ROLE)
