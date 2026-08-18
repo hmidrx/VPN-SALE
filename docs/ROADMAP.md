@@ -3,141 +3,120 @@
 Last reviewed: 2026-08-18
 
 ## Source of truth
-This roadmap is the concise current plan for the repository. For implementation decisions, use this order of trust:
+Use this order of trust for implementation decisions:
 
 1. current `main` code, migrations and tests;
 2. root `AGENTS.md` safety/agent contract;
 3. this roadmap;
-4. dedicated current feature/ADR documentation;
-5. historical milestone plans, old PR text and old README milestone scope notes.
+4. dedicated current feature/ADR/runbook documentation;
+5. historical milestone plans and old PR/README scope notes.
 
-If a historical document says a capability is out of scope but current `main` already implements it, **do not remove or rebuild the capability**. Verify the current implementation and continue from it.
+Never remove or rebuild a capability merely because an old milestone document called it out of scope. Inspect current `main` first.
 
 ## Current phase
-**Telegram customer bot functional completion and hardening before production deployment.**
-
-The customer should be able to complete the normal service lifecycle inside Telegram without depending on the customer website or Mini App. Backend/API/worker work is part of this phase when Telegram correctness requires it. New website/app product work is deferred unless the product priority is explicitly changed.
+**Telegram-first functional completion and production hardening.** Customer commerce/service/support must work natively in Telegram. Backend/API/worker work remains in scope when Telegram correctness requires it; new website/app product work stays deferred.
 
 ## Done on current main
-The following are existing capabilities and should be treated as foundations, not future roadmap items.
 
-### Telegram customer foundation
-- Telegram identity linking and customer-safe private API projections.
-- Redis-backed bounded conversation state.
-- Persian-native Telegram navigation and compact/versioned callbacks.
-- Profile, wallet, service list/details, support and account/security flows.
-- Notification preferences use the authenticated private Telegram bridge; caller-supplied raw Telegram IDs are not exposed as a public preference authority.
+### Customer Telegram foundation
+- Telegram identity linking, customer-safe private API projections and Redis-backed bounded conversation state.
+- Persian-native navigation, profile, wallet, services, support, notification preferences and account/session security.
+- Notification preferences are not authorized from an unauthenticated caller-supplied Telegram ID.
 
-### Purchase and wallet
-- Native Telegram purchase wizard.
-- Server-authoritative configurable plans and price quotes.
-- Wallet-funded checkout with idempotent accounting boundaries.
-- Manual card-to-card wallet top-up with receipt, status and cancellation flow.
-
-### Provisioning and delivery
-- Real Sanaei/3x-ui provisioning path with explicit provider-write gate.
-- Activation/delivery worker semantics.
-- Durable subscription tokens and multi-format retrieval.
-- Explicit secure subscription/direct-config reveal from Telegram without Mini App dependency.
+### Purchase, provisioning and delivery
+- Native plan selection, server-authoritative pricing, wallet checkout and manual card-to-card top-up.
+- Real certified Sanaei/3x-ui provisioning behind the explicit provider-write gate.
+- Activation/delivery semantics, durable subscription tokens and explicit secure subscription/direct-config reveal.
 
 ### Service management
-- Renewal eligibility, authoritative quote, wallet payment and provider execution.
-- Add-traffic eligibility, authoritative quote, wallet payment and provider execution.
-- Telegram status/result UX for paid service operations.
-- Proactive terminal service-operation outcome notifications.
-- Rich service detail screen with lifecycle, delivery readiness, expiry and refresh.
-- Per-service admission/serialization prevents a later paid mutation from compounding in-flight or unresolved provider work.
-- Wallet payment revalidates operation admission under the service lock before financial mutation.
-- Customer-safe Telegram handling explains blocked/racing operations without exposing provider or reconciliation internals.
+- Native renewal and add-traffic eligibility, quote, wallet payment, provider execution and result/status UX.
+- Per-service serialization/admission prevents compounding in-flight or unresolved paid mutations.
+- Customer-safe blocked/race UX and proactive terminal operation notifications.
+- Rich service details with lifecycle, delivery readiness, expiry and authoritative refresh.
 
-### Lifecycle and usage
-- Expiry-soon Telegram notifications with customer preference controls and anti-spam rollout handling.
-- Read-only authoritative Sanaei usage synchronization into existing service-usage projections.
-- Fresh/high-enough-confidence remaining traffic exposed to Telegram; stale or ambiguous data remains unknown.
-- Telegram warning, critical and confirmed-exhaustion traffic notifications with latest-state revalidation and deterministic outbox deduplication.
+### Lifecycle, usage, support and security
+- Expiry reminders and authoritative Sanaei usage synchronization.
+- Truthful remaining traffic when sufficiently fresh/confident; stale/ambiguous data stays unknown.
+- Low-traffic, critical and confirmed-exhaustion Telegram notifications with anti-spam/latest-state revalidation.
+- Native support tickets, threaded replies, image attachments, pagination, macros, SLA escalation and CSAT.
+- Account security/session revocation and service-operation concurrency/recovery safety.
 
-### Support and security
-- Native support tickets and threaded replies.
-- Ticket pagination, customer/agent image attachments, canned responses/macros, SLA escalation and CSAT.
-- Account security and customer session revocation.
-- Service-operation concurrency, admission and recovery UX hardening from PRs #138-#140 is complete and must not be reimplemented.
+### Operational hardening and recovery
+- Authenticated admin-only operational health snapshot and low-cardinality Prometheus metrics.
+- Durable fixed-role main-worker heartbeat distinguishing idle healthy work from missing/stale worker liveness.
+- Bounded cycle success/failure counters and `HEALTHY` / `DEGRADED` / `ACTION_REQUIRED` classification without customer/provider/instance secrets.
+- Recovery guidance in `docs/ALERTING.md`.
+- Repeatable non-production recovery drill proving stale-claim recovery, terminal-event non-replay, unresolved paid-operation blocking, unknown-on-provider-read-failure and restart/heartbeat safety.
+- `scripts/verify-recovery-drill.sh` refuses production/provider-write mode.
 
-### Operational hardening
-- Authenticated admin-only Telegram production-path health snapshot.
-- Prometheus-compatible low-cardinality metrics for due/retrying/failed outbox work, stale claims, fulfillment attention states, unresolved paid service operations and authoritative usage-sync freshness.
-- Fixed `HEALTHY` / `DEGRADED` / `ACTION_REQUIRED` classification without customer IDs, Telegram IDs, provider endpoints, remote identities or credential-bearing labels.
-- Durable fixed-role heartbeat for the main Telegram production worker so a dead/stale worker is distinguishable from a healthy empty queue.
-- Bounded worker cycle success/failure counters and repeated-cycle failure escalation without hostname/process/instance metric dimensions.
-- Recovery guidance for bounded health and worker-liveness signals in `docs/ALERTING.md`; recovery must preserve idempotency, reconciliation and provider-write gates.
-- Repeatable non-production recovery drill covering stale durable claims, terminal outbox non-replay, unresolved paid-operation admission, unknown-on-provider-read-failure behavior and heartbeat/restart safety.
-- `scripts/verify-recovery-drill.sh` refuses production/provider-write mode and runs the focused recovery contract suite; `docs/RECOVERY_DRILL.md` documents the smallest safe operator actions.
+### Provider staging harness — repository side complete
+- Dedicated `docker-compose.staging.yml` keeps PostgreSQL/Redis/private services unexposed while preserving the outbound network required for Telegram and Sanaei.
+- Provider-write authority is supplied only to the worker; API fake auth/payment remain forced off and the API does not receive provider-write authority.
+- `scripts/vpn-sale-compose-staging` isolates the runtime env from the caller shell.
+- `platform_worker.staging_preflight` fails closed unless the environment is staging, Telegram polling is enabled, provider writes are explicit and certified Sanaei target/binding/credential/contract metadata exists.
+- `scripts/verify-provider-staging.sh` refuses CI/non-staging/loose runtime files/fake auth/fake payment and checks migrations, private ports, API health, bot polling, safe logs and read-only provider readiness metadata.
+- `docs/STAGING_E2E.md` defines the disposable real-provider smoke and stop conditions.
+
+**Important:** repository staging-harness readiness is not a real E2E result. Production-ready status remains blocked until the external disposable Sanaei staging smoke is actually executed with operator-supplied runtime secrets/configuration.
 
 ## Next — ordered priorities
 
-### 1. PROD-READINESS — provider-enabled staging and real end-to-end smoke
-Repository recovery contracts are now exercised without unsafe automatic mutation. The next milestone is a provider-enabled **staging-only** harness plus a real smoke against a disposable certified Sanaei environment. CI must remain restrictive and must never become a provider-writing environment.
+### 1. BOT-OPERATOR — Telegram-native operator/admin path
+Remove routine Admin Web dependency for selected operational/support triage without creating a second admin authority model.
 
 Target outcome:
-- add a staging-only preflight/verification path that refuses CI/test/production misuse and requires explicit provider-write opt-in;
-- keep all credentials/tokens outside Git and avoid secret-bearing CLI arguments where practical;
-- Telegram purchase -> authoritative quote/payment -> worker -> Sanaei provisioning -> activation -> secure subscription/config delivery;
-- renewal and add-traffic against a disposable service;
-- authoritative usage sync and lifecycle/traffic notifications;
-- restart/retry/idempotency checks around worker/provider boundaries;
-- verify unresolved service-operation admission remains safe under real provider timing;
-- clearly separate repository-harness readiness from the external real-smoke result: do not call the system production-ready until the external staging smoke passes.
+- resolve Telegram identity server-side to the same underlying active administrator identity;
+- require existing backend admin permission/role authority rather than trusting raw Telegram IDs;
+- start with read-only operational health/attention summaries and safe refresh actions;
+- add only selected audited mutations later when an existing backend permission/approval rule can be reused unchanged;
+- never expose provider credentials, raw failures, customer connection secrets or arbitrary customer Telegram IDs;
+- keep financial/provider business rules in the backend, not in Telegram handlers.
 
-### 2. BOT-OPERATOR — Telegram-native operator/admin path
-The requested end-state includes removing the routine Admin Web dependency for selected support/recovery operations. Build the smallest safe operator surface and reuse backend admin authorization/audit/approval rules; Telegram must not become a second admin authority model.
+### 2. EXTERNAL-STAGING-SMOKE — final production gate
+This cannot be completed by repository CI. It requires an operator-controlled staging runtime, Telegram bot token, provider vault configuration, certified Sanaei panel/credentials and a disposable customer/service.
 
-Target outcome:
-- explicit operator identity/linking backed by existing admin authority; never trust a caller-supplied Telegram ID as admin authority;
-- Telegram-native read-only operational health and attention summaries first;
-- selected high-value support/recovery actions only when an existing backend permission/audit/approval rule can be reused;
-- provider credentials, raw errors and customer connection secrets never enter Telegram;
-- no duplicated financial/provider business rules in the bot.
+Required real sequence is documented in `docs/STAGING_E2E.md`: purchase -> payment -> provisioning -> activation -> secure delivery -> usage -> renewal -> add traffic -> notifications -> restart/idempotency -> unresolved-operation admission -> recovery.
 
-### 3. MULTI-PROVIDER — only after Sanaei is stable in staging/production
-Preserve provider-neutral contracts now, but add another real provider only from verified API behavior and dedicated contract tests. Do not infer a panel API or claim compatibility from similarity to 3x-ui.
+Do not mark the bot production-ready until this external smoke passes.
+
+### 3. MULTI-PROVIDER — only after Sanaei is stable
+Preserve provider-neutral contracts now, but add another provider only from verified API behavior and dedicated contract tests. Never infer compatibility from similarity to 3x-ui.
 
 ## Deferred while Telegram-first priority is active
 - New customer website/Mini App commerce UX.
 - Website redesign/polish unrelated to Telegram correctness.
 - New reseller-web product features unrelated to bot requirements.
-- Broad admin-web feature expansion unless required by a bot/recovery safety boundary.
-- Premature generalization to unsupported panel providers.
+- Broad admin-web expansion unless required by a Telegram/recovery safety boundary.
+- Premature unsupported-provider generalization.
 
-Existing web/admin code is not deleted or intentionally broken; repository-wide CI remains required.
+Existing web/admin code must remain unbroken and repository-wide CI remains required.
 
 ## Telegram Bot v1 completion criteria
-Customer-facing Telegram v1 can be considered functionally complete when all of the following are true:
+Customer Telegram v1 is functionally complete when:
 
-- customer can start/link account, view profile and manage sessions;
-- customer can choose a plan, receive authoritative pricing, pay from wallet/top up and purchase natively;
-- successful paid purchase can provision and activate safely on the certified provider path;
-- customer can explicitly retrieve secure connection/subscription material;
-- customer can view truthful service lifecycle, expiry and fresh authoritative remaining traffic when available;
-- customer can renew and buy extra traffic natively with safe payment/execution/status semantics;
-- customer receives terminal operation, expiry and low-traffic/exhaustion notifications with preference/anti-spam controls;
-- customer can open and continue support tickets natively;
-- unresolved provider-operation states cannot be compounded by a later unsafe paid mutation;
-- notification preferences are not authorized from an unauthenticated caller-supplied Telegram ID;
-- bounded operational health and explicit main-worker liveness are observable without exposing customer/provider secrets;
-- recovery contracts are repeatably verified without replay-all or provider-write shortcuts;
+- account/profile/session management works natively;
+- authoritative purchase/top-up/wallet checkout works natively;
+- paid purchase provisions and activates safely on the certified provider path;
+- secure connection material is explicitly retrievable;
+- service lifecycle/expiry/fresh authoritative traffic is truthful;
+- renewal/add-traffic are safe, idempotent and trackable;
+- operation/expiry/traffic notifications respect preferences and anti-spam controls;
+- support is fully usable natively;
+- unresolved provider work cannot be compounded by repeat payment;
+- operational health and worker liveness are observable without sensitive identifiers;
+- recovery contracts are repeatably verified without replay-all/provider-write shortcuts;
 - required repository CI is green;
-- before production use, provider-enabled staging/live smoke validates the real end-to-end path and recovery behavior.
+- **before production use**, the external provider-enabled disposable staging smoke passes.
 
 ## Rules for future AI/Codex continuation
-When an AI agent continues this project:
-
 1. Read root `AGENTS.md` and this file first.
-2. Fetch current `main`; do not rely on a SHA from an old chat/handoff.
-3. Check recent merged/open PRs so work is not duplicated.
-4. Inspect the exact implementation and tests before declaring a feature missing.
-5. Create a fresh bounded branch/PR from current `main`.
-6. Keep current Telegram-first scope unless explicitly changed.
+2. Fetch current `main`; never rely on an old chat SHA.
+3. Check recent merged/open PRs before starting work.
+4. Inspect exact code/tests before declaring a feature missing.
+5. Use a fresh bounded branch/PR from current `main`.
+6. Keep Telegram-first scope unless explicitly changed.
 7. Never replace authoritative backend/provider state with Telegram-local guesses.
-8. Never add secret-looking fixtures or real config/subscription material to tracked files.
-9. Run/follow the full repository verification matrix and fix exact root causes.
-10. Merge only with all required checks green and the expected PR head unchanged.
-11. After merge, update this roadmap if the completed/next boundary changed.
+8. Never put real credentials/tokens/subscription material in Git or fixtures.
+9. Follow the full repository verification matrix and fix exact root causes only.
+10. Merge only when all required checks are green and expected PR head is unchanged.
+11. Update this roadmap whenever the Done/Next boundary changes.
