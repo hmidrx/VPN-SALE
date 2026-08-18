@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+env_file="${VPN_SALE_STAGING_ENV_FILE:-/opt/vpn-sale-runtime/staging.env}"
+
+if [[ $# -gt 0 && "$1" == "--env-file" ]]; then
+  env_file="$2"
+  shift 2
+fi
+
+if [[ ! -f "$env_file" ]]; then
+  echo "Staging env file not found: $env_file" >&2
+  exit 2
+fi
+
+exec env -i HOME="${HOME:-/root}" PATH="${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}" \
+  VPN_SALE_STAGING_ENV_FILE="$env_file" \
+  docker compose --project-name vpn-sale-staging --project-directory "$repo_root" \
+  -f "$repo_root/docker-compose.yml" \
+  -f "$repo_root/docker-compose.staging.yml" \
+  --env-file "$env_file" "$@"
