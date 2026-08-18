@@ -1,28 +1,79 @@
 services:
-  api:
-    env_file: /opt/vpn-sale-runtime/staging.env
-    read_only: true
-    tmpfs: [/tmp]
-    restart: unless-stopped
-    depends_on: [postgres, redis]
-  worker:
-    env_file: /opt/vpn-sale-runtime/staging.env
-    read_only: true
-    tmpfs: [/tmp]
-    restart: unless-stopped
-    depends_on: [postgres, redis]
-  telegram-bot:
-    env_file: /opt/vpn-sale-runtime/staging.env
-    read_only: true
-    tmpfs: [/tmp]
-    restart: unless-stopped
-    depends_on: [api]
   postgres:
-    ports: []
+    env_file: ${VPN_SALE_STAGING_ENV_FILE:-/opt/vpn-sale-runtime/staging.env}
+    ports: !reset []
+    volumes:
+      - staging_postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+
   redis:
-    ports: []
+    ports: !reset []
+    volumes:
+      - staging_redis_data:/data
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     restart: unless-stopped
-networks:
-  default:
-    internal: true
+
+  api:
+    env_file: ${VPN_SALE_STAGING_ENV_FILE:-/opt/vpn-sale-runtime/staging.env}
+    environment:
+      VPN_SALE_FAKE_CUSTOMER_AUTH_ENABLED: "false"
+      VPN_SALE_PAYMENT_FAKE_SUCCESS_PUBLIC_ENABLED: "false"
+      VPN_SALE_PROVIDER_WRITES_ENABLED: "false"
+      VPN_SALE_MANUAL_TOPUP_PRIVATE_UPLOAD_ROOT: /var/lib/vpnsale/private/manual-topups
+      VPN_SALE_SUPPORT_PRIVATE_UPLOAD_ROOT: /var/lib/vpnsale/private/support
+    volumes:
+      - staging_private_media:/var/lib/vpnsale/private
+    ports: !override
+      - "127.0.0.1:8000:8000"
+    read_only: true
+    tmpfs: [/tmp]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  worker:
+    profiles: !override ["ops"]
+    env_file: ${VPN_SALE_STAGING_ENV_FILE:-/opt/vpn-sale-runtime/staging.env}
+    environment:
+      VPN_SALE_PROVIDER_WRITES_ENABLED: "${VPN_SALE_PROVIDER_WRITES_ENABLED:?provider staging requires an explicit value}"
+      VPN_SALE_SUPPORT_PRIVATE_UPLOAD_ROOT: /var/lib/vpnsale/private/support
+    volumes: !override
+      - staging_private_media:/var/lib/vpnsale/private:ro
+    read_only: true
+    tmpfs: [/tmp]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  telegram-bot:
+    profiles: !override ["telegram"]
+    env_file: ${VPN_SALE_STAGING_ENV_FILE:-/opt/vpn-sale-runtime/staging.env}
+    read_only: true
+    tmpfs: [/tmp]
+    depends_on:
+      api: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  customer-web:
+    profiles: !override ["disabled-in-telegram-staging"]
+    ports: !reset []
+
+  admin-web:
+    profiles: !override ["disabled-in-telegram-staging"]
+    ports: !reset []
+
+  reseller-web:
+    profiles: !override ["disabled-in-telegram-staging"]
+    ports: !reset []
+
+  reverse-proxy:
+    profiles: !override ["disabled-in-telegram-staging"]
+    ports: !reset []
+
+volumes:
+  staging_postgres_data:
+  staging_redis_data:
+  staging_private_media:
