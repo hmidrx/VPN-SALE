@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from platform_api.database import get_db_session
 from platform_api.identity.models import AdminModel
 from platform_api.management import current_admin
+from platform_api.ops_models import TELEGRAM_PRODUCTION_WORKER_ROLE, WorkerHeartbeatModel
 from platform_api.order_models import TransactionalOutboxModel
 from platform_api.service_models import (
     ServiceFulfillmentRequestModel,
@@ -31,7 +32,9 @@ router = APIRouter(
 
 _STALE_CLAIM_AFTER = timedelta(minutes=15)
 _STALE_USAGE_AFTER = timedelta(minutes=15)
+_STALE_WORKER_AFTER = timedelta(seconds=30)
 _RECENT_FAILURE_WINDOW = timedelta(hours=1)
+_WORKER_FAILURE_ACTION_THRESHOLD = 3
 _IN_PROGRESS_OPERATION_STATUSES = (
     "PENDING_APPROVAL",
     "QUEUED",
@@ -47,6 +50,7 @@ _REVIEW_REQUIRED_OPERATION_STATUSES = (
 )
 _FULFILLMENT_STATUSES = ("RETRY_PENDING", "BLOCKED", "OPERATOR_REVIEW", "FAILED")
 _USAGE_RUN_STATUSES = ("SUCCESS", "PARTIAL", "FAILED", "UNKNOWN")
+_WORKER_STATES = ("RUNNING", "DEGRADED", "STALE", "MISSING")
 
 
 class OutboxHealth(BaseModel):
@@ -77,10 +81,20 @@ class UsageSyncHealth(BaseModel):
     stale_active_accounts: int
 
 
+class WorkerHealth(BaseModel):
+    state: Literal["RUNNING", "DEGRADED", "STALE", "MISSING"]
+    last_seen_age_seconds: int | None
+    successful_cycles: int
+    failed_cycles: int
+    consecutive_failures: int
+    last_failure_age_seconds: int | None
+
+
 class OperationsHealthSnapshot(BaseModel):
     generated_at: datetime
     status: Literal["HEALTHY", "DEGRADED", "ACTION_REQUIRED"]
     signals: list[str]
+    worker: WorkerHealth
     outbox: OutboxHealth
     fulfillment: FulfillmentHealth
     service_operations: ServiceOperationHealth
@@ -111,14 +125,54 @@ def _status_counts(
     return {str(status): int(count) for status, count in rows}
 
 
+def _worker_health(db: Session, now: datetime) -> WorkerHealth:
+    heartbeat = db.get(WorkerHeartbeatModel, TELEGRAM_PRODUCTION_WORKER_ROLE)
+    if heartbeat is None:
+        return WorkerHealth(
+            state="MISSING",
+            last_seen_age_seconds=None,
+            successful_cycles=0,
+            failed_cycles=0,
+            consecutive_failures=0,
+            last_failure_age_seconds=None,
+        )
+
+    last_seen_age = _age_seconds(now, heartbeat.last_seen_at)
+    stale_after_seconds = int(_STALE_WORKER_AFTER.total_seconds())
+    if last_seen_age is None or last_seen_age > stale_after_seconds:
+        state: Literal["RUNNING", "DEGRADED", "STALE", "MISSING"] = "STALE"
+    elif heartbeat.consecutive_failures:
+        state = "DEGRADED"
+    else:
+        state = "RUNNING"
+
+    return WorkerHealth(
+        state=state,
+        last_seen_age_seconds=last_seen_age,
+        successful_cycles=heartbeat.successful_cycles,
+        failed_cycles=heartbeat.failed_cycles,
+        consecutive_failures=heartbeat.consecutive_failures,
+        last_failure_age_seconds=_age_seconds(now, heartbeat.last_failure_at),
+    )
+
+
 def classify_operations_health(
     *,
+    worker: WorkerHealth,
     outbox: OutboxHealth,
     fulfillment: FulfillmentHealth,
     service_operations: ServiceOperationHealth,
     usage_sync: UsageSyncHealth,
 ) -> tuple[Literal["HEALTHY", "DEGRADED", "ACTION_REQUIRED"], list[str]]:
     signals: list[str] = []
+    if worker.state == "MISSING":
+        signals.append("WORKER_HEARTBEAT_MISSING")
+    elif worker.state == "STALE":
+        signals.append("WORKER_HEARTBEAT_STALE")
+    elif worker.consecutive_failures >= _WORKER_FAILURE_ACTION_THRESHOLD:
+        signals.append("WORKER_CYCLE_FAILURE_STREAK")
+    elif worker.consecutive_failures:
+        signals.append("WORKER_RECENT_CYCLE_FAILURE")
     if outbox.failed:
         signals.append("OUTBOX_FAILED")
     if outbox.stale_claims:
@@ -145,6 +199,9 @@ def classify_operations_health(
     action_required = any(
         signal
         in {
+            "WORKER_HEARTBEAT_MISSING",
+            "WORKER_HEARTBEAT_STALE",
+            "WORKER_CYCLE_FAILURE_STREAK",
             "OUTBOX_FAILED",
             "FULFILLMENT_FAILED",
             "FULFILLMENT_OPERATOR_REVIEW",
@@ -167,6 +224,7 @@ def collect_operations_health(
     if now.tzinfo is None:
         now = now.replace(tzinfo=UTC)
 
+    worker = _worker_health(db, now)
     pending_due = int(
         db.scalar(
             select(func.count())
@@ -316,6 +374,7 @@ def collect_operations_health(
     )
 
     status, signals = classify_operations_health(
+        worker=worker,
         outbox=outbox,
         fulfillment=fulfillment,
         service_operations=service_operations,
@@ -325,6 +384,7 @@ def collect_operations_health(
         generated_at=now,
         status=status,
         signals=signals,
+        worker=worker,
         outbox=outbox,
         fulfillment=fulfillment,
         service_operations=service_operations,
@@ -341,6 +401,25 @@ def render_prometheus(snapshot: OperationsHealthSnapshot) -> str:
         lines.append(f'vpnsale_ops_health_state{{state="{state}"}} {int(snapshot.status == state)}')
     lines.extend(
         [
+            "# HELP vpnsale_ops_worker_state Main worker liveness state.",
+            "# TYPE vpnsale_ops_worker_state gauge",
+        ]
+    )
+    for state in _WORKER_STATES:
+        lines.append(
+            f'vpnsale_ops_worker_state{{state="{state}"}} {int(snapshot.worker.state == state)}'
+        )
+    lines.extend(
+        [
+            "# HELP vpnsale_ops_worker_successful_cycles Persisted successful worker cycles.",
+            "# TYPE vpnsale_ops_worker_successful_cycles gauge",
+            f"vpnsale_ops_worker_successful_cycles {snapshot.worker.successful_cycles}",
+            "# HELP vpnsale_ops_worker_failed_cycles Persisted failed worker cycles.",
+            "# TYPE vpnsale_ops_worker_failed_cycles gauge",
+            f"vpnsale_ops_worker_failed_cycles {snapshot.worker.failed_cycles}",
+            "# HELP vpnsale_ops_worker_consecutive_failures Consecutive failed worker cycles.",
+            "# TYPE vpnsale_ops_worker_consecutive_failures gauge",
+            f"vpnsale_ops_worker_consecutive_failures {snapshot.worker.consecutive_failures}",
             "# HELP vpnsale_ops_outbox_pending_due Due outbox events.",
             "# TYPE vpnsale_ops_outbox_pending_due gauge",
             f"vpnsale_ops_outbox_pending_due {snapshot.outbox.pending_due}",
@@ -395,6 +474,25 @@ def render_prometheus(snapshot: OperationsHealthSnapshot) -> str:
             ),
         ]
     )
+    if snapshot.worker.last_seen_age_seconds is not None:
+        lines.extend(
+            [
+                "# HELP vpnsale_ops_worker_last_seen_age_seconds Main worker heartbeat age.",
+                "# TYPE vpnsale_ops_worker_last_seen_age_seconds gauge",
+                f"vpnsale_ops_worker_last_seen_age_seconds {snapshot.worker.last_seen_age_seconds}",
+            ]
+        )
+    if snapshot.worker.last_failure_age_seconds is not None:
+        lines.extend(
+            [
+                "# HELP vpnsale_ops_worker_last_failure_age_seconds Last failed cycle age.",
+                "# TYPE vpnsale_ops_worker_last_failure_age_seconds gauge",
+                (
+                    "vpnsale_ops_worker_last_failure_age_seconds "
+                    f"{snapshot.worker.last_failure_age_seconds}"
+                ),
+            ]
+        )
     if snapshot.usage_sync.latest_run_age_seconds is not None:
         lines.extend(
             [
