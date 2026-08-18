@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,6 +13,7 @@ from .database import get_db_session
 from .identity.models import CustomerSessionModel
 from .management import require_perm
 from .service_models import ServiceAttachmentModel, ServiceFulfillmentRequestModel, ServiceModel
+from .usage_models import ServiceUsageAccountModel, ServiceUsageAggregateModel
 
 admin_router = APIRouter(prefix="/api/v1/admin/services", tags=["admin-services"])
 customer_router = APIRouter(prefix="/api/v1/customer/services", tags=["customer-services"])
@@ -20,6 +21,8 @@ allocation_router = APIRouter(prefix="/api/v1/admin/allocation", tags=["admin-al
 reconciliation_router = APIRouter(
     prefix="/api/v1/admin/service-reconciliation", tags=["admin-service-reconciliation"]
 )
+
+_USAGE_MAX_AGE = timedelta(hours=2)
 
 
 class SafeServiceStatus(BaseModel):
@@ -178,7 +181,44 @@ _LIFECYCLE_LABELS = {
 }
 
 
-def _customer_summary(row: ServiceModel, verified: int) -> CustomerServiceSummary:
+def _fresh_usage(
+    db: Session, service_id: str, now: datetime | None = None
+) -> CustomerServiceUsage | None:
+    account = db.scalar(
+        select(ServiceUsageAccountModel).where(ServiceUsageAccountModel.service_id == service_id)
+    )
+    if account is None:
+        return None
+    aggregate = db.scalar(
+        select(ServiceUsageAggregateModel)
+        .where(ServiceUsageAggregateModel.usage_account_id == account.id)
+        .order_by(ServiceUsageAggregateModel.calculated_at.desc())
+        .limit(1)
+    )
+    if (
+        aggregate is None
+        or aggregate.used_bytes is None
+        or aggregate.latest_observed_at is None
+        or aggregate.confidence not in {"HIGH", "MEDIUM"}
+    ):
+        return None
+    current = now or datetime.now(UTC)
+    observed = aggregate.latest_observed_at
+    if observed.tzinfo is None:
+        return None
+    if current - observed > _USAGE_MAX_AGE:
+        return None
+    return CustomerServiceUsage(
+        used_bytes=aggregate.used_bytes,
+        total_bytes=account.allowance_bytes,
+        remaining_bytes=aggregate.remaining_bytes,
+        last_synced_at=observed,
+        unlimited=account.is_unlimited,
+        stale=False,
+    )
+
+
+def _customer_summary(db: Session, row: ServiceModel, verified: int) -> CustomerServiceSummary:
     snapshot = row.entitlement_snapshot
     required = _allowlisted_int(snapshot, "required_attachment_count") or 0
     entitlement = CustomerServiceEntitlement(
@@ -205,7 +245,7 @@ def _customer_summary(row: ServiceModel, verified: int) -> CustomerServiceSummar
         provisioning_progress=progress,
         safe_operational_message="وضعیت سرویس بدون نمایش اطلاعات فنی ارائه‌دهنده.",
         entitlement=entitlement,
-        usage=None,
+        usage=_fresh_usage(db, row.id),
     )
 
 
@@ -219,7 +259,7 @@ def customer_service_summaries(
         .order_by(ServiceModel.created_at.desc())
         .limit(min(max(limit, 1), 100))
     )
-    return [_customer_summary(row, _verified_attachment_count(db, row.id)) for row in rows]
+    return [_customer_summary(db, row, _verified_attachment_count(db, row.id)) for row in rows]
 
 
 def _verified_attachment_count(db: Session, service_id: str) -> int:
@@ -248,7 +288,7 @@ def customer_service_projection(
     )
     if row is None:
         return None
-    summary = _customer_summary(row, _verified_attachment_count(db, row.id))
+    summary = _customer_summary(db, row, _verified_attachment_count(db, row.id))
     return CustomerServiceDetail(
         summary=summary,
         service_health=summary.lifecycle_label,

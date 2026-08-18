@@ -111,8 +111,6 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
             with urllib.request.urlopen(request, timeout=self._timeout) as response:  # noqa: S310
                 return cast(dict[str, Any], json.loads(response.read(1_048_576).decode()))
         except urllib.error.HTTPError as exc:
-            # HTTPError subclasses URLError, but it proves the server authoritatively rejected the
-            # request. Preserve only a tiny validated machine code; never propagate raw bodies.
             if 400 <= exc.code < 500:
                 raise AuthoritativePrivateApiError(
                     exc.code, self._safe_http_rejection_code(exc)
@@ -158,23 +156,39 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
             cast(str | None, data.get("username")),
         )
 
+    @staticmethod
+    def _service_summary(data: dict[str, Any], context: CustomerContext) -> ServiceSummary:
+        usage_value = data.get("usage")
+        usage = cast(dict[str, object], usage_value) if isinstance(usage_value, dict) else {}
+        remaining_value = usage.get("remaining_bytes")
+        remaining_gb = (
+            int(remaining_value) // (1024**3)
+            if type(remaining_value) is int and int(remaining_value) >= 0
+            else None
+        )
+        entitlement_value = data.get("traffic_entitlement_bytes")
+        total_gb = (
+            int(entitlement_value) // (1024**3)
+            if type(entitlement_value) is int and int(entitlement_value) >= 0
+            else None
+        )
+        return ServiceSummary(
+            str(data["reference"]),
+            context.customer_ref,
+            str(data["plan_name"]),
+            str(data["status"]),
+            datetime.fromisoformat(str(data["expires_at"])) if data.get("expires_at") else None,
+            remaining_gb,
+            total_gb,
+            str(data["location"]) if data.get("location") else None,
+            bool(data.get("renewable", False)),
+        )
+
     def services(self, context: CustomerContext) -> list[ServiceSummary]:
         data = self._request("GET", "/services", context.telegram_user_id)
         return [
-            ServiceSummary(
-                str(x["reference"]),
-                context.customer_ref,
-                str(x["plan_name"]),
-                str(x["status"]),
-                datetime.fromisoformat(str(x["expires_at"])) if x.get("expires_at") else None,
-                None,
-                (int(x["traffic_entitlement_bytes"]) // (1024**3))
-                if isinstance(x.get("traffic_entitlement_bytes"), int)
-                else None,
-                str(x["location"]) if x.get("location") else None,
-                bool(x.get("renewable", False)),
-            )
-            for x in cast(list[dict[str, Any]], data["items"])
+            self._service_summary(item, context)
+            for item in cast(list[dict[str, Any]], data["items"])
         ]
 
     def service(self, context: CustomerContext, service_ref: str) -> ServiceSummary | None:
@@ -182,19 +196,7 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
             data = self._request("GET", f"/services/{service_ref}", context.telegram_user_id)
         except PrivateApiUnavailable:
             return None
-        return ServiceSummary(
-            str(data["reference"]),
-            context.customer_ref,
-            str(data["plan_name"]),
-            str(data["status"]),
-            datetime.fromisoformat(str(data["expires_at"])) if data.get("expires_at") else None,
-            None,
-            int(data["traffic_entitlement_bytes"]) // (1024**3)
-            if isinstance(data.get("traffic_entitlement_bytes"), int)
-            else None,
-            str(data["location"]) if data.get("location") else None,
-            bool(data.get("renewable", False)),
-        )
+        return self._service_summary(data, context)
 
     def wallet_balance(self, context: CustomerContext) -> tuple[int, str]:
         data = self._request("GET", "/wallet", context.telegram_user_id)
@@ -270,8 +272,6 @@ class PrivatePlatformClient(TelegramIdentityPort, CustomerPortalPort):
         except AuthoritativePrivateApiError:
             raise
         except PrivateApiUnavailable:
-            # A timeout can happen after commit. Replaying the exact request/key is the only safe
-            # reconciliation: durable quote/checkout idempotency returns the original result.
             try:
                 data = self._request(
                     "POST", "/purchase/confirm", context.telegram_user_id, body, idempotency_key

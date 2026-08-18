@@ -145,6 +145,18 @@ class DatabaseSanaeiActivator:
             raise ValueError("remote identity unavailable")
         return str(UUID(value))
 
+    def provider_read_context(
+        self, attachment: ServiceAttachmentModel
+    ) -> tuple[
+        PanelInstance,
+        AllocationTargetModel,
+        ProviderConnectionTestModel,
+        str,
+        str,
+    ]:
+        """Resolve the same certified panel context for read-only provider operations."""
+        return self._select(attachment)
+
     def _select(
         self, attachment: ServiceAttachmentModel
     ) -> tuple[

@@ -27,6 +27,7 @@ from .service_operation_execution import (
     ServiceOperationExecutionWorker,
 )
 from .service_operation_notification import ServiceOperationNotificationWorker
+from .service_usage_sync import ServiceUsageSyncWorker
 from .support_reply_delivery import SupportDeliverySettings, SupportReplyDeliveryWorker
 from .support_sla_escalation import SupportSlaEscalationWorker
 
@@ -175,6 +176,7 @@ def main() -> None:
         os.getenv("VPN_SALE_PROVIDER_WRITES_ENABLED", "false").lower() == "true"
     )
     worker_id = f"{socket.gethostname()}:{os.getpid()}"
+    usage_sync = ServiceUsageSyncWorker(factory, f"usage:{worker_id}")
     provisioner = build_order_provisioner(factory, provider_writes_enabled)
     fulfillment = OrderFulfillmentWorker(factory, provisioner, worker_id)
     activation = ServiceActivationWorker(
@@ -213,6 +215,10 @@ def main() -> None:
             processed += service_operations.run_once()
         except Exception:
             print("service_operation_worker_cycle_failed", flush=True)
+        try:
+            processed += usage_sync.run_once()
+        except Exception:
+            print("service_usage_sync_worker_cycle_failed", flush=True)
         try:
             processed += service_expiry_notifications.run_once()
         except Exception:
