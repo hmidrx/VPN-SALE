@@ -139,9 +139,7 @@ def test_customer_copy_distinguishes_warning_critical_and_confirmed_exhaustion()
     }
     warning = _notification_text(ServiceTrafficNotificationTarget(stage="WARNING", **base))
     critical = _notification_text(ServiceTrafficNotificationTarget(stage="CRITICAL", **base))
-    exhausted = _notification_text(
-        ServiceTrafficNotificationTarget(stage="EXHAUSTED", **base)
-    )
+    exhausted = _notification_text(ServiceTrafficNotificationTarget(stage="EXHAUSTED", **base))
 
     assert "رو به اتمام" in warning
     assert "تقریباً تمام" in critical
@@ -180,15 +178,29 @@ def test_target_revalidates_fresh_current_usage_before_delivery() -> None:
 
     recovered = _aggregate(account, state="AVAILABLE", remaining_bytes=70 * _GIB)
     with pytest.raises(StaleServiceTrafficNotification):
-        ServiceTrafficNotificationWorker._target(
-            event, service, account, source, recovered, _NOW
-        )
+        ServiceTrafficNotificationWorker._target(event, service, account, source, recovered, _NOW)
 
     escalated = _aggregate(account, state="CRITICAL", remaining_bytes=3 * _GIB)
     with pytest.raises(StaleServiceTrafficNotification):
-        ServiceTrafficNotificationWorker._target(
-            event, service, account, source, escalated, _NOW
-        )
+        ServiceTrafficNotificationWorker._target(event, service, account, source, escalated, _NOW)
+
+
+def test_confirmed_exhaustion_allows_percent_over_100_from_real_overage() -> None:
+    service = _service()
+    account = _account(service)
+    source = _aggregate(
+        account,
+        state="EXHAUSTED_CONFIRMED",
+        remaining_bytes=0,
+        consumed_percent=104,
+    )
+    event = _event(service, account, source, "EXHAUSTED")
+
+    target = ServiceTrafficNotificationWorker._target(
+        event, service, account, source, source, _NOW
+    )
+    assert target.stage == "EXHAUSTED"
+    assert target.consumed_percent == 104
 
 
 def test_target_rejects_stale_low_confidence_and_invalid_scope() -> None:
