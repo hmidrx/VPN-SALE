@@ -30,7 +30,6 @@ from .management import public_router as admin_invitation_router
 from .management import router as management_router
 from .manual_topups import admin_router as admin_manual_topup_router
 from .manual_topups import customer_router as customer_manual_topup_router
-from .notification_preferences import router as customer_notification_preferences_router
 from .operations import assert_startup_configuration
 from .operations import router as operations_router
 from .orders import (
@@ -178,7 +177,6 @@ def create_app(settings: Settings) -> FastAPI:
         admin_catalog_router,
         wallet_router,
         order_router,
-        customer_notification_preferences_router,
         payment_router,
         admin_order_router,
         admin_invoice_router,
