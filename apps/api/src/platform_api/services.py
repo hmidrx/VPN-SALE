@@ -181,7 +181,9 @@ _LIFECYCLE_LABELS = {
 }
 
 
-def _fresh_usage(db: Session, service_id: str, now: datetime | None = None) -> CustomerServiceUsage | None:
+def _fresh_usage(
+    db: Session, service_id: str, now: datetime | None = None
+) -> CustomerServiceUsage | None:
     account = db.scalar(
         select(ServiceUsageAccountModel).where(ServiceUsageAccountModel.service_id == service_id)
     )
