@@ -15,7 +15,12 @@ from panel_adapters.write_execution import SanaeiAuthenticatedTransport
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
-from vpnsale_domain.providers import ProviderError, ProviderKind, ProviderRequestContext, RemoteClientSnapshot
+from vpnsale_domain.providers import (
+    ProviderError,
+    ProviderKind,
+    ProviderRequestContext,
+    RemoteClientSnapshot,
+)
 from vpnsale_domain.usage import (
     AggregationPolicyVersion,
     AggregationStrategy,
@@ -149,7 +154,9 @@ class ServiceUsageSyncWorker:
 
     def _due(self, db: Session, service: ServiceModel, now: datetime) -> bool:
         account = db.scalar(
-            select(ServiceUsageAccountModel).where(ServiceUsageAccountModel.service_id == service.id)
+            select(ServiceUsageAccountModel).where(
+                ServiceUsageAccountModel.service_id == service.id
+            )
         )
         if account is None:
             return True
@@ -161,7 +168,9 @@ class ServiceUsageSyncWorker:
         )
         return latest is None or now - latest.calculated_at >= _SYNC_INTERVAL
 
-    def _candidates(self, db: Session, now: datetime) -> list[tuple[ServiceModel, ServiceAttachmentModel]]:
+    def _candidates(
+        self, db: Session, now: datetime
+    ) -> list[tuple[ServiceModel, ServiceAttachmentModel]]:
         services = db.scalars(
             select(ServiceModel)
             .where(ServiceModel.lifecycle == "ACTIVE")
@@ -191,10 +200,8 @@ class ServiceUsageSyncWorker:
 
     async def _fetch_client(
         self, attachment: ServiceAttachmentModel
-    ) -> tuple[RemoteClientSnapshot, str, str]:
-        panel, target, certification, username, password = self.resolver.provider_read_context(
-            attachment
-        )
+    ) -> tuple[RemoteClientSnapshot, str]:
+        panel, target, _, username, password = self.resolver.provider_read_context(attachment)
         base_url = EndpointValidator().validate(
             panel.endpoint_origin + panel.base_path,
             panel.endpoint_policy,
@@ -222,7 +229,7 @@ class ServiceUsageSyncWorker:
             ]
             if len(matches) != 1:
                 raise ValueError("authoritative provider usage identity unavailable")
-            return matches[0], adapter.definition.adapter_version, certification.contract_digest
+            return matches[0], adapter.definition.adapter_version
         finally:
             if transport is not None:
                 await transport.aclose()
@@ -304,7 +311,6 @@ class ServiceUsageSyncWorker:
         attachment_id: str,
         client: RemoteClientSnapshot,
         adapter_version: str,
-        contract_digest: str,
         observed_at: datetime,
     ) -> bool:
         with self.factory() as db:
@@ -332,7 +338,9 @@ class ServiceUsageSyncWorker:
                 observed_at=observed_at,
                 expires_at=service.expires_at,
             )
-            scope = f"{attachment.id}:{client.inbound_remote_ids[0]}:{client.remote_client_identity}"
+            scope = (
+                f"{attachment.id}:{client.inbound_remote_ids[0]}:{client.remote_client_identity}"
+            )
             bucket = int(observed_at.timestamp()) // int(_SYNC_INTERVAL.total_seconds())
             idem = hashlib.sha256(f"usage:v1:{attachment.id}:{scope}:{bucket}".encode()).hexdigest()
             if db.scalar(
@@ -420,13 +428,12 @@ class ServiceUsageSyncWorker:
         failures = 0
         for service, attachment in candidates:
             try:
-                client, adapter_version, digest = asyncio.run(self._fetch_client(attachment))
+                client, adapter_version = asyncio.run(self._fetch_client(attachment))
                 if self._persist(
                     service.id,
                     attachment.id,
                     client,
                     adapter_version,
-                    digest,
                     datetime.now(UTC),
                 ):
                     processed += 1
