@@ -370,10 +370,7 @@ def render_prometheus(snapshot: OperationsHealthSnapshot) -> str:
                 'vpnsale_ops_fulfillment_attention{state="OPERATOR_REVIEW"} '
                 f"{snapshot.fulfillment.operator_review}"
             ),
-            (
-                'vpnsale_ops_fulfillment_attention{state="FAILED"} '
-                f"{snapshot.fulfillment.failed}"
-            ),
+            ('vpnsale_ops_fulfillment_attention{state="FAILED"} ' f"{snapshot.fulfillment.failed}"),
             "# HELP vpnsale_ops_service_operations Paid service operation states.",
             "# TYPE vpnsale_ops_service_operations gauge",
             (
