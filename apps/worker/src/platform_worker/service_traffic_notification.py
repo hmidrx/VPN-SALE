@@ -297,9 +297,7 @@ class ServiceTrafficNotificationWorker:
         return len(ids)
 
     @staticmethod
-    def _latest(
-        db: Session, usage_account_id: str
-    ) -> ServiceUsageAggregateModel | None:
+    def _latest(db: Session, usage_account_id: str) -> ServiceUsageAggregateModel | None:
         return db.scalar(
             select(ServiceUsageAggregateModel)
             .where(ServiceUsageAggregateModel.usage_account_id == usage_account_id)
@@ -356,7 +354,7 @@ class ServiceTrafficNotificationWorker:
             raise StaleServiceTrafficNotification("traffic notification was superseded")
         if latest.remaining_bytes is not None and latest.remaining_bytes < 0:
             raise InvalidServiceTrafficNotification("remaining traffic is invalid")
-        if latest.consumed_percent is not None and not 0 <= latest.consumed_percent <= 100:
+        if latest.consumed_percent is not None and latest.consumed_percent < 0:
             raise InvalidServiceTrafficNotification("consumed percent is invalid")
         return ServiceTrafficNotificationTarget(
             service_reference=service.public_reference,
