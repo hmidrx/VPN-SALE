@@ -334,60 +334,90 @@ def collect_operations_health(
 
 def render_prometheus(snapshot: OperationsHealthSnapshot) -> str:
     lines = [
-        "# HELP vpnsale_ops_health_state One-hot operational health state for the Telegram production path.",
+        "# HELP vpnsale_ops_health_state Operational health state.",
         "# TYPE vpnsale_ops_health_state gauge",
     ]
     for state in ("HEALTHY", "DEGRADED", "ACTION_REQUIRED"):
         lines.append(f'vpnsale_ops_health_state{{state="{state}"}} {int(snapshot.status == state)}')
     lines.extend(
         [
-            "# HELP vpnsale_ops_outbox_pending_due Due transactional-outbox events awaiting work.",
+            "# HELP vpnsale_ops_outbox_pending_due Due outbox events.",
             "# TYPE vpnsale_ops_outbox_pending_due gauge",
             f"vpnsale_ops_outbox_pending_due {snapshot.outbox.pending_due}",
-            "# HELP vpnsale_ops_outbox_retrying Transactional-outbox events scheduled after a failed attempt.",
+            "# HELP vpnsale_ops_outbox_retrying Retrying outbox events.",
             "# TYPE vpnsale_ops_outbox_retrying gauge",
             f"vpnsale_ops_outbox_retrying {snapshot.outbox.retrying}",
-            "# HELP vpnsale_ops_outbox_failed Terminal transactional-outbox failures.",
+            "# HELP vpnsale_ops_outbox_failed Terminal outbox failures.",
             "# TYPE vpnsale_ops_outbox_failed gauge",
             f"vpnsale_ops_outbox_failed {snapshot.outbox.failed}",
-            "# HELP vpnsale_ops_outbox_stale_claims Claims older than the bounded stale-claim threshold.",
+            "# HELP vpnsale_ops_outbox_stale_claims Stale outbox claims.",
             "# TYPE vpnsale_ops_outbox_stale_claims gauge",
             f"vpnsale_ops_outbox_stale_claims {snapshot.outbox.stale_claims}",
-            "# HELP vpnsale_ops_outbox_oldest_due_age_seconds Age of the oldest due outbox event.",
+            "# HELP vpnsale_ops_outbox_oldest_due_age_seconds Oldest due outbox age.",
             "# TYPE vpnsale_ops_outbox_oldest_due_age_seconds gauge",
             f"vpnsale_ops_outbox_oldest_due_age_seconds {snapshot.outbox.oldest_due_age_seconds}",
-            "# HELP vpnsale_ops_fulfillment_attention Fulfillment items that need retry, configuration or operator attention.",
+            "# HELP vpnsale_ops_fulfillment_attention Fulfillment attention states.",
             "# TYPE vpnsale_ops_fulfillment_attention gauge",
-            f'vpnsale_ops_fulfillment_attention{{state="RETRY_PENDING"}} {snapshot.fulfillment.retry_pending}',
-            f'vpnsale_ops_fulfillment_attention{{state="BLOCKED"}} {snapshot.fulfillment.blocked}',
-            f'vpnsale_ops_fulfillment_attention{{state="OPERATOR_REVIEW"}} {snapshot.fulfillment.operator_review}',
-            f'vpnsale_ops_fulfillment_attention{{state="FAILED"}} {snapshot.fulfillment.failed}',
-            "# HELP vpnsale_ops_service_operations Paid service operations grouped by safe operator action class.",
+            (
+                'vpnsale_ops_fulfillment_attention{state="RETRY_PENDING"} '
+                f"{snapshot.fulfillment.retry_pending}"
+            ),
+            (
+                'vpnsale_ops_fulfillment_attention{state="BLOCKED"} '
+                f"{snapshot.fulfillment.blocked}"
+            ),
+            (
+                'vpnsale_ops_fulfillment_attention{state="OPERATOR_REVIEW"} '
+                f"{snapshot.fulfillment.operator_review}"
+            ),
+            (
+                'vpnsale_ops_fulfillment_attention{state="FAILED"} '
+                f"{snapshot.fulfillment.failed}"
+            ),
+            "# HELP vpnsale_ops_service_operations Paid service operation states.",
             "# TYPE vpnsale_ops_service_operations gauge",
-            f'vpnsale_ops_service_operations{{state="IN_PROGRESS"}} {snapshot.service_operations.in_progress}',
-            f'vpnsale_ops_service_operations{{state="REVIEW_REQUIRED"}} {snapshot.service_operations.review_required}',
-            "# HELP vpnsale_ops_usage_sync_degraded_runs_last_hour Usage sync runs that were partial or failed in the last hour.",
+            (
+                'vpnsale_ops_service_operations{state="IN_PROGRESS"} '
+                f"{snapshot.service_operations.in_progress}"
+            ),
+            (
+                'vpnsale_ops_service_operations{state="REVIEW_REQUIRED"} '
+                f"{snapshot.service_operations.review_required}"
+            ),
+            "# HELP vpnsale_ops_usage_sync_degraded_runs_last_hour Degraded usage sync runs.",
             "# TYPE vpnsale_ops_usage_sync_degraded_runs_last_hour gauge",
-            f"vpnsale_ops_usage_sync_degraded_runs_last_hour {snapshot.usage_sync.degraded_runs_last_hour}",
-            "# HELP vpnsale_ops_usage_stale_active_accounts Active usage accounts without a fresh aggregate.",
+            (
+                "vpnsale_ops_usage_sync_degraded_runs_last_hour "
+                f"{snapshot.usage_sync.degraded_runs_last_hour}"
+            ),
+            "# HELP vpnsale_ops_usage_stale_active_accounts Stale active usage accounts.",
             "# TYPE vpnsale_ops_usage_stale_active_accounts gauge",
-            f"vpnsale_ops_usage_stale_active_accounts {snapshot.usage_sync.stale_active_accounts}",
+            (
+                "vpnsale_ops_usage_stale_active_accounts "
+                f"{snapshot.usage_sync.stale_active_accounts}"
+            ),
         ]
     )
     if snapshot.usage_sync.latest_run_age_seconds is not None:
         lines.extend(
             [
-                "# HELP vpnsale_ops_usage_sync_latest_run_age_seconds Age of the latest usage-sync run.",
+                "# HELP vpnsale_ops_usage_sync_latest_run_age_seconds Latest sync run age.",
                 "# TYPE vpnsale_ops_usage_sync_latest_run_age_seconds gauge",
-                f"vpnsale_ops_usage_sync_latest_run_age_seconds {snapshot.usage_sync.latest_run_age_seconds}",
+                (
+                    "vpnsale_ops_usage_sync_latest_run_age_seconds "
+                    f"{snapshot.usage_sync.latest_run_age_seconds}"
+                ),
             ]
         )
     if snapshot.usage_sync.last_success_age_seconds is not None:
         lines.extend(
             [
-                "# HELP vpnsale_ops_usage_sync_last_success_age_seconds Age of the latest fully successful usage-sync run.",
+                "# HELP vpnsale_ops_usage_sync_last_success_age_seconds Last success age.",
                 "# TYPE vpnsale_ops_usage_sync_last_success_age_seconds gauge",
-                f"vpnsale_ops_usage_sync_last_success_age_seconds {snapshot.usage_sync.last_success_age_seconds}",
+                (
+                    "vpnsale_ops_usage_sync_last_success_age_seconds "
+                    f"{snapshot.usage_sync.last_success_age_seconds}"
+                ),
             ]
         )
     for status in _USAGE_RUN_STATUSES:
