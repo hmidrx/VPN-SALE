@@ -33,6 +33,7 @@ def _target_metadata() -> MetaData:
         import platform_api.order_models  # noqa: F401
         import platform_api.payment_models  # noqa: F401
         import platform_api.service_models  # noqa: F401
+        import platform_api.usage_models  # noqa: F401
         import platform_api.wallet_models  # noqa: F401
     return IdentityBase.metadata
 
