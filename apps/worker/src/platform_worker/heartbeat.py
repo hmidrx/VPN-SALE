@@ -107,7 +107,9 @@ class WorkerHeartbeatRecorder:
             )
             if result.rowcount == 0:
                 try:
-                    db.execute(insert(WorkerHeartbeatModel).values(**self._insert_values(observed_at)))
+                    db.execute(
+                        insert(WorkerHeartbeatModel).values(**self._insert_values(observed_at))
+                    )
                     db.commit()
                 except IntegrityError:
                     db.rollback()
