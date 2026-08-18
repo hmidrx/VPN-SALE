@@ -27,6 +27,7 @@ from .service_operation_execution import (
     ServiceOperationExecutionWorker,
 )
 from .service_operation_notification import ServiceOperationNotificationWorker
+from .service_traffic_notification import ServiceTrafficNotificationWorker
 from .service_usage_sync import ServiceUsageSyncWorker
 from .support_reply_delivery import SupportDeliverySettings, SupportReplyDeliveryWorker
 from .support_sla_escalation import SupportSlaEscalationWorker
@@ -166,6 +167,11 @@ def main() -> None:
         transport,
         enabled,
     )
+    service_traffic_notifications = ServiceTrafficNotificationWorker(
+        factory,
+        transport,
+        enabled,
+    )
     service_operation_notifications = ServiceOperationNotificationWorker(
         factory,
         transport,
@@ -219,6 +225,10 @@ def main() -> None:
             processed += usage_sync.run_once()
         except Exception:
             print("service_usage_sync_worker_cycle_failed", flush=True)
+        try:
+            processed += service_traffic_notifications.run_once()
+        except Exception:
+            print("service_traffic_notification_worker_cycle_failed", flush=True)
         try:
             processed += service_expiry_notifications.run_once()
         except Exception:
