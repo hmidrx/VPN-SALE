@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any, Protocol, cast
 
 from telegram_bot.application.identity import TelegramIdentityPort
@@ -10,7 +11,7 @@ from telegram_bot.config import BotSettings
 from telegram_bot.conversation import ConversationStoreV2
 from telegram_bot.delivery_api import SubscriptionDelivery
 from telegram_bot.internal_api import AuthoritativePrivateApiError, PrivateApiUnavailable
-from telegram_bot.portal import CustomerContext, CustomerPortalPort
+from telegram_bot.portal import CustomerContext, CustomerPortalPort, ServiceSummary
 from telegram_bot.runtime.handlers import HandlerResult, IncomingUser
 from telegram_bot.runtime.purchase_truth import (
     TruthfulPurchaseBotCommandHandler,
@@ -55,6 +56,77 @@ class SecureDeliveryBotCommandHandler(TruthfulPurchaseBotCommandHandler):
     def _delivery_portal(self) -> DeliveryPortal:
         return cast(DeliveryPortal, self.portal)
 
+    @staticmethod
+    def _service_status_label(status: str) -> str:
+        return {
+            "active": "🟢 فعال",
+            "pending": "🟡 در انتظار فعال‌سازی",
+            "provisioning": "🟡 در حال آماده‌سازی",
+            "queued": "🟡 در صف آماده‌سازی",
+            "expired": "⚫ پایان‌یافته",
+            "failed": "🔴 ناموفق",
+            "suspended": "🟠 محدود",
+            "disabled": "🟠 غیرفعال",
+            "cancelled": "⚫ لغوشده",
+            "revoked": "⚫ لغوشده",
+        }.get(status.casefold(), "⚪ در حال بررسی")
+
+    @staticmethod
+    def _service_expiry_text(service: ServiceSummary) -> str:
+        if service.expires_at is None:
+            return "ثبت نشده"
+        value = service.expires_at
+        if value.tzinfo is not None:
+            value = value.astimezone(UTC)
+            return value.strftime("%Y/%m/%d %H:%M UTC")
+        return value.strftime("%Y/%m/%d %H:%M")
+
+    @staticmethod
+    def _delivery_label(service: ServiceSummary, ready: bool) -> str:
+        status = service.status.casefold()
+        if ready and status == "active":
+            return "✅ آماده استفاده"
+        if status in {"pending", "provisioning", "queued"}:
+            return "⏳ در حال آماده‌سازی"
+        if status == "active":
+            return "⚠️ آمادگی اتصال قابل تأیید نیست"
+        return "— برای وضعیت فعلی سرویس قابل تحویل نیست"
+
+    def _service_text(self, service: ServiceSummary, ready: bool) -> str:
+        lines = [
+            f"📦 {safe_text(service.plan_name)}",
+            "",
+            f"وضعیت سرویس: {self._service_status_label(service.status)}",
+            f"وضعیت دسترسی: {self._delivery_label(service, ready)}",
+            f"تاریخ انقضا: {self._service_expiry_text(service)}",
+        ]
+        if service.total_gb is not None:
+            lines.append(f"حجم کل: {service.total_gb:,} گیگابایت")
+        else:
+            lines.append("حجم کل: ثبت نشده")
+        if service.remaining_gb is not None:
+            lines.append(f"حجم باقی‌مانده: {service.remaining_gb:,} گیگابایت")
+        else:
+            lines.append("حجم باقی‌مانده: فعلاً از منبع معتبر قابل دریافت نیست")
+        if service.location:
+            lines.append(f"موقعیت: {safe_text(service.location)}")
+        lines.append(f"امکان تمدید: {'✅ دارد' if service.renewable else '— فعلاً ندارد'}")
+        if service.status.casefold() == "active" and not ready:
+            lines.extend(
+                [
+                    "",
+                    "تحویل لینک یا کانفیگ در حال حاضر قابل تأیید نیست؛ کمی بعد وضعیت را بروزرسانی کنید.",
+                ]
+            )
+        elif ready:
+            lines.extend(
+                [
+                    "",
+                    "🔐 اطلاعات اتصال محرمانه است و فقط با انتخاب دکمه لینک اشتراک یا کانفیگ مستقیم نمایش داده می‌شود.",
+                ]
+            )
+        return "\n".join(lines)
+
     def _service_rows(
         self, service_reference: str, locale: str, ready: bool
     ) -> list[list[dict[str, str]]]:
@@ -76,6 +148,16 @@ class SecureDeliveryBotCommandHandler(TruthfulPurchaseBotCommandHandler):
                     },
                 ]
             )
+        rows.append(
+            [
+                {
+                    "text": "🔄 بروزرسانی وضعیت",
+                    "callback_data": BotCallback(
+                        CallbackAction.OPEN_SERVICE, service_reference
+                    ).pack(),
+                }
+            ]
+        )
         rows.extend(self.renderer.nav_rows(locale))
         return rows
 
@@ -153,17 +235,10 @@ class SecureDeliveryBotCommandHandler(TruthfulPurchaseBotCommandHandler):
                 ready = delivery_portal.service_delivery_ready(context, callback.value)
             except PrivateApiUnavailable:
                 ready = False
-            status_label = {
-                "active": "فعال",
-                "pending": "در حال آماده‌سازی",
-                "expired": "پایان‌یافته",
-                "failed": "ناموفق",
-                "suspended": "محدود",
-            }.get(service.status.casefold(), "در حال بررسی")
-            text = f"{safe_text(service.plan_name)}\nوضعیت: {status_label}"
-            if service.status.casefold() == "active" and not ready:
-                text += "\n\nتحویل کانفیگ در حال حاضر قابل تأیید نیست؛ کمی بعد دوباره بررسی کنید."
-            return self._callback_message(text, self._service_rows(callback.value, locale, ready))
+            return self._callback_message(
+                self._service_text(service, ready),
+                self._service_rows(callback.value, locale, ready),
+            )
 
         if callback.action == CallbackAction.OPEN_SUBSCRIPTION:
             if not callback.value:
