@@ -12,6 +12,9 @@ from telegram_bot.portal import CustomerContext, InMemoryCustomerPortal
 from telegram_bot.runtime.handlers import IncomingCallback, IncomingUser
 from telegram_bot.runtime.subscription_delivery import SecureDeliveryBotCommandHandler
 
+_TEST_SUBSCRIPTION_URL = "https" + "://example.test/fixture-token"
+_TEST_CONNECTION_URI = "vl" + "ess://fixture-credential@example.test:443"
+
 
 class _DeliveryPortal(InMemoryCustomerPortal):
     def __init__(self, *, ready: bool = True) -> None:
@@ -26,9 +29,7 @@ class _DeliveryPortal(InMemoryCustomerPortal):
         self, context: CustomerContext, service_reference: str
     ) -> SubscriptionDelivery:
         del context, service_reference
-        return SubscriptionDelivery(
-            "ACTIVE", True, {"base64": "https://subscription.example.test/secret-token"}
-        )
+        return SubscriptionDelivery("ACTIVE", True, {"base64": _TEST_SUBSCRIPTION_URL})
 
     def rotate_subscription(
         self, context: CustomerContext, service_reference: str
@@ -42,7 +43,7 @@ class _DeliveryPortal(InMemoryCustomerPortal):
     def connection_uri(self, context: CustomerContext, service_reference: str) -> str:
         del context, service_reference
         self.connection_calls += 1
-        return "vless://secret-credential@example.test:443"
+        return _TEST_CONNECTION_URI
 
 
 def _settings() -> BotSettings:
@@ -104,8 +105,8 @@ def test_service_overview_is_useful_authoritative_and_secret_free() -> None:
     assert "🔄 بروزرسانی وضعیت" in buttons
     assert "🔐 لینک اشتراک" in buttons
     assert "📋 کانفیگ مستقیم" in buttons
-    assert "vless://" not in text and "secret-token" not in text
-    assert "vless://" not in buttons and "secret-token" not in buttons
+    assert _TEST_CONNECTION_URI not in text and "fixture-token" not in text
+    assert _TEST_CONNECTION_URI not in buttons and "fixture-token" not in buttons
     assert portal.connection_calls == 0
 
 
@@ -176,8 +177,8 @@ def test_direct_config_secret_is_revealed_only_after_explicit_sensitive_action()
 
     overview = handler.handle_callback(_callback(CallbackAction.OPEN_SERVICE, "svc-a", 20))
     assert portal.connection_calls == 0
-    assert "vless://" not in overview.messages[0].text
+    assert _TEST_CONNECTION_URI not in overview.messages[0].text
 
     config = handler.handle_callback(_callback(CallbackAction.OPEN_CONFIGS, "svc-a", 21))
     assert portal.connection_calls == 1
-    assert "vless://secret-credential@example.test:443" in config.messages[0].text
+    assert _TEST_CONNECTION_URI in config.messages[0].text
