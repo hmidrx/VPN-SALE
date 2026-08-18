@@ -26,6 +26,7 @@ The following are existing capabilities and should be treated as foundations, no
 - Redis-backed bounded conversation state.
 - Persian-native Telegram navigation and compact/versioned callbacks.
 - Profile, wallet, service list/details, support and account/security flows.
+- Notification preferences use the authenticated private Telegram bridge; caller-supplied raw Telegram IDs are not exposed as a public preference authority.
 
 ### Purchase and wallet
 - Native Telegram purchase wizard.
@@ -45,6 +46,9 @@ The following are existing capabilities and should be treated as foundations, no
 - Telegram status/result UX for paid service operations.
 - Proactive terminal service-operation outcome notifications.
 - Rich service detail screen with lifecycle, delivery readiness, expiry and refresh.
+- Per-service admission/serialization prevents a later paid mutation from compounding in-flight or unresolved provider work.
+- Wallet payment revalidates operation admission under the service lock before financial mutation.
+- Customer-safe Telegram handling explains blocked/racing operations without exposing provider or reconciliation internals.
 
 ### Lifecycle and usage
 - Expiry-soon Telegram notifications with customer preference controls and anti-spam rollout handling.
@@ -56,49 +60,38 @@ The following are existing capabilities and should be treated as foundations, no
 - Native support tickets and threaded replies.
 - Ticket pagination, customer/agent image attachments, canned responses/macros, SLA escalation and CSAT.
 - Account security and customer session revocation.
+- Service-operation concurrency, admission and recovery UX hardening from PRs #138-#140 is complete and must not be reimplemented.
 
 ## Next — ordered priorities
 
-### 1. BOT-SVC-CONCURRENCY — harden service-operation admission around unresolved provider outcomes
-**Why:** renewal/add-traffic execution is real and retry-safe, but a later paid mutation must never compound an earlier unresolved provider state for the same service.
-
-Before coding, inspect current admission and execution serialization. Specifically verify behavior when the previous operation is in states such as `UNCERTAIN`, `PARTIALLY_APPLIED`, `COMPENSATION_REQUIRED` or `MANUAL_REVIEW`.
+### 1. OPS-HARDENING — bounded observability and recovery for the Telegram production path
+The normal customer lifecycle is functionally broad enough that the next codeable work should make failures visible and recoverable without adding a second product surface.
 
 Target outcome:
-- define a minimal safe per-service admission policy for unresolved provider mutations;
-- prevent unsafe second paid mutations while preserving legitimate recovery/compensation paths;
-- keep quote/payment handling server-authoritative and avoid charging for an operation that cannot safely be admitted;
-- provide a safe customer-facing Telegram explanation/action when temporarily blocked;
-- add concurrency/idempotency/recovery tests and preserve existing successful parallelism where it is actually safe.
+- bounded metrics/alerts for failed and retrying durable work;
+- transactional-outbox/worker lag visibility without high-cardinality customer identifiers;
+- provider-read/write health and stale-usage visibility without leaking endpoint or credential material;
+- clear operator classification for automated retry versus reconciliation/manual intervention;
+- concise recovery runbooks linked to the states automation intentionally cannot resolve;
+- focused tests proving telemetry does not expose customer/provider secrets and does not mutate business state.
 
-Do not implement a blanket "block every non-success state" rule without proving it is correct.
+Prefer extending existing metrics, worker state and recovery primitives over creating parallel monitoring models.
 
-### 2. BOT-RECOVERY-UX — customer-safe recovery guidance for exceptional operation states
-After concurrency policy is explicit, improve Telegram handling for cases that require reconciliation/manual review/compensation so the customer knows whether to wait, retry, contact support or avoid another payment. Never expose provider/reconciliation internals.
-
-### 3. BOT-OPERATOR — Telegram-native operator/admin actions, only where they remove a real operational dependency
-Customer standalone Telegram is the current priority. A full admin bot is **not** required to call customer v1 complete, but selected operator flows may be valuable later if the product goal becomes "no Admin Web dependency at all." Reuse existing backend authorization/audit/approval rules; do not create a second admin authority model in Telegram.
-
-### 4. PROD-READINESS — provider-enabled staging and real end-to-end smoke
-Do this when the user decides functional bot work is sufficiently complete.
+### 2. PROD-READINESS — provider-enabled staging and real end-to-end smoke
+Do this only in an operator-controlled staging environment with valid external configuration and an explicit decision to enable provider writes. CI remains restrictive and must never become a real provider-writing environment.
 
 Minimum staging sequence:
 - Telegram purchase -> authoritative quote/payment -> worker -> Sanaei provisioning -> activation -> secure subscription/config delivery;
 - renewal and add-traffic against a disposable service;
 - authoritative usage sync and lifecycle/traffic notifications;
 - restart/retry/idempotency checks around worker/provider boundaries;
-- verify provider-write gate is enabled only in the intended staging environment with valid operator configuration.
+- verify unresolved service-operation admission remains safe under real provider timing;
+- verify the provider-write gate is enabled only in the intended staging environment.
 
-Do not turn the normal restrictive CI/test environment into a provider-writing environment.
+### 3. BOT-OPERATOR — selected Telegram-native operator/admin actions only if they remove a real dependency
+A full admin bot is **not** required to call customer Telegram v1 complete. If the product goal later becomes "no Admin Web dependency at all," add only selected operator flows that materially help support/recovery. Reuse existing backend authorization, audit and approval rules; Telegram must not become a second admin authority model.
 
-### 5. OPS-HARDENING — monitoring, recovery and runbooks
-- bounded alerts for failed/retrying/reconciliation work;
-- queue/outbox lag visibility;
-- provider-read/write health and stale-usage visibility without leaking credentials;
-- backup/restore and migration rollback rehearsal;
-- concise operator recovery runbooks for states that automation intentionally cannot resolve.
-
-### 6. MULTI-PROVIDER — only after Sanaei flow is stable in staging/production
+### 4. MULTI-PROVIDER — only after Sanaei is stable in staging/production
 Preserve provider-neutral contracts now, but add another real provider only from verified API behavior and dedicated contract tests. Do not infer a panel API or claim compatibility from similarity to 3x-ui.
 
 ## Deferred while Telegram-first priority is active
@@ -122,6 +115,7 @@ Customer-facing Telegram v1 can be considered functionally complete when all of 
 - customer receives terminal operation, expiry and low-traffic/exhaustion notifications with preference/anti-spam controls;
 - customer can open and continue support tickets natively;
 - unresolved provider-operation states cannot be compounded by a later unsafe paid mutation;
+- notification preferences are not authorized from an unauthenticated caller-supplied Telegram ID;
 - required repository CI is green;
 - before production use, provider-enabled staging/live smoke validates the real end-to-end path and recovery behavior.
 

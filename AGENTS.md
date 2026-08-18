@@ -28,6 +28,7 @@ Backend/API/worker changes are in scope when they are required to make Telegram 
 - Do not persist plaintext connection/subscription secrets where the existing secure-delivery/token design intentionally avoids it.
 - Revalidate customer ownership at every sensitive read/write boundary; Telegram username is never an identity key.
 - Treat stale, ambiguous or low-confidence provider usage as unknown instead of fabricating zero or a false healthy state.
+- Telegram notification preferences must be read or changed through authenticated customer/session surfaces or the service-authenticated private Telegram bridge; never authorize preference access from a caller-supplied raw Telegram ID alone.
 
 ## Completed Telegram capabilities — do not reimplement
 Before proposing a milestone, inspect these existing flows. They are already implemented on `main` and should be extended rather than duplicated:
@@ -38,15 +39,16 @@ Before proposing a milestone, inspect these existing flows. They are already imp
 - Secure subscription and explicit direct-config delivery without Mini App dependency.
 - Service list/details, safe refresh, lifecycle/delivery readiness, expiry and authoritative remaining traffic when available.
 - Renewal and add-traffic eligibility, quote, payment, execution, status and terminal-result notifications.
+- Per-service paid-operation admission/serialization around in-flight and unresolved provider outcomes, including customer-safe race/recovery UX.
 - Service-expiry notifications and authoritative provider usage synchronization.
 - Low-traffic, critical-traffic and confirmed-exhaustion Telegram notifications with anti-spam/revalidation.
 - Native support tickets, replies, pagination, image attachments, canned responses/macros, SLA escalation and CSAT.
 - Customer account security and session revocation.
 
 ## Current recommended next engineering priority
-See `docs/ROADMAP.md` for ordered work. The first recommended technical hardening item is service-operation concurrency/admission around unresolved provider outcomes. Inspect the current policy before changing it. In particular, determine whether a new paid mutation can be admitted while an earlier mutation for the same service is in an unresolved state such as `UNCERTAIN`, `PARTIALLY_APPLIED`, `COMPENSATION_REQUIRED` or `MANUAL_REVIEW`.
+See `docs/ROADMAP.md` for ordered work and fetch current `main` plus recent PRs before starting. Service-operation admission/concurrency and customer-safe race/recovery UX were already hardened in PRs #138-#140; do not reimplement them.
 
-Do **not** solve this by blindly blocking every non-success status. Define the smallest safe policy, preserve recovery paths, add focused tests, and keep the customer-facing reason/action clear.
+The next codeable phase is operational hardening around the already-functional Telegram flow: bounded failure/lag observability, recovery/runbooks and staging-readiness checks that do not enable provider writes in CI. Provider-enabled real end-to-end testing remains an explicit operator/staging action because it requires valid external credentials and configuration.
 
 ## Git and PR workflow for agents
 1. Fetch the exact current `main` SHA before starting. Never assume the previous conversation's SHA is still current.
