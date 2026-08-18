@@ -242,7 +242,9 @@ def collect_operations_health(
         _IN_PROGRESS_OPERATION_STATUSES + _REVIEW_REQUIRED_OPERATION_STATUSES,
     )
     service_operations = ServiceOperationHealth(
-        in_progress=sum(operation_counts.get(status, 0) for status in _IN_PROGRESS_OPERATION_STATUSES),
+        in_progress=sum(
+            operation_counts.get(status, 0) for status in _IN_PROGRESS_OPERATION_STATUSES
+        ),
         review_required=sum(
             operation_counts.get(status, 0) for status in _REVIEW_REQUIRED_OPERATION_STATUSES
         ),
@@ -254,7 +256,9 @@ def collect_operations_health(
         .limit(1)
     )
     latest_status = (
-        latest_run.status if latest_run is not None and latest_run.status in _USAGE_RUN_STATUSES else "UNKNOWN"
+        latest_run.status
+        if latest_run is not None and latest_run.status in _USAGE_RUN_STATUSES
+        else "UNKNOWN"
     )
     last_success = db.scalar(
         select(func.max(ServiceUsageSyncRunModel.finished_at)).where(
