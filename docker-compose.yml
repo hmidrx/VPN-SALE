@@ -90,6 +90,9 @@ services:
       VPN_SALE_TELEGRAM_INTERNAL_API_URL: http://api:8000
       VPN_SALE_TELEGRAM_INTERNAL_TOKEN_FILE: /run/secrets/telegram-internal-token
       VPN_SALE_REDIS_URL: redis://redis:6379/0
+      VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_HOST: "${VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_HOST:-0.0.0.0}"
+      VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_PORT: "${VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_PORT:-8081}"
+    expose: ["8081"]
     secrets: [telegram-internal-token]
     depends_on:
       api: { condition: service_healthy }
