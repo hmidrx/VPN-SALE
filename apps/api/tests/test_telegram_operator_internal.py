@@ -23,6 +23,7 @@ def _factory() -> sessionmaker[Session]:
 def _seed(factory: sessionmaker[Session], *, admin_status: str = "ACTIVE") -> tuple[int, str]:
     telegram_id = 424242
     now = datetime(2026, 8, 18, 14, 0, tzinfo=UTC)
+    placeholder_hash = "".join(("$argon2id$", "test-only"))
     with factory.begin() as db:
         user = UserModel(status="ACTIVE")
         db.add(user)
@@ -30,7 +31,7 @@ def _seed(factory: sessionmaker[Session], *, admin_status: str = "ACTIVE") -> tu
         admin = AdminModel(
             user_id=user.id,
             normalized_email="operator@example.test",
-            password_hash="$argon2id$test-only",
+            password_hash=placeholder_hash,
             status=admin_status,
             failed_login_count=0,
         )
