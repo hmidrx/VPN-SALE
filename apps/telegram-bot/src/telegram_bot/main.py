@@ -38,7 +38,9 @@ async def _serve_until_stopped(runtime: BotRuntime) -> None:
 
 
 async def _run_polling(settings: BotSettings) -> None:
-    platform = OperatorPrivatePlatformClient(settings.internal_api_url, settings.internal_token_file)
+    platform = OperatorPrivatePlatformClient(
+        settings.internal_api_url, settings.internal_token_file
+    )
     polling = OperatorTelegramPollingRuntime(
         settings,
         platform,
