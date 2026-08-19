@@ -60,4 +60,8 @@ def downgrade() -> None:
             """
         ).bindparams(permission=_PERMISSION)
     )
-    op.execute(sa.text("delete from permissions where code = :permission").bindparams(permission=_PERMISSION))
+    op.execute(
+        sa.text("delete from permissions where code = :permission").bindparams(
+            permission=_PERMISSION
+        )
+    )
