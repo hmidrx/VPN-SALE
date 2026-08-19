@@ -8,15 +8,21 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 import platform_api.telegram_operator_internal as operator_module
-from platform_api.identity.models import AdminModel, TelegramAccountModel, UserModel
-from platform_api.telegram_operator_internal import _operator_admin
+from platform_api.identity.models import (
+    AdminModel,
+    IdentityBase,
+    TelegramAccountModel,
+    UserModel,
+)
+from platform_api.telegram_operator_internal import operator_admin_from_telegram_subject
 
 
 def _factory() -> sessionmaker[Session]:
     engine = create_engine("sqlite://")
-    UserModel.__table__.create(engine)
-    TelegramAccountModel.__table__.create(engine)
-    AdminModel.__table__.create(engine)
+    IdentityBase.metadata.create_all(
+        engine,
+        tables=[UserModel.__table__, TelegramAccountModel.__table__, AdminModel.__table__],
+    )
     return sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
 
 
@@ -51,21 +57,25 @@ def _seed(factory: sessionmaker[Session], *, admin_status: str = "ACTIVE") -> tu
     return telegram_id, admin_id
 
 
+def _allowed_permissions(_db: Session, _admin_id: str) -> set[str]:
+    return {"ops.telegram.read"}
+
+
+def _no_permissions(_db: Session, _admin_id: str) -> set[str]:
+    return set()
+
+
 def test_operator_authority_requires_same_linked_active_admin_and_permission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     factory = _factory()
     telegram_id, admin_id = _seed(factory)
-    monkeypatch.setattr(
-        operator_module,
-        "_active_permissions",
-        lambda _db, _admin_id: {"ops.telegram.read"},
-    )
+    monkeypatch.setattr(operator_module, "_active_permissions", _allowed_permissions)
 
     with factory() as db:
-        assert _operator_admin(db, telegram_id).id == admin_id
+        assert operator_admin_from_telegram_subject(db, telegram_id).id == admin_id
         with pytest.raises(HTTPException) as missing:
-            _operator_admin(db, telegram_id + 1)
+            operator_admin_from_telegram_subject(db, telegram_id + 1)
     assert missing.value.status_code == 403
     assert missing.value.detail == "operator_access_denied"
 
@@ -75,19 +85,15 @@ def test_operator_authority_fails_closed_for_inactive_or_unpermitted_admin(
 ) -> None:
     inactive_factory = _factory()
     inactive_id, _ = _seed(inactive_factory, admin_status="DISABLED")
-    monkeypatch.setattr(
-        operator_module,
-        "_active_permissions",
-        lambda _db, _admin_id: {"ops.telegram.read"},
-    )
+    monkeypatch.setattr(operator_module, "_active_permissions", _allowed_permissions)
     with inactive_factory() as db, pytest.raises(HTTPException) as inactive:
-        _operator_admin(db, inactive_id)
+        operator_admin_from_telegram_subject(db, inactive_id)
     assert inactive.value.detail == "operator_access_denied"
 
     unpermitted_factory = _factory()
     unpermitted_id, _ = _seed(unpermitted_factory)
-    monkeypatch.setattr(operator_module, "_active_permissions", lambda _db, _admin_id: set())
+    monkeypatch.setattr(operator_module, "_active_permissions", _no_permissions)
     with unpermitted_factory() as db, pytest.raises(HTTPException) as unpermitted:
-        _operator_admin(db, unpermitted_id)
+        operator_admin_from_telegram_subject(db, unpermitted_id)
     assert unpermitted.value.status_code == 403
     assert unpermitted.value.detail == "operator_access_denied"
