@@ -11,6 +11,8 @@ from telegram_bot.operator_api import OperatorPrivatePlatformClient
 from telegram_bot.runtime.lifecycle import BotRuntime
 from telegram_bot.runtime.operator import OperatorTelegramPollingRuntime
 from telegram_bot.runtime.subscription_delivery import PrivacyAwareTelegramTransport
+from telegram_bot.runtime.webhook_operator import OperatorTelegramWebhookRuntime
+from telegram_bot.transport.webhook import TelegramWebhookServer
 
 
 def configure_logging() -> None:
@@ -27,14 +29,10 @@ def configure_logging() -> None:
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
 
-async def _serve_until_stopped(runtime: BotRuntime) -> None:
-    stop = asyncio.Event()
+def _install_stop_signals(stop: asyncio.Event) -> None:
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
-    runtime.running = True
-    await stop.wait()
-    await runtime.shutdown()
 
 
 async def _run_polling(settings: BotSettings) -> None:
@@ -54,6 +52,23 @@ async def _run_polling(settings: BotSettings) -> None:
     await polling.run()
 
 
+async def _run_webhook(settings: BotSettings) -> None:
+    platform = OperatorPrivatePlatformClient(
+        settings.internal_api_url, settings.internal_token_file
+    )
+    dispatcher = OperatorTelegramWebhookRuntime(
+        settings,
+        platform,
+        PrivacyAwareTelegramTransport(settings.token),
+        portal=platform,
+        conversations=RedisConversationStore(settings.redis_url),
+    )
+    server = TelegramWebhookServer(settings, dispatcher)
+    stop = asyncio.Event()
+    _install_stop_signals(stop)
+    await server.serve_until(stop)
+
+
 def main() -> None:
     configure_logging()
     settings = load_settings_from_environment()
@@ -68,7 +83,10 @@ def main() -> None:
     if settings.mode == BotMode.POLLING:
         asyncio.run(_run_polling(settings))
         return
-    asyncio.run(_serve_until_stopped(runtime))
+    if settings.mode == BotMode.WEBHOOK:
+        asyncio.run(_run_webhook(settings))
+        return
+    raise SystemExit("unsupported Telegram bot mode")
 
 
 if __name__ == "__main__":
