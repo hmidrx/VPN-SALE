@@ -45,9 +45,7 @@ def load_settings_from_environment() -> BotSettings:
         webhook_request_size_limit=_env_int(
             "VPN_SALE_TELEGRAM_WEBHOOK_REQUEST_SIZE_LIMIT", 256 * 1024
         ),
-        webhook_listen_host=os.environ.get(
-            "VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_HOST", "127.0.0.1"
-        ),
+        webhook_listen_host=os.environ.get("VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_HOST", "127.0.0.1"),
         webhook_listen_port=_env_int("VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_PORT", 8081),
         allowed_updates=_env_tuple(
             "VPN_SALE_TELEGRAM_ALLOWED_UPDATES", ("message", "callback_query")
