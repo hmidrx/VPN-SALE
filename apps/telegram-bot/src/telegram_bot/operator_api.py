@@ -73,10 +73,13 @@ class OperatorPrivatePlatformClient(ServiceManagementPrivatePlatformClient, Oper
             raise PrivateApiUnavailable("پاسخ وضعیت مدیریتی معتبر نیست.")
 
         raw_signals = data.get("signals")
-        if not isinstance(raw_signals, list) or len(raw_signals) > len(_ALLOWED_SIGNALS):
+        if not isinstance(raw_signals, list):
+            raise PrivateApiUnavailable("پاسخ سیگنال مدیریتی معتبر نیست.")
+        checked_signals = cast(list[object], raw_signals)
+        if len(checked_signals) > len(_ALLOWED_SIGNALS):
             raise PrivateApiUnavailable("پاسخ سیگنال مدیریتی معتبر نیست.")
         signals: list[str] = []
-        for value in raw_signals:
+        for value in checked_signals:
             if not isinstance(value, str) or value not in _ALLOWED_SIGNALS:
                 raise PrivateApiUnavailable("پاسخ سیگنال مدیریتی معتبر نیست.")
             signals.append(value)
@@ -104,7 +107,7 @@ class OperatorPrivatePlatformClient(ServiceManagementPrivatePlatformClient, Oper
             worker_consecutive_failures=_nonnegative_int(
                 worker.get("consecutive_failures"), "worker_consecutive_failures"
             ),
-            worker_last_seen_age_seconds=cast(int | None, last_seen),
+            worker_last_seen_age_seconds=last_seen,
             outbox_pending_due=_nonnegative_int(outbox.get("pending_due"), "outbox_pending_due"),
             outbox_retrying=_nonnegative_int(outbox.get("retrying"), "outbox_retrying"),
             outbox_failed=_nonnegative_int(outbox.get("failed"), "outbox_failed"),
