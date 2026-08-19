@@ -7,6 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Response, status
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from .identity.models import AdminModel, TelegramAccountModel
 from .management import _active_permissions
@@ -22,7 +23,7 @@ router = APIRouter(
 _OPERATOR_PERMISSION = "ops.telegram.read"
 
 
-def _operator_admin(db: Database, telegram_id: int) -> AdminModel:
+def operator_admin_from_telegram_subject(db: Session, telegram_id: int) -> AdminModel:
     row = db.execute(
         select(TelegramAccountModel, AdminModel)
         .join(AdminModel, AdminModel.user_id == TelegramAccountModel.user_id)
@@ -47,7 +48,7 @@ def operator_health(
     db: Database,
     x_telegram_subject: Annotated[int, Header(gt=0)],
 ) -> dict[str, object]:
-    _operator_admin(db, x_telegram_subject)
+    operator_admin_from_telegram_subject(db, x_telegram_subject)
     snapshot = collect_operations_health(db)
     _no_store(response)
     return {
