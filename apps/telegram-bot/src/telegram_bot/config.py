@@ -93,7 +93,9 @@ class BotSettings:
             if not self.webhook_listen_host:
                 raise ValueError("VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_HOST is required")
             if not 1 <= self.webhook_listen_port <= 65535:
-                raise ValueError("VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_PORT must be between 1 and 65535")
+                raise ValueError(
+                    "VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_PORT must be between 1 and 65535"
+                )
             if not 1024 <= self.webhook_request_size_limit <= 1024 * 1024:
                 raise ValueError(
                     "VPN_SALE_TELEGRAM_WEBHOOK_REQUEST_SIZE_LIMIT must be between 1024 and 1048576"
