@@ -99,16 +99,14 @@ class TelegramWebhookServer:
         try:
             writer.write(_http_response(status, payload))
             await writer.drain()
-        except (ConnectionError, BrokenPipeError):
+        except ConnectionError:
             pass
         finally:
             writer.close()
             with suppress(ConnectionError):
                 await writer.wait_closed()
 
-    async def _handle_request(
-        self, reader: asyncio.StreamReader
-    ) -> tuple[int, dict[str, bool]]:
+    async def _handle_request(self, reader: asyncio.StreamReader) -> tuple[int, dict[str, bool]]:
         request_line = await reader.readline()
         if not request_line or len(request_line) > 4096:
             return 400, {"ok": False}
