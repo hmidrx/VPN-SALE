@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
+from sqlalchemy import Table, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 import platform_api.telegram_operator_internal as operator_module
@@ -21,7 +22,11 @@ def _factory() -> sessionmaker[Session]:
     engine = create_engine("sqlite://")
     IdentityBase.metadata.create_all(
         engine,
-        tables=[UserModel.__table__, TelegramAccountModel.__table__, AdminModel.__table__],
+        tables=[
+            cast(Table, UserModel.__table__),
+            cast(Table, TelegramAccountModel.__table__),
+            cast(Table, AdminModel.__table__),
+        ],
     )
     return sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
 
