@@ -24,6 +24,8 @@ class BotSettings:
     webhook_secret_token: str = ""
     webhook_max_connections: int = 40
     webhook_request_size_limit: int = 256 * 1024
+    webhook_listen_host: str = "127.0.0.1"
+    webhook_listen_port: int = 8081
     allowed_updates: tuple[str, ...] = ("message", "callback_query")
     polling_timeout_seconds: int = 30
     mini_app_base_url: str = "http://localhost:3000"
@@ -80,6 +82,23 @@ class BotSettings:
                 raise ValueError(
                     "VPN_SALE_TELEGRAM_WEBHOOK_BASE_URL and "
                     "VPN_SALE_TELEGRAM_WEBHOOK_SECRET_TOKEN are required"
+                )
+            if (
+                not self.webhook_path.startswith("/")
+                or "?" in self.webhook_path
+                or "#" in self.webhook_path
+                or any(char.isspace() for char in self.webhook_path)
+            ):
+                raise ValueError("VPN_SALE_TELEGRAM_WEBHOOK_PATH must be an absolute URL path")
+            if not self.webhook_listen_host:
+                raise ValueError("VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_HOST is required")
+            if not 1 <= self.webhook_listen_port <= 65535:
+                raise ValueError(
+                    "VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_PORT must be between 1 and 65535"
+                )
+            if not 1024 <= self.webhook_request_size_limit <= 1024 * 1024:
+                raise ValueError(
+                    "VPN_SALE_TELEGRAM_WEBHOOK_REQUEST_SIZE_LIMIT must be between 1024 and 1048576"
                 )
             _require_https_public(self.webhook_url, "webhook URL", self.production_like)
         _validate_mini_app(

@@ -12,6 +12,7 @@ services:
     read_only: true
     tmpfs: [/tmp]
     restart: unless-stopped
+    networks: [default, egress]
     deploy:
       resources: {limits: {cpus: "1.0", memory: 768M}}
   telegram-bot:
@@ -19,6 +20,7 @@ services:
     read_only: true
     tmpfs: [/tmp]
     restart: unless-stopped
+    networks: [default, egress]
   postgres:
     ports: []
     restart: unless-stopped
@@ -28,3 +30,5 @@ services:
 networks:
   default:
     internal: true
+  egress:
+    internal: false

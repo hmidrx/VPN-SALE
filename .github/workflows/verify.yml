@@ -220,7 +220,12 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Install Playwright Chromium
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM 240s npx playwright install chromium
       - run: npm run test:e2e
       - name: Upload visual QA artifacts
         if: always()
