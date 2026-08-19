@@ -1,6 +1,6 @@
 # VPN-SALE Roadmap
 
-Last reviewed: 2026-08-18
+Last reviewed: 2026-08-19
 
 ## Source of truth
 Use this order of trust for implementation decisions:
@@ -57,29 +57,27 @@ Never remove or rebuild a capability merely because an old milestone document ca
 - `scripts/verify-provider-staging.sh` refuses CI/non-staging/loose runtime files/fake auth/fake payment and checks migrations, private ports, API health, bot polling, safe logs and read-only provider readiness metadata.
 - `docs/STAGING_E2E.md` defines the disposable real-provider smoke and stop conditions.
 
+### Telegram operator path
+- Native hidden `/ops` operational-health screen and safe refresh action are available inside the production Telegram bot runtime.
+- Telegram identity is resolved server-side through the existing `telegram_accounts -> identity_users -> admins` relationship; raw Telegram IDs are never treated as administrator authority by themselves.
+- Access requires an active administrator plus the backend `ops.telegram.read` permission; the initial migration grants that permission only to the built-in `super_admin` role.
+- The private projection reuses the authoritative operational-health collector and returns only bounded aggregate worker/outbox/fulfillment/service-operation/usage state.
+- Provider credentials, raw failures, customer connection material, arbitrary customer Telegram IDs and administrator identity details are not returned to Telegram.
+- This first operator slice is deliberately read-only; future mutations remain out of scope unless an existing backend permission/audit/approval rule can be reused unchanged.
+- `docs/TELEGRAM_OPERATOR.md` documents authorization, safe output and extension rules.
+
 **Important:** repository staging-harness readiness is not a real E2E result. Production-ready status remains blocked until the external disposable Sanaei staging smoke is actually executed with operator-supplied runtime secrets/configuration.
 
 ## Next — ordered priorities
 
-### 1. BOT-OPERATOR — Telegram-native operator/admin path
-Remove routine Admin Web dependency for selected operational/support triage without creating a second admin authority model.
-
-Target outcome:
-- resolve Telegram identity server-side to the same underlying active administrator identity;
-- require existing backend admin permission/role authority rather than trusting raw Telegram IDs;
-- start with read-only operational health/attention summaries and safe refresh actions;
-- add only selected audited mutations later when an existing backend permission/approval rule can be reused unchanged;
-- never expose provider credentials, raw failures, customer connection secrets or arbitrary customer Telegram IDs;
-- keep financial/provider business rules in the backend, not in Telegram handlers.
-
-### 2. EXTERNAL-STAGING-SMOKE — final production gate
+### 1. EXTERNAL-STAGING-SMOKE — final production gate
 This cannot be completed by repository CI. It requires an operator-controlled staging runtime, Telegram bot token, provider vault configuration, certified Sanaei panel/credentials and a disposable customer/service.
 
 Required real sequence is documented in `docs/STAGING_E2E.md`: purchase -> payment -> provisioning -> activation -> secure delivery -> usage -> renewal -> add traffic -> notifications -> restart/idempotency -> unresolved-operation admission -> recovery.
 
 Do not mark the bot production-ready until this external smoke passes.
 
-### 3. MULTI-PROVIDER — only after Sanaei is stable
+### 2. MULTI-PROVIDER — only after Sanaei is stable
 Preserve provider-neutral contracts now, but add another provider only from verified API behavior and dedicated contract tests. Never infer compatibility from similarity to 3x-ui.
 
 ## Deferred while Telegram-first priority is active
@@ -87,6 +85,7 @@ Preserve provider-neutral contracts now, but add another provider only from veri
 - Website redesign/polish unrelated to Telegram correctness.
 - New reseller-web product features unrelated to bot requirements.
 - Broad admin-web expansion unless required by a Telegram/recovery safety boundary.
+- Additional Telegram operator mutations without an existing backend authorization/audit/approval contract.
 - Premature unsupported-provider generalization.
 
 Existing web/admin code must remain unbroken and repository-wide CI remains required.
@@ -105,6 +104,7 @@ Customer Telegram v1 is functionally complete when:
 - unresolved provider work cannot be compounded by repeat payment;
 - operational health and worker liveness are observable without sensitive identifiers;
 - recovery contracts are repeatably verified without replay-all/provider-write shortcuts;
+- selected operational triage is available natively to an authorized Telegram administrator without creating a second authority model;
 - required repository CI is green;
 - **before production use**, the external provider-enabled disposable staging smoke passes.
 

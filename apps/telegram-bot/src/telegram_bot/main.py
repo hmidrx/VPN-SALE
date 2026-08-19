@@ -7,10 +7,10 @@ import signal
 from telegram_bot.cli import load_settings_from_environment
 from telegram_bot.config import BotMode, BotSettings
 from telegram_bot.conversation import RedisConversationStore
+from telegram_bot.operator_api import OperatorPrivatePlatformClient
 from telegram_bot.runtime.lifecycle import BotRuntime
-from telegram_bot.runtime.service_management import ServiceManagementTelegramPollingRuntime
+from telegram_bot.runtime.operator import OperatorTelegramPollingRuntime
 from telegram_bot.runtime.subscription_delivery import PrivacyAwareTelegramTransport
-from telegram_bot.service_management_api import ServiceManagementPrivatePlatformClient
 
 
 def configure_logging() -> None:
@@ -38,10 +38,10 @@ async def _serve_until_stopped(runtime: BotRuntime) -> None:
 
 
 async def _run_polling(settings: BotSettings) -> None:
-    platform = ServiceManagementPrivatePlatformClient(
+    platform = OperatorPrivatePlatformClient(
         settings.internal_api_url, settings.internal_token_file
     )
-    polling = ServiceManagementTelegramPollingRuntime(
+    polling = OperatorTelegramPollingRuntime(
         settings,
         platform,
         PrivacyAwareTelegramTransport(settings.token),
