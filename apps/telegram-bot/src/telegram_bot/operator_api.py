@@ -108,21 +108,15 @@ class OperatorPrivatePlatformClient(ServiceManagementPrivatePlatformClient, Oper
             outbox_pending_due=_nonnegative_int(outbox.get("pending_due"), "outbox_pending_due"),
             outbox_retrying=_nonnegative_int(outbox.get("retrying"), "outbox_retrying"),
             outbox_failed=_nonnegative_int(outbox.get("failed"), "outbox_failed"),
-            outbox_stale_claims=_nonnegative_int(
-                outbox.get("stale_claims"), "outbox_stale_claims"
-            ),
+            outbox_stale_claims=_nonnegative_int(outbox.get("stale_claims"), "outbox_stale_claims"),
             fulfillment_retry_pending=_nonnegative_int(
                 fulfillment.get("retry_pending"), "fulfillment_retry_pending"
             ),
-            fulfillment_blocked=_nonnegative_int(
-                fulfillment.get("blocked"), "fulfillment_blocked"
-            ),
+            fulfillment_blocked=_nonnegative_int(fulfillment.get("blocked"), "fulfillment_blocked"),
             fulfillment_operator_review=_nonnegative_int(
                 fulfillment.get("operator_review"), "fulfillment_operator_review"
             ),
-            fulfillment_failed=_nonnegative_int(
-                fulfillment.get("failed"), "fulfillment_failed"
-            ),
+            fulfillment_failed=_nonnegative_int(fulfillment.get("failed"), "fulfillment_failed"),
             service_operations_in_progress=_nonnegative_int(
                 operations.get("in_progress"), "service_operations_in_progress"
             ),
