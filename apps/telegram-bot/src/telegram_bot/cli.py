@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
+from typing import Any, cast
 
 from telegram_bot.commands import command_definitions
 from telegram_bot.config import BotMode, BotSettings
+from telegram_bot.transport.polling import UrlLibTelegramTransport
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -39,6 +42,13 @@ def load_settings_from_environment() -> BotSettings:
         webhook_path=os.environ.get("VPN_SALE_TELEGRAM_WEBHOOK_PATH", "/telegram/webhook"),
         webhook_secret_token=os.environ.get("VPN_SALE_TELEGRAM_WEBHOOK_SECRET_TOKEN", ""),
         webhook_max_connections=_env_int("VPN_SALE_TELEGRAM_WEBHOOK_MAX_CONNECTIONS", 40),
+        webhook_request_size_limit=_env_int(
+            "VPN_SALE_TELEGRAM_WEBHOOK_REQUEST_SIZE_LIMIT", 256 * 1024
+        ),
+        webhook_listen_host=os.environ.get(
+            "VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_HOST", "127.0.0.1"
+        ),
+        webhook_listen_port=_env_int("VPN_SALE_TELEGRAM_WEBHOOK_LISTEN_PORT", 8081),
         allowed_updates=_env_tuple(
             "VPN_SALE_TELEGRAM_ALLOWED_UPDATES", ("message", "callback_query")
         ),
@@ -80,27 +90,76 @@ def load_settings_from_environment() -> BotSettings:
     )
 
 
+async def _run_management_command(
+    settings: BotSettings, command: str, *, drop_pending_updates: bool
+) -> dict[str, object]:
+    transport = UrlLibTelegramTransport(settings.token)
+    if command == "configure-webhook":
+        response = await transport.call(
+            "setWebhook",
+            {
+                "url": settings.webhook_url,
+                "secret_token": settings.webhook_secret_token,
+                "max_connections": settings.webhook_max_connections,
+                "allowed_updates": list(settings.allowed_updates),
+                "drop_pending_updates": drop_pending_updates,
+            },
+        )
+        return {"command": command, "configured": bool(response.get("result"))}
+    if command == "remove-webhook":
+        response = await transport.call(
+            "deleteWebhook", {"drop_pending_updates": drop_pending_updates}
+        )
+        return {"command": command, "removed": bool(response.get("result"))}
+    if command == "inspect-webhook":
+        response = await transport.call("getWebhookInfo")
+        result_obj = response.get("result")
+        result = cast(dict[str, Any], result_obj) if isinstance(result_obj, dict) else {}
+        url = result.get("url")
+        pending = result.get("pending_update_count")
+        return {
+            "command": command,
+            "configured": isinstance(url, str) and bool(url),
+            "pending_update_count": pending if isinstance(pending, int) else 0,
+        }
+    if command == "register-commands":
+        definitions = command_definitions(settings.default_locale)
+        response = await transport.call(
+            "setMyCommands",
+            {
+                "commands": [
+                    {"command": definition.command, "description": definition.description}
+                    for definition in definitions
+                ]
+            },
+        )
+        return {
+            "command": command,
+            "registered": bool(response.get("result")),
+            "count": len(definitions),
+        }
+    raise ValueError("unsupported Telegram management command")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="telegram-bot")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("inspect-webhook")
-    sub.add_parser("remove-webhook")
+    remove = sub.add_parser("remove-webhook")
+    remove.add_argument("--drop-pending-updates", action="store_true")
     sub.add_parser("register-commands")
     configure = sub.add_parser("configure-webhook")
     configure.add_argument("--drop-pending-updates", action="store_true")
     args = parser.parse_args(argv)
     settings = load_settings_from_environment()
     settings.validate()
-    if args.command == "register-commands":
-        print({"commands": [cmd.command for cmd in command_definitions(settings.default_locale)]})
-    else:
-        print(
-            {
-                "command": args.command,
-                "webhook_url": settings.webhook_url,
-                "credentials_configured": bool(settings.token and settings.webhook_secret_token),
-            }
+    drop_pending_updates = bool(getattr(args, "drop_pending_updates", False))
+    result = asyncio.run(
+        _run_management_command(
+            settings, str(args.command), drop_pending_updates=drop_pending_updates
         )
+    )
+    print(result)
     return 0
 
 
