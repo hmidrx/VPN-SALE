@@ -52,7 +52,9 @@ async def _request(port: int, request: bytes) -> bytes:
     return response
 
 
-def _post(path: str, body: bytes, secret: str | None, *, content_length: int | None = None) -> bytes:
+def _post(
+    path: str, body: bytes, secret: str | None, *, content_length: int | None = None
+) -> bytes:
     headers = [
         f"POST {path} HTTP/1.1",
         "Host: bot.example.test",
