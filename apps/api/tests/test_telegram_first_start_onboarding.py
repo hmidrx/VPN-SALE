@@ -113,9 +113,7 @@ async def test_first_start_creates_one_pending_customer_and_replay_updates_ident
         assert db.scalar(select(func.count(CustomerProfileModel.user_id))) == 1
         assert db.scalar(select(func.count(UserRoleAssignmentModel.user_id))) == 1
         account = db.scalar(
-            select(TelegramAccountModel).where(
-                TelegramAccountModel.telegram_user_id == TELEGRAM_ID
-            )
+            select(TelegramAccountModel).where(TelegramAccountModel.telegram_user_id == TELEGRAM_ID)
         )
         assert account is not None
         assert account.username == "updated_name"
@@ -168,9 +166,7 @@ async def test_restricted_customer_is_not_silently_unblocked_or_rewritten(tmp_pa
     assert restricted.json()["created"] is False
     with factory() as db:
         account = db.scalar(
-            select(TelegramAccountModel).where(
-                TelegramAccountModel.telegram_user_id == TELEGRAM_ID
-            )
+            select(TelegramAccountModel).where(TelegramAccountModel.telegram_user_id == TELEGRAM_ID)
         )
         assert account is not None
         assert account.username == "original"
