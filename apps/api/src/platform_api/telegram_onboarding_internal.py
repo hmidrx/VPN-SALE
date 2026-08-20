@@ -74,7 +74,9 @@ def _customer_role(db: Session) -> RoleModel:
     return role
 
 
-def _audit_created(db: Session, user: UserModel, account: TelegramAccountModel, now: datetime) -> None:
+def _audit_created(
+    db: Session, user: UserModel, account: TelegramAccountModel, now: datetime
+) -> None:
     db.add_all(
         [
             AuditLogModel(
