@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, cast
 
+from telegram_bot.application.identity import (
+    AccountStatus,
+    RegisterOrUpdateTelegramBotUser,
+    TelegramIdentityResult,
+)
 from telegram_bot.internal_api import PrivateApiUnavailable
 from telegram_bot.service_management_api import ServiceManagementPrivatePlatformClient
 
@@ -66,6 +71,29 @@ def _mapping(value: object, field: str) -> dict[str, object]:
 
 
 class OperatorPrivatePlatformClient(ServiceManagementPrivatePlatformClient, OperatorPortal):
+    def register_or_update(
+        self, command: RegisterOrUpdateTelegramBotUser
+    ) -> TelegramIdentityResult:
+        data = self._request(
+            "POST",
+            "/identity/register-or-resolve",
+            command.telegram_user_id,
+            {
+                "telegram_user_id": command.telegram_user_id,
+                "username": command.username,
+                "first_name": command.first_name,
+                "last_name": command.last_name,
+                "language_code": command.language_code,
+                "bot_started": command.bot_started,
+            },
+        )
+        return TelegramIdentityResult(
+            str(data["customer_reference"]),
+            AccountStatus(str(data["account_state"])),
+            bool(data["created"]),
+            cast(str | None, data.get("locale")),
+        )
+
     def operator_health(self, telegram_user_id: int) -> OperatorHealth:
         data = self._request("GET", "/operator/health", telegram_user_id)
         status = data.get("status")
