@@ -25,8 +25,13 @@ for (const [path, entry] of Object.entries(lock.packages ?? {})) {
 
 if (postcssVersions.size === 0) throw new Error("package-lock.json does not resolve postcss");
 if (vulnerable.length > 0) throw new Error(`vulnerable postcss remains: ${vulnerable.join(", ")}`);
-if (rootPackage.overrides?.postcss !== "8.5.22") {
-  throw new Error("root package.json must narrowly override postcss to 8.5.22");
+const postcssOverride = rootPackage.overrides?.postcss;
+if (
+  typeof postcssOverride !== "string" ||
+  postcssVersions.size !== 1 ||
+  !postcssVersions.has(postcssOverride)
+) {
+  throw new Error("root package.json must narrowly override postcss to the locked version");
 }
 
 for (const [path, entry] of Object.entries(lock.packages ?? {})) {
