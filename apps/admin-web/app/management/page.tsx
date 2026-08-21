@@ -1,2 +1,6 @@
-import { ManagementShell, EmptyState } from "../../src/components/ManagementShell";
-export default function Page(): React.ReactElement { return <ManagementShell title="نمای کلی مدیریت هویت"><section className="cards"><article className="panel metric"><span>مدیران فعال</span><strong>API</strong><small>فقط در صورت وجود endpoint تجمیعی نمایش داده می‌شود.</small></article><article className="panel metric"><span>رویدادهای امنیتی باز</span><strong>API</strong><small>بدون بارگیری کل داده‌ها.</small></article><article className="panel metric"><span>فعالیت حسابرسی اخیر</span><strong>API</strong><small>read-only و صفحه‌بندی‌شده.</small></article></section><EmptyState title="بدون آمار ساختگی" body="این داشبورد فقط با داده واقعی Milestone 1D-A پر می‌شود و کارت مالی یا تجاری ندارد." /></ManagementShell>; }
+import { ManagementShell } from "../../src/components/ManagementShell";
+import { OwnerControlDashboard } from "../../src/components/OwnerControlDashboard";
+
+export default function Page(): React.ReactElement {
+  return <ManagementShell title="مرکز فرماندهی" eyebrow="مالک سیستم" required="operations.read"><OwnerControlDashboard /></ManagementShell>;
+}
