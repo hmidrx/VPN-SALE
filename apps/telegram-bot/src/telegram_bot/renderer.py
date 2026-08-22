@@ -49,7 +49,9 @@ class ScreenRenderer:
             cast(dict[str, object], tagline_value) if isinstance(tagline_value, dict) else {}
         )
         tagline = tagline_map.get(locale)
-        intro = safe_text(tagline if isinstance(tagline, str) else f"حساب شما در {short_name} آماده است.")
+        intro = safe_text(
+            tagline if isinstance(tagline, str) else f"حساب شما در {short_name} آماده است."
+        )
         text = (
             f"سلام {safe_text(data.display_name)} عزیز 👋\n{intro}\n\n"
             f"💳 موجودی: {wallet}\n"
@@ -58,7 +60,11 @@ class ScreenRenderer:
         )
         menu_value = runtime.get("telegram_menu") if runtime else None
         menu_items = (
-            [cast(dict[str, object], item) for item in cast(list[object], menu_value) if isinstance(item, dict)]
+            [
+                cast(dict[str, object], item)
+                for item in cast(list[object], menu_value)
+                if isinstance(item, dict)
+            ]
             if isinstance(menu_value, list)
             else []
         )
