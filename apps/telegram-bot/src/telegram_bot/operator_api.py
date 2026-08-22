@@ -58,6 +58,7 @@ class OperatorPortal(Protocol):
     def operator_health(self, telegram_user_id: int) -> OperatorHealth: ...
     def runtime_configuration(self, telegram_user_id: int) -> dict[str, object]: ...
 
+
 def _nonnegative_int(value: object, field: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise PrivateApiUnavailable(f"پاسخ مدیریتی معتبر نیست: {field}")
