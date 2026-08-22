@@ -1105,7 +1105,14 @@ class BotCommandHandler:
                 nearest,
                 len(self.portal.tickets(context)),
             )
-            rendered = self.renderer.render_home(data, locale)
+            runtime_configuration: dict[str, object] | None = None
+            runtime_loader = getattr(self.portal, "runtime_configuration", None)
+            if callable(runtime_loader):
+                try:
+                    runtime_configuration = runtime_loader(user.telegram_user_id)
+                except Exception:  # noqa: BLE001 - retain safe built-in bot fallback
+                    runtime_configuration = None
+            rendered = self.renderer.render_home(data, locale, runtime_configuration)
         elif screen_id == ScreenId.PROFILE:
             rendered = self.renderer.info(screen_id, locale, profile=self.portal.profile(context))
         elif screen_id == ScreenId.SERVICES:

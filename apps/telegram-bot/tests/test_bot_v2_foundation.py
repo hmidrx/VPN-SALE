@@ -95,3 +95,26 @@ def test_callback_payloads_are_versioned_short_and_malformed_safe() -> None:
     )
     assert result.acknowledged
     assert "مشکلی" in result.messages[0].text or "قدیمی" in result.messages[0].text
+
+
+def test_runtime_menu_uses_parseable_callbacks_and_two_column_rows() -> None:
+    from telegram_bot.callbacks import BotCallback
+    from telegram_bot.menu import runtime_menu_rows
+
+    rows = runtime_menu_rows(
+        [
+            {"action": "OPEN_STORE", "label": {"fa": "خرید", "en": "Buy"}},
+            {"action": "OPEN_SERVICES", "label": {"fa": "سرویس‌ها", "en": "Services"}},
+            {"action": "OPEN_WALLET", "label": {"fa": "کیف پول", "en": "Wallet"}},
+        ],
+        "fa",
+    )
+    assert [len(row) for row in rows] == [2, 1]
+    assert rows[0][0]["text"] == "خرید"
+    assert BotCallback.parse(rows[0][0]["callback_data"]).action.value == "buy"
+
+
+def test_runtime_menu_rejects_unknown_actions() -> None:
+    from telegram_bot.menu import runtime_menu_rows
+
+    assert runtime_menu_rows([{"action": "UNSAFE", "label": {"fa": "x"}}], "fa") == []

@@ -8,6 +8,7 @@ from .application.identity import AccountStatus
 from .callbacks import BotCallback, CallbackAction
 from .localization import t
 from .mini_app import MiniAppRoute, MiniAppUrlBuilder
+from .screens import ScreenId
 
 
 class MenuTarget(StrEnum):
@@ -80,6 +81,7 @@ def as_button_rows(
 SAFE_RUNTIME_ACTIONS = frozenset(
     {
         "OPEN_STORE",
+        "OPEN_SERVICES",
         "OPEN_WALLET",
         "OPEN_WALLET_TOPUP",
         "OPEN_ORDERS",
@@ -101,17 +103,38 @@ SAFE_RUNTIME_ACTIONS = frozenset(
 
 
 def runtime_menu_rows(menu: list[dict[str, object]], locale: str) -> list[list[dict[str, str]]]:
-    rows: list[list[dict[str, str]]] = []
-    for button in menu[:32]:
+    action_map: dict[str, BotCallback] = {
+        "OPEN_STORE": BotCallback(CallbackAction.BUY_SERVICE),
+        "OPEN_SERVICES": BotCallback(CallbackAction.MY_SERVICES),
+        "OPEN_WALLET": BotCallback(CallbackAction.WALLET),
+        "OPEN_WALLET_TOPUP": BotCallback(CallbackAction.TOP_UP),
+        "OPEN_ORDERS": BotCallback(CallbackAction.OPEN_WEB_APP),
+        "OPEN_PAYMENTS": BotCallback(CallbackAction.OPEN_WEB_APP),
+        "OPEN_PROFILE": BotCallback(CallbackAction.PROFILE),
+        "OPEN_SECURITY": BotCallback(CallbackAction.SECURITY),
+        "OPEN_SUPPORT": BotCallback(CallbackAction.SUPPORT),
+        "OPEN_EDUCATION": BotCallback(CallbackAction.OPEN_EDUCATION),
+        "SEARCH_GUIDES": BotCallback(CallbackAction.SEARCH_GUIDES),
+        "SHOW_FAQ": BotCallback(CallbackAction.SHOW_FAQ),
+        "OPEN_STATUS_PAGE": BotCallback(CallbackAction.OPEN_STATUS_PAGE),
+        "OPEN_MINI_APP": BotCallback(CallbackAction.OPEN_WEB_APP),
+        "SHOW_HELP": BotCallback(CallbackAction.HELP),
+        "SHOW_CONTACT": BotCallback(CallbackAction.SUPPORT),
+        "GO_HOME": BotCallback(CallbackAction.HOME),
+        "GO_BACK": BotCallback(CallbackAction.BACK),
+    }
+    buttons: list[dict[str, str]] = []
+    for button in menu[:24]:
         action = str(button.get("action", ""))
-        if action not in SAFE_RUNTIME_ACTIONS:
+        callback = action_map.get(action)
+        if action not in SAFE_RUNTIME_ACTIONS or callback is None:
             return []
         label_map = button.get("label")
         label = action
         if isinstance(label_map, dict):
             labels = cast(dict[str, object], label_map)
-            localized = labels.get("fa")
+            localized = labels.get(locale) or labels.get("fa")
             if isinstance(localized, str) and localized.strip():
-                label = localized[:64]
-        rows.append([{"text": label, "callback_data": f"cfg:{action}"}])
-    return rows
+                label = localized.strip()[:64]
+        buttons.append({"text": label, "callback_data": callback.pack()})
+    return [buttons[index : index + 2] for index in range(0, len(buttons), 2)]

@@ -33,3 +33,11 @@ def test_configuration_api_uses_canonical_etags_and_persisted_previews() -> None
     assert "ConfigurationPreviewSessionModel(" in source
     assert "opaque_reference_hash=_token_hash(token)" in source
     assert "target.version + 1" not in source
+
+
+def test_private_telegram_runtime_projection_is_safe_and_no_store() -> None:
+    source = Path("apps/api/src/platform_api/telegram_internal.py").read_text()
+    assert '@router.get("/runtime-configuration")' in source
+    assert '"telegram_menu": snapshot["telegram_menu"]' in source
+    assert "_no_store(response)" in source
+    assert "provider" not in source[source.index('@router.get("/runtime-configuration")'):source.index("def _account")]

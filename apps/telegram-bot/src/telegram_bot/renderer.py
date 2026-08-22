@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.formatting import format_toman
+from telegram_bot.menu import runtime_menu_rows
 from telegram_bot.portal import (
     CustomerProfile,
     NotificationPreferences,
@@ -24,8 +25,12 @@ def cb(action: CallbackAction, value: str = "") -> str:
 
 
 class ScreenRenderer:
-    def render_home(self, data: DashboardData, locale: str) -> RenderedScreen:
-        _ = locale
+    def render_home(
+        self,
+        data: DashboardData,
+        locale: str,
+        runtime: dict[str, object] | None = None,
+    ) -> RenderedScreen:
         wallet = format_toman(data.wallet_balance_minor)
         active = "نامشخص" if data.active_services is None else fa_number(data.active_services)
         notice = (
@@ -33,13 +38,20 @@ class ScreenRenderer:
             if data.maintenance_notice
             else ""
         )
+        brand = runtime.get("brand") if runtime else None
+        short_name = brand.get("short_name") if isinstance(brand, dict) else "VPN-SALE"
+        tagline_map = brand.get("tagline") if isinstance(brand, dict) else None
+        tagline = tagline_map.get(locale) if isinstance(tagline_map, dict) else None
+        intro = safe_text(str(tagline) if tagline else f"حساب شما در {short_name} آماده است.")
         text = (
-            f"سلام {safe_text(data.display_name)} عزیز 👋\nخوش برگشتید؛ حساب شما آماده است.\n\n"
+            f"سلام {safe_text(data.display_name)} عزیز 👋\n{intro}\n\n"
             f"💳 موجودی: {wallet}\n"
             f"📦 سرویس فعال: {active}\n"
             f"⏳ نزدیک‌ترین انقضا: {safe_date(data.nearest_expiry)}{notice}"
         )
-        return RenderedScreen(text, self.home_rows(locale), ScreenId.HOME)
+        menu = runtime.get("telegram_menu") if runtime else None
+        rows = runtime_menu_rows(menu, locale) if isinstance(menu, list) else []
+        return RenderedScreen(text, rows or self.home_rows(locale), ScreenId.HOME)
 
     def home_rows(self, locale: str) -> list[list[dict[str, str]]]:
         _ = locale

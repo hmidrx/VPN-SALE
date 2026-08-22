@@ -15,6 +15,12 @@ MAX_TEMPLATE_LENGTH = 1200
 SAFE_ACTIONS = frozenset(
     {
         "OPEN_STORE",
+        "OPEN_SERVICES",
+        "OPEN_SUPPORT",
+        "OPEN_EDUCATION",
+        "SEARCH_GUIDES",
+        "SHOW_FAQ",
+        "OPEN_STATUS_PAGE",
         "OPEN_WALLET",
         "OPEN_WALLET_TOPUP",
         "OPEN_ORDERS",
@@ -329,18 +335,14 @@ def compiled_defaults() -> dict[str, Any]:
             },
         ],
         "telegram_menu": [
-            {
-                "code": "GO_HOME",
-                "label": {"fa": "خانه", "en": "Home"},
-                "action": "GO_HOME",
-                "callback_data": "cfg:GO_HOME",
-            },
-            {
-                "code": "OPEN_WALLET",
-                "label": {"fa": "کیف پول", "en": "Wallet"},
-                "action": "OPEN_WALLET",
-                "callback_data": "cfg:OPEN_WALLET",
-            },
+            {"code": "OPEN_STORE", "label": {"fa": "🛒 خرید سرویس", "en": "Buy service"}, "action": "OPEN_STORE", "callback_data": "cfg:OPEN_STORE"},
+            {"code": "OPEN_SERVICES", "label": {"fa": "📦 سرویس‌های من", "en": "My services"}, "action": "OPEN_SERVICES", "callback_data": "cfg:OPEN_SERVICES"},
+            {"code": "OPEN_WALLET", "label": {"fa": "💳 کیف پول", "en": "Wallet"}, "action": "OPEN_WALLET", "callback_data": "cfg:OPEN_WALLET"},
+            {"code": "OPEN_WALLET_TOPUP", "label": {"fa": "➕ افزایش موجودی", "en": "Top up"}, "action": "OPEN_WALLET_TOPUP", "callback_data": "cfg:OPEN_WALLET_TOPUP"},
+            {"code": "OPEN_SUPPORT", "label": {"fa": "🎫 پشتیبانی", "en": "Support"}, "action": "OPEN_SUPPORT", "callback_data": "cfg:OPEN_SUPPORT"},
+            {"code": "OPEN_PROFILE", "label": {"fa": "👤 حساب من", "en": "My account"}, "action": "OPEN_PROFILE", "callback_data": "cfg:OPEN_PROFILE"},
+            {"code": "OPEN_EDUCATION", "label": {"fa": "📚 آموزش اتصال", "en": "Connection guides"}, "action": "OPEN_EDUCATION", "callback_data": "cfg:OPEN_EDUCATION"},
+            {"code": "OPEN_MINI_APP", "label": {"fa": "🌐 باز کردن مینی‌اپ", "en": "Open Mini App"}, "action": "OPEN_MINI_APP", "callback_data": "cfg:OPEN_MINI_APP"},
         ],
         "maintenance": {
             "global": False,
