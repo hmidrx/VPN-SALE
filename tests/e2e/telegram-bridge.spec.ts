@@ -21,7 +21,7 @@ async function mockCustomerApi(page: Page): Promise<string[]> {
 
 test("ordinary browser reports Telegram unavailable", async ({ page }) => {
   await mockCustomerApi(page);
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByText("ورود فقط از مینی‌اپ تلگرام فعال است.")).toBeVisible();
 });
 
@@ -32,7 +32,7 @@ test("simulated Telegram bridge logs in and calls ready and expand without rende
     (window as typeof window & { __bridgeCalls: string[]; Telegram: unknown }).__bridgeCalls = [];
     (window as typeof window & { Telegram: unknown }).Telegram = { WebApp: { initData, version: "8.0", ready: () => (window as typeof window & { __bridgeCalls: string[] }).__bridgeCalls.push("ready"), expand: () => (window as typeof window & { __bridgeCalls: string[] }).__bridgeCalls.push("expand") } };
   }, SYNTHETIC_INIT_DATA);
-  await page.goto("/");
+  await page.goto("/app");
   const navigation = page.getByRole("navigation", { name: "ناوبری اصلی مشتری" });
   await expect(navigation).toBeVisible();
   await expect(navigation.getByRole("link")).toHaveCount(5);
@@ -46,7 +46,7 @@ test("simulated Telegram bridge logs in and calls ready and expand without rende
 test("simulated Telegram bridge with empty initData is unauthorized", async ({ page }) => {
   const loginBodies = await mockCustomerApi(page);
   await page.addInitScript(() => { (window as typeof window & { Telegram: unknown }).Telegram = { WebApp: { initData: "", version: "8.0", ready() {}, expand() {} } }; });
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByText("دسترسی شما معتبر نیست.")).toBeVisible();
   expect(loginBodies).toHaveLength(0);
 });

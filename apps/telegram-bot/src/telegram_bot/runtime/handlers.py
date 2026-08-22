@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
+from typing import cast
 
 from telegram_bot.application.identity import (
     AccountStatus,
@@ -12,13 +13,19 @@ from telegram_bot.application.identity import (
 from telegram_bot.application.payloads import parse_start_payload
 from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.config import BotSettings
-from telegram_bot.conversation import ConversationStoreV2, DurableMemoryConversationStore
+from telegram_bot.conversation import (
+    ConversationStoreV2,
+    DurableMemoryConversationStore,
+)
 from telegram_bot.formatting import format_date, format_toman
 from telegram_bot.idempotency import InMemoryUpdateIdempotency
-from telegram_bot.internal_api import AuthoritativePrivateApiError, PurchaseOutcomeUnknown
+from telegram_bot.internal_api import (
+    AuthoritativePrivateApiError,
+    PurchaseOutcomeUnknown,
+)
 from telegram_bot.localization import t
 from telegram_bot.menu import MenuRegistry, default_menu_registry
-from telegram_bot.mini_app import MiniAppUrlBuilder
+from telegram_bot.mini_app import MiniAppRoute, MiniAppUrlBuilder
 from telegram_bot.observability import BotMetrics
 from telegram_bot.portal import (
     CustomerContext,
@@ -119,7 +126,9 @@ class BotCommandHandler:
         self.registry = registry or default_menu_registry()
         self.metrics = metrics or BotMetrics()
         self.url_builder = MiniAppUrlBuilder(
-            settings.mini_app_base_url, settings.mini_app_allowed_hosts, settings.production_like
+            settings.mini_app_base_url,
+            settings.mini_app_allowed_hosts,
+            settings.production_like,
         )
         self.portal = portal or InMemoryCustomerPortal()
         self.conversations = conversations or DurableMemoryConversationStore()
@@ -714,7 +723,8 @@ class BotCommandHandler:
                             {
                                 "text": "🔄 بررسی وضعیت",
                                 "callback_data": BotCallback(
-                                    CallbackAction.PURCHASE_STATUS, result.order_reference
+                                    CallbackAction.PURCHASE_STATUS,
+                                    result.order_reference,
                                 ).pack(),
                             }
                         ],
@@ -843,7 +853,11 @@ class BotCommandHandler:
                 )
             self.conversations.save(
                 key,
-                replace(state, expected_input=None, active_order_reference=result.order_reference),
+                replace(
+                    state,
+                    expected_input=None,
+                    active_order_reference=result.order_reference,
+                ),
             )
             if result.refunded:
                 text = "ساخت سرویس کامل نشد و مبلغ سفارش به کیف پول شما بازگردانده شد."
@@ -1027,15 +1041,28 @@ class BotCommandHandler:
         if callback.action == CallbackAction.SET_LANGUAGE:
             return self._stale(locale)
         if callback.action == CallbackAction.OPEN_WEB_APP:
+            try:
+                route = MiniAppRoute(callback.value or MiniAppRoute.HOME.value)
+            except ValueError:
+                return self._stale(locale)
             return self._callback_message(
-                "🌐 نسخه وب برای دسترسی به امکانات تکمیلی حساب در دسترس است.",
-                self.renderer.nav_rows(locale),
+                "نسخه یکپارچه حساب آماده است؛ ادامه این بخش را با همان حساب در مینی‌اپ انجام دهید.",
+                [
+                    [
+                        {
+                            "text": "باز کردن مینی‌اپ",
+                            "web_app_url": self.url_builder.build(route),
+                        }
+                    ],
+                    *self.renderer.nav_rows(locale),
+                ],
             )
         if callback.action == CallbackAction.OPEN_SERVICE:
             service = self.portal.service(self._portal_context(user, locale), callback.value)
             if service is None:
                 return self._callback_message(
-                    "این سرویس پیدا نشد یا متعلق به شما نیست.", self.renderer.nav_rows(locale)
+                    "این سرویس پیدا نشد یا متعلق به شما نیست.",
+                    self.renderer.nav_rows(locale),
                 )
             status_label = {
                 "active": "فعال",
@@ -1045,7 +1072,8 @@ class BotCommandHandler:
                 "suspended": "محدود",
             }.get(service.status.casefold(), "در حال بررسی")
             return self._callback_message(
-                f"{service.plan_name}\nوضعیت: {status_label}", self.renderer.nav_rows(locale)
+                f"{service.plan_name}\nوضعیت: {status_label}",
+                self.renderer.nav_rows(locale),
             )
         if callback.action in {
             CallbackAction.OPEN_SUBSCRIPTION,
@@ -1079,8 +1107,18 @@ class BotCommandHandler:
         )
         if result.status not in {AccountStatus.ACTIVE, AccountStatus.PENDING}:
             return self._single(t(self.settings.default_locale, "restricted"), [])
-        return self._render(
+        rendered = self._render(
             command.user, self._screen_id.HOME, self.settings.default_locale, push=False
+        )
+        if result.created or not rendered.messages:
+            return rendered
+        message = rendered.messages[0]
+        return HandlerResult(
+            rendered.acknowledged,
+            rendered.duplicate,
+            (OutgoingMessage(f"خوش برگشتید 👋\n\n{message.text}", message.rows),),
+            rendered.callback_notice,
+            rendered.callback_alert,
         )
 
     def _render(
@@ -1105,7 +1143,16 @@ class BotCommandHandler:
                 nearest,
                 len(self.portal.tickets(context)),
             )
-            rendered = self.renderer.render_home(data, locale)
+            runtime_configuration: dict[str, object] | None = None
+            runtime_loader = getattr(self.portal, "runtime_configuration", None)
+            if callable(runtime_loader):
+                try:
+                    loaded_runtime = runtime_loader(user.telegram_user_id)
+                    if isinstance(loaded_runtime, dict):
+                        runtime_configuration = cast(dict[str, object], loaded_runtime)
+                except Exception:  # noqa: BLE001 - retain safe built-in bot fallback
+                    runtime_configuration = None
+            rendered = self.renderer.render_home(data, locale, runtime_configuration)
         elif screen_id == ScreenId.PROFILE:
             rendered = self.renderer.info(screen_id, locale, profile=self.portal.profile(context))
         elif screen_id == ScreenId.SERVICES:
@@ -1128,7 +1175,8 @@ class BotCommandHandler:
             plans = self.portal.purchase_catalog(context)
             if not plans:
                 return self._callback_message(
-                    "در حال حاضر پلن قابل خریدی وجود ندارد.", self.renderer.nav_rows(locale)
+                    "در حال حاضر پلن قابل خریدی وجود ندارد.",
+                    self.renderer.nav_rows(locale),
                 )
             lines = [
                 f"• {p.title} — {p.traffic_gb:,} گیگابایت — "
@@ -1162,7 +1210,14 @@ class BotCommandHandler:
         _ = locale
         return self._callback_message(
             t("fa", "stale"),
-            [[{"text": "🏠 منوی اصلی", "callback_data": BotCallback(CallbackAction.HOME).pack()}]],
+            [
+                [
+                    {
+                        "text": "🏠 منوی اصلی",
+                        "callback_data": BotCallback(CallbackAction.HOME).pack(),
+                    }
+                ]
+            ],
         )
 
     def _customer_locale(self, user: IncomingUser) -> str:

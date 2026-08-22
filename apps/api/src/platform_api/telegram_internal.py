@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from .catalog import QuoteRequest, _localized, _price_preview, create_quote
 from .catalog_models import ProductModel, ProductVersionModel, QuoteIdempotencyRecordModel
 from .config import Settings, get_settings
+from .configuration import _active_snapshot  # pyright: ignore[reportPrivateUsage]
 from .database import get_db_session
 from .identity.models import CustomerProfileModel, TelegramAccountModel, UserModel
 from .manual_topups import (
@@ -97,6 +98,30 @@ Database = Annotated[Session, Depends(get_db_session)]
 
 def _no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "private, no-store"
+
+
+@router.get("/runtime-configuration")
+def runtime_configuration(
+    response: Response,
+    _: InternalAuth,
+    db: Database,
+    x_telegram_subject: Annotated[int, Header(gt=0)],
+) -> dict[str, object]:
+    snapshot, _etag_value, version = _active_snapshot(db)
+    _no_store(response)
+    return {
+        "runtime_version": version,
+        "brand": {
+            "short_name": snapshot["brand"]["short_name"],
+            "store_name": snapshot["brand"]["store_name"],
+            "tagline": snapshot["brand"]["tagline"],
+            "support_username": snapshot["brand"]["support_username"],
+            "support_url": snapshot["brand"]["support_url"],
+        },
+        "telegram_menu": snapshot["telegram_menu"],
+        "welcome_template": snapshot["content_templates"]["telegram.welcome"],
+        "maintenance": bool(snapshot["maintenance"].get("telegram_bot", False)),
+    }
 
 
 def _account(db: Session, telegram_id: int) -> tuple[TelegramAccountModel, UserModel]:

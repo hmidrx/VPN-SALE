@@ -32,7 +32,7 @@ for (const scenario of [
     (window as typeof window & { Telegram: unknown }).Telegram = { WebApp: { colorScheme: theme, version: "8.0", themeParams: {}, initData: "", ready() {}, expand() {}, onEvent() {}, offEvent() {} } };
   }, scenario.theme);
   await mockAuthenticated(page);
-  await page.goto("/");
+  await page.goto("/app");
   await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, scenario.theme);
   await expect(page.getByRole("heading", { name: profile.first_name })).toBeVisible();
   await expect(page.getByText("هنوز سرویس فعالی ندارید")).toBeVisible();
@@ -46,7 +46,7 @@ test("loading state", async ({ page }) => {
   let releaseRoute: (() => void) | undefined;
   const pending = new Promise<void>(resolve => { releaseRoute = resolve; });
   await page.route("**/api/v1/customer/auth/capabilities", async route => { await pending; await route.abort("failed"); });
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.locator(".loading-dashboard")).toBeVisible();
   await page.screenshot({ path: `${output}/loading.png`, animations: "disabled" });
   releaseRoute?.();
@@ -57,7 +57,7 @@ test("network error state", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route(bridgeScript, route => route.fulfill({ contentType: "application/javascript", body: "" }));
   await page.route("**/api/v1/customer/auth/capabilities", route => route.abort("failed"));
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { name: "ارتباط برقرار نشد" })).toBeVisible();
   await page.screenshot({ path: `${output}/network-error.png`, animations: "disabled" });
 });
@@ -67,7 +67,7 @@ test("ordinary browser Telegram unavailable state", async ({ page }) => {
   await page.route(bridgeScript, route => route.fulfill({ contentType: "application/javascript", body: "" }));
   await page.route("**/api/v1/customer/auth/capabilities", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(capabilities) }));
   await page.route("**/api/v1/customer/auth/browser-bootstrap", route => route.fulfill({ status: 401, contentType: "application/json", body: "{}" }));
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { name: "تلگرام در دسترس نیست" })).toBeVisible();
   await page.screenshot({ path: `${output}/telegram-unavailable.png`, animations: "disabled" });
 });
@@ -79,7 +79,7 @@ test("unauthorized state", async ({ page }) => {
   await page.addInitScript(() => { (window as typeof window & { Telegram: unknown }).Telegram = { WebApp: { colorScheme: "dark", version: "8.0", themeParams: {}, initData: "", ready() {}, expand() {}, onEvent() {}, offEvent() {} } }; });
   await page.route("**/api/v1/customer/auth/capabilities", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(capabilities) }));
   await page.route("**/api/v1/customer/auth/browser-bootstrap", route => route.fulfill({ status: 401, contentType: "application/json", body: "{}" }));
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { name: "وضعیت دسترسی" })).toBeVisible();
   await page.screenshot({ path: `${output}/unauthorized.png`, animations: "disabled" });
 });

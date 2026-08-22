@@ -8,8 +8,13 @@ from urllib.parse import parse_qsl, urljoin, urlparse
 
 class MiniAppRoute(StrEnum):
     HOME = "home"
+    CATALOG = "catalog"
+    SERVICES = "services"
+    ORDERS = "orders"
+    PAYMENTS = "payments"
     PROFILE = "profile"
     SECURITY = "security"
+    SESSIONS = "sessions"
     WALLET = "wallet"
     SUPPORT = "support"
     EDUCATION = "education"
@@ -17,9 +22,14 @@ class MiniAppRoute(StrEnum):
 
 
 ROUTE_PATHS = {
-    MiniAppRoute.HOME: "/",
+    MiniAppRoute.HOME: "/app",
+    MiniAppRoute.CATALOG: "/catalog",
+    MiniAppRoute.SERVICES: "/services",
+    MiniAppRoute.ORDERS: "/orders",
+    MiniAppRoute.PAYMENTS: "/payments",
     MiniAppRoute.PROFILE: "/profile",
     MiniAppRoute.SECURITY: "/security",
+    MiniAppRoute.SESSIONS: "/sessions",
     MiniAppRoute.WALLET: "/wallet",
     MiniAppRoute.SUPPORT: "/support",
     MiniAppRoute.EDUCATION: "/education",

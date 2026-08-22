@@ -1,6 +1,6 @@
 # VPN-SALE Roadmap
 
-Last reviewed: 2026-08-19
+Last reviewed: 2026-08-22
 
 ## Source of truth
 Use this order of trust for implementation decisions:
@@ -14,7 +14,7 @@ Use this order of trust for implementation decisions:
 Never remove or rebuild a capability merely because an old milestone document called it out of scope. Inspect current `main` first.
 
 ## Current phase
-**Telegram-first functional completion and production hardening.** Customer commerce/service/support must work natively in Telegram. Backend/API/worker work remains in scope when Telegram correctness requires it; new website/app product work stays deferred.
+**Integrated product refinement and production hardening.** Telegram v1 functionality remains preserved while customer web, Mini App and owner administration move onto one premium visual system. The owner control center must consume authoritative existing health/management APIs and must not invent operational or financial values.
 
 ## Done on current main
 
@@ -80,11 +80,13 @@ Do not mark the bot production-ready until this external smoke passes.
 ### 2. MULTI-PROVIDER — only after Sanaei is stable
 Preserve provider-neutral contracts now, but add another provider only from verified API behavior and dedicated contract tests. Never infer compatibility from similarity to 3x-ui.
 
-## Deferred while Telegram-first priority is active
-- New customer website/Mini App commerce UX.
-- Website redesign/polish unrelated to Telegram correctness.
-- New reseller-web product features unrelated to bot requirements.
-- Broad admin-web expansion unless required by a Telegram/recovery safety boundary.
+## Active integrated-experience work
+- Premium shared visual language for the customer web and Mini App, including deliberate light/dark themes and mobile-first Persian typography.
+- Owner control center for site, bot, Mini App, provider, support, finance and operational triage using existing authenticated APIs and permissions.
+- Repository cleanup only when code is proven unused by references, builds and tests; historical names alone are not proof.
+
+## Deferred
+- New reseller-web product features unrelated to the current integrated customer/owner experience.
 - Additional Telegram operator mutations without an existing backend authorization/audit/approval contract.
 - Premature unsupported-provider generalization.
 

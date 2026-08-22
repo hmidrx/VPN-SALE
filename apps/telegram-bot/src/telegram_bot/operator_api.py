@@ -56,6 +56,7 @@ class OperatorHealth:
 
 class OperatorPortal(Protocol):
     def operator_health(self, telegram_user_id: int) -> OperatorHealth: ...
+    def runtime_configuration(self, telegram_user_id: int) -> dict[str, object]: ...
 
 
 def _nonnegative_int(value: object, field: str) -> int:
@@ -68,6 +69,12 @@ def _mapping(value: object, field: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise PrivateApiUnavailable(f"پاسخ مدیریتی معتبر نیست: {field}")
     return cast(dict[str, object], value)
+
+
+def _object_list(value: object, field: str) -> list[object]:
+    if not isinstance(value, list):
+        raise PrivateApiUnavailable(f"پاسخ مدیریتی معتبر نیست: {field}")
+    return cast(list[object], value)
 
 
 class OperatorPrivatePlatformClient(ServiceManagementPrivatePlatformClient, OperatorPortal):
@@ -93,6 +100,39 @@ class OperatorPrivatePlatformClient(ServiceManagementPrivatePlatformClient, Oper
             bool(data["created"]),
             cast(str | None, data.get("locale")),
         )
+
+    def runtime_configuration(self, telegram_user_id: int) -> dict[str, object]:
+        data = self._request("GET", "/runtime-configuration", telegram_user_id)
+        version = _nonnegative_int(data.get("runtime_version"), "runtime_version")
+        brand = _mapping(data.get("brand"), "brand")
+        short_name = brand.get("short_name")
+        if not isinstance(short_name, str) or not short_name.strip() or len(short_name) > 64:
+            raise PrivateApiUnavailable("پاسخ برند معتبر نیست.")
+        menu = _object_list(data.get("telegram_menu"), "telegram_menu")
+        if len(menu) > 32:
+            raise PrivateApiUnavailable("پاسخ منوی ربات معتبر نیست.")
+        checked_menu: list[dict[str, object]] = []
+        for raw in menu:
+            item = _mapping(raw, "telegram_menu")
+            action = item.get("action")
+            labels = _mapping(item.get("label"), "telegram_menu.label")
+            if not isinstance(action, str) or len(action) > 64:
+                raise PrivateApiUnavailable("پاسخ منوی ربات معتبر نیست.")
+            if not all(isinstance(labels.get(locale), str) for locale in ("fa", "en")):
+                raise PrivateApiUnavailable("پاسخ برچسب منوی ربات معتبر نیست.")
+            checked_menu.append({"action": action, "label": labels})
+        welcome = _mapping(data.get("welcome_template"), "welcome_template")
+        return {
+            "runtime_version": version,
+            "brand": {
+                "short_name": short_name,
+                "store_name": brand.get("store_name"),
+                "tagline": brand.get("tagline"),
+            },
+            "telegram_menu": checked_menu,
+            "welcome_template": welcome,
+            "maintenance": bool(data.get("maintenance", False)),
+        }
 
     def operator_health(self, telegram_user_id: int) -> OperatorHealth:
         data = self._request("GET", "/operator/health", telegram_user_id)

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import cast
+
 from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.formatting import format_toman
+from telegram_bot.menu import runtime_menu_rows
 from telegram_bot.portal import (
     CustomerProfile,
     NotificationPreferences,
@@ -24,8 +27,12 @@ def cb(action: CallbackAction, value: str = "") -> str:
 
 
 class ScreenRenderer:
-    def render_home(self, data: DashboardData, locale: str) -> RenderedScreen:
-        _ = locale
+    def render_home(
+        self,
+        data: DashboardData,
+        locale: str,
+        runtime: dict[str, object] | None = None,
+    ) -> RenderedScreen:
         wallet = format_toman(data.wallet_balance_minor)
         active = "نامشخص" if data.active_services is None else fa_number(data.active_services)
         notice = (
@@ -33,13 +40,39 @@ class ScreenRenderer:
             if data.maintenance_notice
             else ""
         )
+        brand_value = runtime.get("brand") if runtime else None
+        brand = cast(dict[str, object], brand_value) if isinstance(brand_value, dict) else {}
+        short_name_value = brand.get("short_name")
+        short_name = short_name_value if isinstance(short_name_value, str) else "VPN-SALE"
+        tagline_value = brand.get("tagline")
+        tagline_map = (
+            cast(dict[str, object], tagline_value) if isinstance(tagline_value, dict) else {}
+        )
+        tagline = tagline_map.get(locale)
+        intro = safe_text(
+            tagline if isinstance(tagline, str) else f"حساب شما در {short_name} آماده است."
+        )
         text = (
-            f"سلام {safe_text(data.display_name)} عزیز 👋\nخوش برگشتید؛ حساب شما آماده است.\n\n"
+            f"◈ {safe_text(short_name)}  |  مرکز کنترل\n"
+            f"سلام {safe_text(data.display_name)} عزیز\n"
+            f"{intro}\n\n"
             f"💳 موجودی: {wallet}\n"
             f"📦 سرویس فعال: {active}\n"
-            f"⏳ نزدیک‌ترین انقضا: {safe_date(data.nearest_expiry)}{notice}"
+            f"⏳ نزدیک‌ترین انقضا: {safe_date(data.nearest_expiry)}{notice}\n\n"
+            "یکی از کارهای زیر را انتخاب کنید:"
         )
-        return RenderedScreen(text, self.home_rows(locale), ScreenId.HOME)
+        menu_value = runtime.get("telegram_menu") if runtime else None
+        menu_items = (
+            [
+                cast(dict[str, object], item)
+                for item in cast(list[object], menu_value)
+                if isinstance(item, dict)
+            ]
+            if isinstance(menu_value, list)
+            else []
+        )
+        rows = runtime_menu_rows(menu_items, locale)
+        return RenderedScreen(text, rows or self.home_rows(locale), ScreenId.HOME)
 
     def home_rows(self, locale: str) -> list[list[dict[str, str]]]:
         _ = locale
@@ -51,15 +84,24 @@ class ScreenRenderer:
             }
 
         return [
-            [nav("🛒 خرید سرویس", ScreenId.BUY), nav("📦 سرویس‌های من", ScreenId.SERVICES)],
+            [
+                nav("🛒 خرید سرویس", ScreenId.BUY),
+                nav("📦 سرویس‌های من", ScreenId.SERVICES),
+            ],
             [
                 nav("💳 کیف پول", ScreenId.WALLET),
-                {"text": "➕ افزایش موجودی", "callback_data": cb(CallbackAction.TOP_UP)},
+                {
+                    "text": "➕ افزایش موجودی",
+                    "callback_data": cb(CallbackAction.TOP_UP),
+                },
             ],
             [nav("🎫 پشتیبانی", ScreenId.SUPPORT), nav("👤 حساب من", ScreenId.PROFILE)],
             [
                 nav("🔔 اعلان‌ها", ScreenId.NOTIFICATIONS),
-                {"text": "🌐 باز کردن مینی‌اپ", "callback_data": cb(CallbackAction.OPEN_WEB_APP)},
+                {
+                    "text": "🌐 باز کردن مینی‌اپ",
+                    "callback_data": cb(CallbackAction.OPEN_WEB_APP),
+                },
             ],
         ]
 
@@ -72,7 +114,10 @@ class ScreenRenderer:
             ],
         ]
         if refresh:
-            rows.insert(0, [{"text": "🔄 بروزرسانی", "callback_data": cb(CallbackAction.REFRESH)}])
+            rows.insert(
+                0,
+                [{"text": "🔄 بروزرسانی", "callback_data": cb(CallbackAction.REFRESH)}],
+            )
         return rows
 
     def notifications(
@@ -209,7 +254,12 @@ class ScreenRenderer:
                 "\n".join(lines) if lines else "تراکنشی ثبت نشده است."
             )
             rows = [
-                [{"text": "➕ افزایش موجودی", "callback_data": cb(CallbackAction.TOP_UP)}],
+                [
+                    {
+                        "text": "➕ افزایش موجودی",
+                        "callback_data": cb(CallbackAction.TOP_UP),
+                    }
+                ],
                 [
                     {
                         "text": "📋 درخواست‌های کارت‌به‌کارت",
@@ -255,5 +305,7 @@ class ScreenRenderer:
                 ScreenId.HOME,
             )
         return RenderedScreen(
-            fa.get(screen, "⚠️ این بخش در حال آماده‌سازی است."), self.nav_rows(locale), screen
+            fa.get(screen, "⚠️ این بخش در حال آماده‌سازی است."),
+            self.nav_rows(locale),
+            screen,
         )

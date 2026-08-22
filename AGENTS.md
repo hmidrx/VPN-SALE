@@ -4,9 +4,9 @@
 This file is the continuation contract for coding agents such as Codex. Read it before changing the repository, then read `docs/ROADMAP.md` and inspect current `main` plus the relevant tests/code. Historical milestone notes can lag behind the implementation; current code, migrations, tests, this file, and the roadmap take precedence over old scope statements.
 
 ## Current product priority
-The active priority is to finish and harden the **customer-facing Telegram bot as a standalone experience**. Do not start new customer website/app product work unless the user explicitly changes that priority.
+The user explicitly changed the active priority on 2026-08-22 to the **integrated VPN-SALE product experience**: premium customer web/Mini App presentation, a real owner control center, and cross-surface hardening while preserving the completed Telegram bot. Extend existing architecture and shared contracts; do not rebuild or fork business logic into UI layers.
 
-Backend/API/worker changes are in scope when they are required to make Telegram functionality correct, safe, durable, or observable. Existing web applications still participate in repository-wide CI; passing their checks does not expand the active product scope.
+Backend/API/worker changes are in scope when required for correct, safe, durable or observable behavior across Telegram, customer web, Mini App and owner administration. Keep server-authoritative pricing, ownership, payment, provider and operational-health boundaries unchanged.
 
 ## Architecture boundaries
 - `apps/api`: authoritative business/API layer, persistence models, private Telegram projections, admin/recovery endpoints.

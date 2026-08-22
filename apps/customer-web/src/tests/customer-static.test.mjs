@@ -93,7 +93,7 @@ const customerCss = source("../app/customer.css");
 const customerApp = source("components/CustomerApp.tsx");
 const navigation = source("components/customer-navigation.tsx");
 assert.equal((navigation.split("export const accountNavigation")[0].match(/{ label:/g) ?? []).length, 5);
-for (const route of ["/", "/services", "/wallet", "/support", "/profile", "/security", "/sessions"]) assert.match(navigation, new RegExp(`href: \\"${route.replaceAll("/", "\\/")}\\"`));
+for (const route of ["/app", "/services", "/wallet", "/support", "/profile", "/security", "/sessions"]) assert.match(navigation, new RegExp(`href: \\"${route.replaceAll("/", "\\/")}\\"`));
 assert.match(customerApp, /aria-current=\{primaryPage === item\.page \? "page"/);
 assert.equal((customerApp.match(/className="customer-bottom-nav"/g) ?? []).length, 1);
 assert.doesNotMatch(customerApp, /<Card>\{page ===/);
@@ -129,3 +129,15 @@ assert.match(securitySource, /!capabilities\.telegram_linking.*اتصال تلگ
 assert.match(securitySource, /!capabilities\.web_credential_enrollment.*ساخت ورود وب در دسترس نیست/);
 assert.match(securitySource, /linked && profile\.account_username && capabilities\.telegram_linking && capabilities\.password_login/);
 assert.doesNotMatch(source("components/TelegramLinkCompletion.tsx"), /bootstrapCustomer|localStorage|sessionStorage|start_attribution/);
+
+const marketing = source("../app/marketing.css");
+const landing = source("components/MarketingLanding.tsx");
+assert.match(source("../app/page.tsx"), /MarketingLanding/);
+assert.match(source("../app/app/page.tsx"), /CustomerApp page="home"/);
+assert.match(marketing, /font-family: "Estedad"/);
+assert.match(marketing, /prefers-reduced-motion/);
+assert.match(marketing, /min-height: 44px/);
+assert.match(landing, /logo_asset_reference/);
+assert.match(landing, /dataset\.theme/);
+assert.match(landing, /فعال‌کردن تم روشن/);
+assert.doesNotMatch(landing, /DR[.•]PING/i);

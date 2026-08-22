@@ -32,7 +32,11 @@ def user() -> IncomingUser:
 
 def callback(action: CallbackAction, value: str = "", update_id: int = 100) -> IncomingCallback:
     return IncomingCallback(
-        update_id, f"cb-{update_id}", "private", user(), BotCallback(action, value).pack()
+        update_id,
+        f"cb-{update_id}",
+        "private",
+        user(),
+        BotCallback(action, value).pack(),
     )
 
 
@@ -95,3 +99,55 @@ def test_callback_payloads_are_versioned_short_and_malformed_safe() -> None:
     )
     assert result.acknowledged
     assert "مشکلی" in result.messages[0].text or "قدیمی" in result.messages[0].text
+
+
+def test_runtime_menu_uses_parseable_callbacks_and_two_column_rows() -> None:
+    from telegram_bot.callbacks import BotCallback
+    from telegram_bot.menu import runtime_menu_rows
+
+    rows = runtime_menu_rows(
+        [
+            {"action": "OPEN_STORE", "label": {"fa": "خرید", "en": "Buy"}},
+            {"action": "OPEN_SERVICES", "label": {"fa": "سرویس‌ها", "en": "Services"}},
+            {"action": "OPEN_WALLET", "label": {"fa": "کیف پول", "en": "Wallet"}},
+        ],
+        "fa",
+    )
+    assert [len(row) for row in rows] == [2, 1]
+    assert rows[0][0]["text"] == "خرید"
+    assert BotCallback.parse(rows[0][0]["callback_data"]).action.value == "buy"
+
+
+def test_runtime_menu_rejects_unknown_actions() -> None:
+    from telegram_bot.menu import runtime_menu_rows
+
+    assert runtime_menu_rows([{"action": "UNSAFE", "label": {"fa": "x"}}], "fa") == []
+
+
+def test_runtime_menu_routes_orders_and_payments_to_real_mini_app_pages() -> None:
+    from telegram_bot.callbacks import BotCallback
+    from telegram_bot.menu import runtime_menu_rows
+
+    rows = runtime_menu_rows(
+        [
+            {"action": "OPEN_ORDERS", "label": {"fa": "سفارش‌ها"}},
+            {"action": "OPEN_PAYMENTS", "label": {"fa": "پرداخت‌ها"}},
+            {"action": "OPEN_MINI_APP", "label": {"fa": "مینی‌اپ"}},
+        ],
+        "fa",
+    )
+    callbacks = [BotCallback.parse(button["callback_data"]) for row in rows for button in row]
+    assert [item.value for item in callbacks] == ["orders", "payments", "home"]
+
+
+def test_open_web_app_callback_builds_only_allowlisted_route() -> None:
+    handler = BotCommandHandler(settings(), InMemoryTelegramIdentityService())
+    result = handler.handle_callback(callback(CallbackAction.OPEN_WEB_APP, "orders", 1400))
+    assert result.acknowledged
+    assert result.messages[0].rows[0][0]["web_app_url"].endswith("/orders")
+
+    stale = handler.handle_callback(
+        callback(CallbackAction.OPEN_WEB_APP, "https://evil.test", 1401)
+    )
+    assert stale.acknowledged
+    assert "قدیمی" in stale.messages[0].text or "مشکلی" in stale.messages[0].text

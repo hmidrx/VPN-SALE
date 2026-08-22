@@ -1,21 +1,44 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, cast
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
-from vpnsale_domain.configuration import Draft, compiled_defaults, publish, validate_snapshot
+from vpnsale_domain.configuration import (
+    Draft,
+    compiled_defaults,
+    publish,
+    validate_snapshot,
+)
 from vpnsale_domain.identity import sanitize_metadata
 
+from .configuration_media_storage import (
+    InvalidBrandImage,
+    configured_brand_media_storage,
+)
 from .configuration_models import (
     ConfigurationDraftModel,
+    ConfigurationPreviewSessionModel,
     ConfigurationReleaseModel,
     ConfigurationValidationRunModel,
+    MediaAssetModel,
     RuntimeConfigurationSnapshotModel,
 )
 from .database import get_db_session
@@ -40,6 +63,11 @@ class PreviewCreate(BaseModel):
     channel: str = Field(pattern="^(customer-web|telegram-mini-app|telegram-bot)$")
 
 
+class PreviewResolve(BaseModel):
+    preview_reference: str = Field(min_length=40, max_length=80)
+    channel: str = Field(pattern="^(customer-web|telegram-mini-app|telegram-bot)$")
+
+
 class RuntimeContext(BaseModel):
     channel: str = "customer-web"
     locale: str = "fa"
@@ -61,7 +89,11 @@ def _permitted(db: Session, admin_id: str, perm: str) -> bool:
 
 
 def _audit(
-    db: Session, admin_id: str, code: str, request: Request, meta: dict[str, object] | None = None
+    db: Session,
+    admin_id: str,
+    code: str,
+    request: Request,
+    meta: dict[str, object] | None = None,
 ) -> None:
     db.add(
         AuditLogModel(
@@ -98,6 +130,45 @@ def _security(
     )
 
 
+def _canonical_json(value: dict[str, Any]) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _etag(value: dict[str, Any]) -> str:
+    return 'W/"cfg-' + hashlib.sha256(_canonical_json(value).encode()).hexdigest()[:24] + '"'
+
+
+def _token_hash(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _public_configuration(snapshot: dict[str, Any], version: int) -> dict[str, Any]:
+    return {
+        "schema_version": snapshot["schema_version"],
+        "runtime_version": version,
+        "brand": snapshot["brand"],
+        "theme": snapshot["theme"],
+        "navigation": snapshot["customer_navigation"],
+        "content": snapshot["content_templates"],
+        "feature_flags": {
+            key: bool(value.get("enabled", value.get("safe_default", False)))
+            for key, value in snapshot["feature_flags"].items()
+        },
+        "maintenance": snapshot["maintenance"],
+    }
+
+
+def _next_release_version(db: Session) -> int:
+    latest = db.scalar(
+        select(ConfigurationReleaseModel)
+        .where(ConfigurationReleaseModel.scope == "global")
+        .order_by(ConfigurationReleaseModel.version.desc())
+        .with_for_update()
+        .limit(1)
+    )
+    return latest.version + 1 if latest else 1
+
+
 def _active_snapshot(db: Session) -> tuple[dict[str, Any], str, int]:
     snap = db.scalar(
         select(RuntimeConfigurationSnapshotModel)
@@ -123,19 +194,62 @@ def runtime_public(
         return None
     response.headers["ETag"] = etag
     response.headers["Cache-Control"] = "public, max-age=60"
-    return {
-        "schema_version": snapshot["schema_version"],
-        "runtime_version": version,
-        "brand": snapshot["brand"],
-        "theme": snapshot["theme"],
-        "navigation": snapshot["customer_navigation"],
-        "content": snapshot["content_templates"],
-        "feature_flags": {
-            k: bool(v.get("enabled", v.get("safe_default", False)))
-            for k, v in snapshot["feature_flags"].items()
-        },
-        "maintenance": snapshot["maintenance"],
-    }
+    return _public_configuration(snapshot, version)
+
+
+@public_router.get("/media/{reference}")
+def runtime_brand_media(
+    reference: str,
+    db: Annotated[Session, Depends(get_db_session)],
+) -> FileResponse:
+    row = db.scalar(
+        select(MediaAssetModel).where(
+            MediaAssetModel.public_reference == reference,
+            MediaAssetModel.role == "BRAND_LOGO",
+            MediaAssetModel.status == "READY",
+            MediaAssetModel.archived_at.is_(None),
+        )
+    )
+    if not row:
+        raise _err(404, "media_not_found")
+    try:
+        path = configured_brand_media_storage().path(reference)
+    except InvalidBrandImage as exc:
+        raise _err(404, "media_not_found") from exc
+    if not path.is_file():
+        raise _err(404, "media_not_found")
+    return FileResponse(
+        path,
+        media_type=row.mime_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
+@public_router.post("/preview/resolve")
+def resolve_preview(
+    body: PreviewResolve,
+    response: Response,
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, Any]:
+    row = db.scalar(
+        select(ConfigurationPreviewSessionModel).where(
+            ConfigurationPreviewSessionModel.opaque_reference_hash
+            == _token_hash(body.preview_reference)
+        )
+    )
+    now = datetime.now(UTC)
+    expires_at = (
+        row.expires_at.replace(tzinfo=UTC)
+        if row and row.expires_at.tzinfo is None
+        else (row.expires_at if row else now)
+    )
+    if not row or row.revoked_at is not None or expires_at <= now or row.channel != body.channel:
+        raise _err(404, "preview_not_found")
+    draft = db.get(ConfigurationDraftModel, row.draft_id)
+    if not draft or not validate_snapshot(draft.snapshot).ok:
+        raise _err(409, "preview_invalid")
+    response.headers["Cache-Control"] = "private, no-store"
+    return _public_configuration(draft.snapshot, 0)
 
 
 @public_router.post("/flags/evaluate")
@@ -160,9 +274,63 @@ def evaluate_flags(
     return out
 
 
+@admin_router.post("/media/logo")
+def upload_brand_logo(
+    request: Request,
+    file: Annotated[UploadFile, File()],
+    alt_text: Annotated[str, Form(min_length=1, max_length=160)],
+    admin: Annotated[Any, Depends(current_admin)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, object]:
+    if not _permitted(db, admin.id, "media_assets.manage"):
+        raise _err(403, "forbidden")
+    reference = "BRAND-" + uuid4().hex[:24]
+    storage = configured_brand_media_storage()
+    try:
+        stored = storage.store(reference, file.file, file.content_type or "")
+    except InvalidBrandImage as exc:
+        _security(db, admin.id, "configuration.media_rejected", request)
+        db.commit()
+        raise _err(422, "invalid_media") from exc
+    row = MediaAssetModel(
+        public_reference=reference,
+        role="BRAND_LOGO",
+        status="READY",
+        mime_type=stored.media_type,
+        byte_size=stored.byte_size,
+        width=stored.width,
+        height=stored.height,
+        digest=stored.digest,
+        alt_text=alt_text.strip(),
+        storage_key=reference,
+    )
+    try:
+        db.add(row)
+        _audit(
+            db,
+            admin.id,
+            "configuration.media_uploaded",
+            request,
+            {"reference": reference, "role": "BRAND_LOGO"},
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        storage.delete(reference)
+        raise
+    return {
+        "reference": reference,
+        "url": f"/api/v1/runtime/configuration/media/{reference}",
+        "alt_text": alt_text.strip(),
+        "width": stored.width,
+        "height": stored.height,
+    }
+
+
 @admin_router.get("/dashboard")
 def dashboard(
-    admin: Annotated[Any, Depends(current_admin)], db: Annotated[Session, Depends(get_db_session)]
+    admin: Annotated[Any, Depends(current_admin)],
+    db: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, Any]:
     if not _permitted(db, admin.id, "configuration.read"):
         raise _err(403, "forbidden")
@@ -172,6 +340,28 @@ def dashboard(
         "etag": etag,
         "schema_version": snap["schema_version"],
         "namespaces": list(snap.keys()),
+        "snapshot": snap,
+    }
+
+
+@admin_router.get("/drafts/{reference}")
+def get_draft(
+    reference: str,
+    admin: Annotated[Any, Depends(current_admin)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, Any]:
+    if not _permitted(db, admin.id, "configuration.read"):
+        raise _err(403, "forbidden")
+    row = db.scalar(
+        select(ConfigurationDraftModel).where(ConfigurationDraftModel.reference == reference)
+    )
+    if not row:
+        raise _err(404, "draft_not_found")
+    return {
+        "reference": row.reference,
+        "version": row.version,
+        "status": row.status,
+        "snapshot": row.snapshot,
     }
 
 
@@ -232,7 +422,13 @@ def update_section(
     row.version = draft.version
     row.status = "DRAFT"
     row.updated_at = datetime.now(UTC)
-    _audit(db, admin.id, "configuration.section_changed", request, {"section": body.section})
+    _audit(
+        db,
+        admin.id,
+        "configuration.section_changed",
+        request,
+        {"section": body.section},
+    )
     return {
         "reference": reference,
         "version": row.version,
@@ -278,11 +474,24 @@ def preview(
 ) -> dict[str, str]:
     if not _permitted(db, admin.id, "configuration.preview"):
         raise _err(403, "forbidden")
-    if not db.scalar(
-        select(ConfigurationDraftModel.id).where(ConfigurationDraftModel.reference == reference)
-    ):
+    draft = db.scalar(
+        select(ConfigurationDraftModel).where(ConfigurationDraftModel.reference == reference)
+    )
+    if not draft:
         raise _err(404, "draft_not_found")
+    if not validate_snapshot(draft.snapshot).ok:
+        raise _err(409, "preview_invalid")
     token = "pv_" + uuid4().hex + uuid4().hex[:8]
+    expires_at = datetime.now(UTC) + timedelta(minutes=30)
+    db.add(
+        ConfigurationPreviewSessionModel(
+            opaque_reference_hash=_token_hash(token),
+            draft_id=draft.id,
+            channel=body.channel,
+            created_by_admin_id=admin.id,
+            expires_at=expires_at,
+        )
+    )
     _audit(
         db,
         admin.id,
@@ -292,7 +501,7 @@ def preview(
     )
     return {
         "preview_reference": token,
-        "expires_at": (datetime.now(UTC) + timedelta(minutes=30)).isoformat(),
+        "expires_at": expires_at.isoformat(),
         "warning": "Do not persist or log preview references.",
     }
 
@@ -312,14 +521,19 @@ def publish_draft(
     if not row:
         raise _err(404, "draft_not_found")
     active = db.scalar(
-        select(ConfigurationReleaseModel).where(ConfigurationReleaseModel.is_effective.is_(True))
+        select(ConfigurationReleaseModel)
+        .where(ConfigurationReleaseModel.is_effective.is_(True))
+        .with_for_update()
     )
     try:
-        rel = publish(
-            Draft(reference=row.reference, snapshot=row.snapshot, version=row.version), None
+        publish(
+            Draft(reference=row.reference, snapshot=row.snapshot, version=row.version),
+            None,
         )
     except ValueError as exc:
         raise _err(400, str(exc)) from exc
+    release_reference = "rel_" + uuid4().hex[:16]
+    release_version = _next_release_version(db)
     if active:
         db.execute(
             update(ConfigurationReleaseModel)
@@ -327,10 +541,10 @@ def publish_draft(
             .values(is_effective=False, status="SUPERSEDED")
         )
     release = ConfigurationReleaseModel(
-        reference=rel.reference,
+        reference=release_reference,
         status="PUBLISHED",
         schema_version=1,
-        version=(active.version + 1 if active else 1),
+        version=release_version,
         immutable_snapshot=row.snapshot,
         draft_id=row.id,
         published_by_admin_id=admin.id,
@@ -339,15 +553,22 @@ def publish_draft(
     )
     db.add(release)
     db.flush()
-    etag = 'W/"cfg-' + hashlib.sha256(str(row.snapshot).encode()).hexdigest()[:24] + '"'
+    etag = _etag(row.snapshot)
     db.add(
         RuntimeConfigurationSnapshotModel(
-            release_id=release.id, version=release.version, etag=etag, public_snapshot=row.snapshot
+            release_id=release.id,
+            version=release.version,
+            etag=etag,
+            public_snapshot=row.snapshot,
         )
     )
     row.status = "PUBLISHED"
-    _audit(db, admin.id, "configuration.published", request, {"release": rel.reference})
-    return {"release_reference": rel.reference, "version": release.version, "etag": etag}
+    _audit(db, admin.id, "configuration.published", request, {"release": release_reference})
+    return {
+        "release_reference": release_reference,
+        "version": release.version,
+        "etag": etag,
+    }
 
 
 @admin_router.post("/releases/{reference}/rollback")
@@ -360,10 +581,13 @@ def rollback(
     if not _permitted(db, admin.id, "configuration.rollback"):
         raise _err(403, "forbidden")
     target = db.scalar(
-        select(ConfigurationReleaseModel).where(ConfigurationReleaseModel.reference == reference)
+        select(ConfigurationReleaseModel)
+        .where(ConfigurationReleaseModel.reference == reference)
+        .with_for_update()
     )
     if not target:
         raise _err(404, "release_not_found")
+    next_version = _next_release_version(db)
     db.execute(
         update(ConfigurationReleaseModel)
         .where(ConfigurationReleaseModel.is_effective.is_(True))
@@ -373,7 +597,7 @@ def rollback(
         reference="rel_rollback_" + uuid4().hex[:12],
         status="PUBLISHED",
         schema_version=1,
-        version=target.version + 1,
+        version=next_version,
         immutable_snapshot=target.immutable_snapshot,
         published_by_admin_id=admin.id,
         published_at=datetime.now(UTC),
@@ -381,9 +605,7 @@ def rollback(
     )
     db.add(clone)
     db.flush()
-    etag = (
-        'W/"cfg-' + hashlib.sha256(str(target.immutable_snapshot).encode()).hexdigest()[:24] + '"'
-    )
+    etag = _etag(target.immutable_snapshot)
     db.add(
         RuntimeConfigurationSnapshotModel(
             release_id=clone.id,
