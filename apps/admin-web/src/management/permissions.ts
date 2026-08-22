@@ -3,7 +3,7 @@ export type NavItem = { href: string; label: string; permissions: string[] };
 export const managementNav: NavItem[] = [
   { href: "/management", label: "نمای کلی", permissions: ["admins.read", "users.read", "audit.read", "security.read"] },
   { href: "/catalog", label: "کاتالوگ", permissions: ["catalog.read", "pricing.read", "quotes.read"] },
-  { href: "/management/finance", label: "مالی", permissions: ["wallets.read", "ledger.read", "ledger.reconcile","providers.read","providers.manage","providers.manage_credentials","providers.test_connection","providers.sync","providers.read_inventory","providers.read_diagnostics","providers.certify"] },
+  { href: "/management/finance", label: "مالی", permissions: ["wallets.read", "ledger.read", "ledger.reconcile","providers.read","providers.manage","providers.manage_credentials","providers.test_connection","providers.sync","providers.read_inventory","providers.read_diagnostics","providers.certify","configuration.read","configuration.manage","configuration.preview","configuration.publish","configuration.rollback","branding.read","branding.manage","themes.read","themes.manage","content_templates.read","content_templates.manage","feature_flags.read","feature_flags.manage","navigation.read","navigation.manage","telegram_menus.read","telegram_menus.manage","media_assets.read","media_assets.manage"] },
   { href: "/management/admins", label: "مدیران", permissions: ["admins.read"] },
   { href: "/management/roles", label: "نقش‌ها و مجوزها", permissions: ["roles.read"] },
   { href: "/management/customers", label: "مشتریان", permissions: ["users.read"] },

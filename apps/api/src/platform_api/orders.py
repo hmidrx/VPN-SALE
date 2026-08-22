@@ -671,6 +671,34 @@ def create_checkout(
     return result
 
 
+@customer_router.get("/checkout/{checkout_reference}")
+def get_checkout(
+    checkout_reference: str,
+    customer_id: Annotated[str, Depends(_customer_from_token)],
+    db: Annotated[Session, Depends(get_db_session)],
+    request: Request,
+) -> dict[str, Any]:
+    checkout = db.scalar(
+        select(CheckoutSessionModel).where(CheckoutSessionModel.reference == checkout_reference)
+    )
+    if not checkout or checkout.customer_id != customer_id:
+        raise _err(404, request, "CHECKOUT_NOT_FOUND")
+    order = db.get(OrderModel, checkout.order_id)
+    invoice = db.scalar(select(InvoiceModel).where(InvoiceModel.order_id == checkout.order_id))
+    if not order or not invoice:
+        raise _err(409, request, "CHECKOUT_INCONSISTENT")
+    return {
+        "checkout": {
+            "checkout_reference": checkout.reference,
+            "status": checkout.status,
+            "reservation_amount_rial": checkout.amount_rial,
+            "expires_at": checkout.expires_at.isoformat(),
+        },
+        "order": _order_view(db, order),
+        "invoice": _invoice_view(db, invoice),
+    }
+
+
 @customer_router.post("/checkout/{checkout_reference}/confirm")
 def confirm_checkout(
     checkout_reference: str,
