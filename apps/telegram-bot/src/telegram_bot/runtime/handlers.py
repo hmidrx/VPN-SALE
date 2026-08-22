@@ -1080,8 +1080,18 @@ class BotCommandHandler:
         )
         if result.status not in {AccountStatus.ACTIVE, AccountStatus.PENDING}:
             return self._single(t(self.settings.default_locale, "restricted"), [])
-        return self._render(
+        rendered = self._render(
             command.user, self._screen_id.HOME, self.settings.default_locale, push=False
+        )
+        if result.created or not rendered.messages:
+            return rendered
+        message = rendered.messages[0]
+        return HandlerResult(
+            rendered.acknowledged,
+            rendered.duplicate,
+            (OutgoingMessage(f"خوش برگشتید 👋\n\n{message.text}", message.rows),),
+            rendered.callback_notice,
+            rendered.callback_alert,
         )
 
     def _render(
