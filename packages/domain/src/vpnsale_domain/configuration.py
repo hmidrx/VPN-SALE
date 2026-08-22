@@ -73,6 +73,7 @@ PLACEHOLDERS: dict[str, frozenset[str]] = {
 }
 HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 CODE = re.compile(r"^[A-Z0-9_]{2,64}$")
+BRAND_ASSET_REFERENCE = re.compile(r"^BRAND-[0-9a-f]{24}$")
 SECRET_LIKE = re.compile(r"(?i)(api[_-]?key|secret|token|password|bearer\s+[a-z0-9._-]+)")
 
 
@@ -198,6 +199,15 @@ def validate_snapshot(snapshot: dict[str, Any]) -> ValidationResult:
         issue = validate_public_url(snapshot.get("brand", {}).get(key))
         if issue:
             issues.append(issue)
+    logo_reference = str(snapshot.get("brand", {}).get("logo_asset_reference", ""))
+    if logo_reference and BRAND_ASSET_REFERENCE.fullmatch(logo_reference) is None:
+        issues.append(
+            _issue(
+                "brand.logo_reference",
+                "Unknown brand logo reference",
+                "$.brand.logo_asset_reference",
+            )
+        )
     for s in [str(snapshot)]:
         if SECRET_LIKE.search(s):
             issues.append(
@@ -266,6 +276,8 @@ def compiled_defaults() -> dict[str, Any]:
             "support_url": "https://example.invalid/support",
             "website_url": "https://example.invalid",
             "mini_app_url": "https://example.invalid/app",
+            "logo_asset_reference": "",
+            "logo_alt_text": "لوگوی VPN-SALE",
         },
         "theme": {
             "light": {
@@ -340,49 +352,73 @@ def compiled_defaults() -> dict[str, Any]:
         "telegram_menu": [
             {
                 "code": "OPEN_STORE",
-                "label": {"fa": "🛒 خرید سرویس", "en": "Buy service"},
+                "label": {"fa": "خرید سرویس", "en": "Buy service"},
                 "action": "OPEN_STORE",
                 "callback_data": "cfg:OPEN_STORE",
             },
             {
                 "code": "OPEN_SERVICES",
-                "label": {"fa": "📦 سرویس‌های من", "en": "My services"},
+                "label": {"fa": "سرویس‌های من", "en": "My services"},
                 "action": "OPEN_SERVICES",
                 "callback_data": "cfg:OPEN_SERVICES",
             },
             {
                 "code": "OPEN_WALLET",
-                "label": {"fa": "💳 کیف پول", "en": "Wallet"},
+                "label": {"fa": "کیف پول", "en": "Wallet"},
                 "action": "OPEN_WALLET",
                 "callback_data": "cfg:OPEN_WALLET",
             },
             {
                 "code": "OPEN_WALLET_TOPUP",
-                "label": {"fa": "➕ افزایش موجودی", "en": "Top up"},
+                "label": {"fa": "افزایش موجودی", "en": "Top up"},
                 "action": "OPEN_WALLET_TOPUP",
                 "callback_data": "cfg:OPEN_WALLET_TOPUP",
             },
             {
+                "code": "OPEN_ORDERS",
+                "label": {"fa": "سفارش‌ها", "en": "Orders"},
+                "action": "OPEN_ORDERS",
+                "callback_data": "cfg:OPEN_ORDERS",
+            },
+            {
+                "code": "OPEN_PAYMENTS",
+                "label": {"fa": "پرداخت‌ها", "en": "Payments"},
+                "action": "OPEN_PAYMENTS",
+                "callback_data": "cfg:OPEN_PAYMENTS",
+            },
+            {
                 "code": "OPEN_SUPPORT",
-                "label": {"fa": "🎫 پشتیبانی", "en": "Support"},
+                "label": {"fa": "پشتیبانی", "en": "Support"},
                 "action": "OPEN_SUPPORT",
                 "callback_data": "cfg:OPEN_SUPPORT",
             },
             {
-                "code": "OPEN_PROFILE",
-                "label": {"fa": "👤 حساب من", "en": "My account"},
-                "action": "OPEN_PROFILE",
-                "callback_data": "cfg:OPEN_PROFILE",
+                "code": "OPEN_SECURITY",
+                "label": {"fa": "امنیت حساب", "en": "Account security"},
+                "action": "OPEN_SECURITY",
+                "callback_data": "cfg:OPEN_SECURITY",
             },
             {
                 "code": "OPEN_EDUCATION",
-                "label": {"fa": "📚 آموزش اتصال", "en": "Connection guides"},
+                "label": {"fa": "آموزش اتصال", "en": "Connection guides"},
                 "action": "OPEN_EDUCATION",
                 "callback_data": "cfg:OPEN_EDUCATION",
             },
             {
+                "code": "OPEN_STATUS_PAGE",
+                "label": {"fa": "وضعیت سامانه", "en": "System status"},
+                "action": "OPEN_STATUS_PAGE",
+                "callback_data": "cfg:OPEN_STATUS_PAGE",
+            },
+            {
+                "code": "OPEN_PROFILE",
+                "label": {"fa": "حساب من", "en": "My account"},
+                "action": "OPEN_PROFILE",
+                "callback_data": "cfg:OPEN_PROFILE",
+            },
+            {
                 "code": "OPEN_MINI_APP",
-                "label": {"fa": "🌐 باز کردن مینی‌اپ", "en": "Open Mini App"},
+                "label": {"fa": "باز کردن مینی‌اپ", "en": "Open Mini App"},
                 "action": "OPEN_MINI_APP",
                 "callback_data": "cfg:OPEN_MINI_APP",
             },

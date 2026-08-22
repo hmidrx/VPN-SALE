@@ -6,26 +6,51 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, cast
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
-from vpnsale_domain.configuration import Draft, compiled_defaults, publish, validate_snapshot
+from vpnsale_domain.configuration import (
+    Draft,
+    compiled_defaults,
+    publish,
+    validate_snapshot,
+)
 from vpnsale_domain.identity import sanitize_metadata
 
 from .configuration_models import (
     ConfigurationDraftModel,
+    MediaAssetModel,
     ConfigurationPreviewSessionModel,
     ConfigurationReleaseModel,
     ConfigurationValidationRunModel,
     RuntimeConfigurationSnapshotModel,
 )
+from .configuration_media_storage import (
+    InvalidBrandImage,
+    configured_brand_media_storage,
+)
 from .database import get_db_session
 from .identity.models import AuditLogModel, SecurityEventModel
 from .management import _active_permissions, current_admin  # pyright: ignore[reportPrivateUsage]
 
-public_router = APIRouter(prefix="/api/v1/runtime/configuration", tags=["runtime-configuration"])
-admin_router = APIRouter(prefix="/api/v1/admin/configuration", tags=["admin-configuration"])
+public_router = APIRouter(
+    prefix="/api/v1/runtime/configuration", tags=["runtime-configuration"]
+)
+admin_router = APIRouter(
+    prefix="/api/v1/admin/configuration", tags=["admin-configuration"]
+)
 
 
 class DraftCreate(BaseModel):
@@ -56,11 +81,17 @@ class RuntimeContext(BaseModel):
 
 
 def _cid(request: Request) -> str:
-    return request.headers.get("x-request-id") or request.headers.get("x-correlation-id") or "local"
+    return (
+        request.headers.get("x-request-id")
+        or request.headers.get("x-correlation-id")
+        or "local"
+    )
 
 
 def _err(status: int, code: str) -> HTTPException:
-    return HTTPException(status, detail={"code": code, "message_key": f"configuration.{code}"})
+    return HTTPException(
+        status, detail={"code": code, "message_key": f"configuration.{code}"}
+    )
 
 
 def _permitted(db: Session, admin_id: str, perm: str) -> bool:
@@ -68,7 +99,11 @@ def _permitted(db: Session, admin_id: str, perm: str) -> bool:
 
 
 def _audit(
-    db: Session, admin_id: str, code: str, request: Request, meta: dict[str, object] | None = None
+    db: Session,
+    admin_id: str,
+    code: str,
+    request: Request,
+    meta: dict[str, object] | None = None,
 ) -> None:
     db.add(
         AuditLogModel(
@@ -110,7 +145,11 @@ def _canonical_json(value: dict[str, Any]) -> str:
 
 
 def _etag(value: dict[str, Any]) -> str:
-    return 'W/"cfg-' + hashlib.sha256(_canonical_json(value).encode()).hexdigest()[:24] + '"'
+    return (
+        'W/"cfg-'
+        + hashlib.sha256(_canonical_json(value).encode()).hexdigest()[:24]
+        + '"'
+    )
 
 
 def _token_hash(value: str) -> str:
@@ -172,6 +211,34 @@ def runtime_public(
     return _public_configuration(snapshot, version)
 
 
+@public_router.get("/media/{reference}")
+def runtime_brand_media(
+    reference: str,
+    db: Annotated[Session, Depends(get_db_session)],
+) -> FileResponse:
+    row = db.scalar(
+        select(MediaAssetModel).where(
+            MediaAssetModel.public_reference == reference,
+            MediaAssetModel.role == "BRAND_LOGO",
+            MediaAssetModel.status == "READY",
+            MediaAssetModel.archived_at.is_(None),
+        )
+    )
+    if not row:
+        raise _err(404, "media_not_found")
+    try:
+        path = configured_brand_media_storage().path(reference)
+    except InvalidBrandImage as exc:
+        raise _err(404, "media_not_found") from exc
+    if not path.is_file():
+        raise _err(404, "media_not_found")
+    return FileResponse(
+        path,
+        media_type=row.mime_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
 @public_router.post("/preview/resolve")
 def resolve_preview(
     body: PreviewResolve,
@@ -190,7 +257,12 @@ def resolve_preview(
         if row and row.expires_at.tzinfo is None
         else (row.expires_at if row else now)
     )
-    if not row or row.revoked_at is not None or expires_at <= now or row.channel != body.channel:
+    if (
+        not row
+        or row.revoked_at is not None
+        or expires_at <= now
+        or row.channel != body.channel
+    ):
         raise _err(404, "preview_not_found")
     draft = db.get(ConfigurationDraftModel, row.draft_id)
     if not draft or not validate_snapshot(draft.snapshot).ok:
@@ -212,7 +284,9 @@ def evaluate_flags(
         if not isinstance(flag_obj, dict):
             continue
         flag = cast(dict[str, Any], flag_obj)
-        enabled = bool(flag.get("enabled", flag.get("safe_default", False))) and stable_rollout(
+        enabled = bool(
+            flag.get("enabled", flag.get("safe_default", False))
+        ) and stable_rollout(
             code, ctx.subject_key, int(flag.get("rollout_percentage", 100))
         )
         if any(not out.get(dep, False) for dep in flag.get("dependencies", [])):
@@ -221,9 +295,63 @@ def evaluate_flags(
     return out
 
 
+@admin_router.post("/media/logo")
+def upload_brand_logo(
+    request: Request,
+    file: Annotated[UploadFile, File()],
+    alt_text: Annotated[str, Form(min_length=1, max_length=160)],
+    admin: Annotated[Any, Depends(current_admin)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, object]:
+    if not _permitted(db, admin.id, "media_assets.manage"):
+        raise _err(403, "forbidden")
+    reference = "BRAND-" + uuid4().hex[:24]
+    storage = configured_brand_media_storage()
+    try:
+        stored = storage.store(reference, file.file, file.content_type or "")
+    except InvalidBrandImage as exc:
+        _security(db, admin.id, "configuration.media_rejected", request)
+        db.commit()
+        raise _err(422, "invalid_media") from exc
+    row = MediaAssetModel(
+        public_reference=reference,
+        role="BRAND_LOGO",
+        status="READY",
+        mime_type=stored.media_type,
+        byte_size=stored.byte_size,
+        width=stored.width,
+        height=stored.height,
+        digest=stored.digest,
+        alt_text=alt_text.strip(),
+        storage_key=reference,
+    )
+    try:
+        db.add(row)
+        _audit(
+            db,
+            admin.id,
+            "configuration.media_uploaded",
+            request,
+            {"reference": reference, "role": "BRAND_LOGO"},
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        storage.delete(reference)
+        raise
+    return {
+        "reference": reference,
+        "url": f"/api/v1/runtime/configuration/media/{reference}",
+        "alt_text": alt_text.strip(),
+        "width": stored.width,
+        "height": stored.height,
+    }
+
+
 @admin_router.get("/dashboard")
 def dashboard(
-    admin: Annotated[Any, Depends(current_admin)], db: Annotated[Session, Depends(get_db_session)]
+    admin: Annotated[Any, Depends(current_admin)],
+    db: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, Any]:
     if not _permitted(db, admin.id, "configuration.read"):
         raise _err(403, "forbidden")
@@ -246,7 +374,9 @@ def get_draft(
     if not _permitted(db, admin.id, "configuration.read"):
         raise _err(403, "forbidden")
     row = db.scalar(
-        select(ConfigurationDraftModel).where(ConfigurationDraftModel.reference == reference)
+        select(ConfigurationDraftModel).where(
+            ConfigurationDraftModel.reference == reference
+        )
     )
     if not row:
         raise _err(404, "draft_not_found")
@@ -293,7 +423,9 @@ def update_section(
     if not _permitted(db, admin.id, "configuration.manage"):
         raise _err(403, "forbidden")
     row = db.scalar(
-        select(ConfigurationDraftModel).where(ConfigurationDraftModel.reference == reference)
+        select(ConfigurationDraftModel).where(
+            ConfigurationDraftModel.reference == reference
+        )
     )
     if not row or row.status not in {"DRAFT", "VALIDATION_FAILED", "READY_FOR_REVIEW"}:
         raise _err(404, "draft_not_found")
@@ -315,7 +447,13 @@ def update_section(
     row.version = draft.version
     row.status = "DRAFT"
     row.updated_at = datetime.now(UTC)
-    _audit(db, admin.id, "configuration.section_changed", request, {"section": body.section})
+    _audit(
+        db,
+        admin.id,
+        "configuration.section_changed",
+        request,
+        {"section": body.section},
+    )
     return {
         "reference": reference,
         "version": row.version,
@@ -334,7 +472,9 @@ def validate_draft(
     if not _permitted(db, admin.id, "configuration.manage"):
         raise _err(403, "forbidden")
     row = db.scalar(
-        select(ConfigurationDraftModel).where(ConfigurationDraftModel.reference == reference)
+        select(ConfigurationDraftModel).where(
+            ConfigurationDraftModel.reference == reference
+        )
     )
     if not row:
         raise _err(404, "draft_not_found")
@@ -362,7 +502,9 @@ def preview(
     if not _permitted(db, admin.id, "configuration.preview"):
         raise _err(403, "forbidden")
     draft = db.scalar(
-        select(ConfigurationDraftModel).where(ConfigurationDraftModel.reference == reference)
+        select(ConfigurationDraftModel).where(
+            ConfigurationDraftModel.reference == reference
+        )
     )
     if not draft:
         raise _err(404, "draft_not_found")
@@ -403,7 +545,9 @@ def publish_draft(
     if not _permitted(db, admin.id, "configuration.publish"):
         raise _err(403, "forbidden")
     row = db.scalar(
-        select(ConfigurationDraftModel).where(ConfigurationDraftModel.reference == reference)
+        select(ConfigurationDraftModel).where(
+            ConfigurationDraftModel.reference == reference
+        )
     )
     if not row:
         raise _err(404, "draft_not_found")
@@ -413,7 +557,10 @@ def publish_draft(
         .with_for_update()
     )
     try:
-        publish(Draft(reference=row.reference, snapshot=row.snapshot, version=row.version), None)
+        publish(
+            Draft(reference=row.reference, snapshot=row.snapshot, version=row.version),
+            None,
+        )
     except ValueError as exc:
         raise _err(400, str(exc)) from exc
     release_reference = "rel_" + uuid4().hex[:16]
@@ -440,12 +587,21 @@ def publish_draft(
     etag = _etag(row.snapshot)
     db.add(
         RuntimeConfigurationSnapshotModel(
-            release_id=release.id, version=release.version, etag=etag, public_snapshot=row.snapshot
+            release_id=release.id,
+            version=release.version,
+            etag=etag,
+            public_snapshot=row.snapshot,
         )
     )
     row.status = "PUBLISHED"
-    _audit(db, admin.id, "configuration.published", request, {"release": release_reference})
-    return {"release_reference": release_reference, "version": release.version, "etag": etag}
+    _audit(
+        db, admin.id, "configuration.published", request, {"release": release_reference}
+    )
+    return {
+        "release_reference": release_reference,
+        "version": release.version,
+        "etag": etag,
+    }
 
 
 @admin_router.post("/releases/{reference}/rollback")

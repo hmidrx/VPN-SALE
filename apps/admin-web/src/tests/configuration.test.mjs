@@ -15,3 +15,9 @@ assert.doesNotMatch(studio, /textarea[^>]*json/i);
 const types = readFileSync(new URL('../configuration/types.ts', import.meta.url), 'utf8');
 assert.match(types, /configuration\.rollback/);
 assert.match(types, /media_assets\.manage/);
+
+assert.match(studio, /لوگوی محصول/);
+assert.match(studio, /uploadLogo/);
+assert.match(studio, /logo_asset_reference/);
+assert.match(api, /FormData/);
+assert.match(api, /configuration\/media\/logo/);

@@ -60,12 +60,17 @@ def default_menu_registry() -> MenuRegistry:
         ("refresh", "refresh", 120, CallbackAction.MENU),
         ("home", "open_app", 130, CallbackAction.MENU),
     ):
-        registry.register(MenuItem(item_id, label_key, MenuTarget.CALLBACK, order, action=action))
+        registry.register(
+            MenuItem(item_id, label_key, MenuTarget.CALLBACK, order, action=action)
+        )
     return registry
 
 
 def as_button_rows(
-    registry: MenuRegistry, status: AccountStatus, locale: str, builder: MiniAppUrlBuilder
+    registry: MenuRegistry,
+    status: AccountStatus,
+    locale: str,
+    builder: MiniAppUrlBuilder,
 ) -> list[list[dict[str, str]]]:
     rows: list[list[dict[str, str]]] = []
     for item in registry.visible(status):
@@ -73,7 +78,9 @@ def as_button_rows(
         if item.target == MenuTarget.MINI_APP and item.route is not None:
             rows.append([{"text": label, "web_app_url": builder.build(item.route)}])
         elif item.action is not None:
-            rows.append([{"text": label, "callback_data": BotCallback(item.action).pack()}])
+            rows.append(
+                [{"text": label, "callback_data": BotCallback(item.action).pack()}]
+            )
     return rows
 
 
@@ -101,14 +108,20 @@ SAFE_RUNTIME_ACTIONS = frozenset(
 )
 
 
-def runtime_menu_rows(menu: list[dict[str, object]], locale: str) -> list[list[dict[str, str]]]:
+def runtime_menu_rows(
+    menu: list[dict[str, object]], locale: str
+) -> list[list[dict[str, str]]]:
     action_map: dict[str, BotCallback] = {
         "OPEN_STORE": BotCallback(CallbackAction.BUY_SERVICE),
         "OPEN_SERVICES": BotCallback(CallbackAction.MY_SERVICES),
         "OPEN_WALLET": BotCallback(CallbackAction.WALLET),
         "OPEN_WALLET_TOPUP": BotCallback(CallbackAction.TOP_UP),
-        "OPEN_ORDERS": BotCallback(CallbackAction.OPEN_WEB_APP),
-        "OPEN_PAYMENTS": BotCallback(CallbackAction.OPEN_WEB_APP),
+        "OPEN_ORDERS": BotCallback(
+            CallbackAction.OPEN_WEB_APP, MiniAppRoute.ORDERS.value
+        ),
+        "OPEN_PAYMENTS": BotCallback(
+            CallbackAction.OPEN_WEB_APP, MiniAppRoute.PAYMENTS.value
+        ),
         "OPEN_PROFILE": BotCallback(CallbackAction.PROFILE),
         "OPEN_SECURITY": BotCallback(CallbackAction.SECURITY),
         "OPEN_SUPPORT": BotCallback(CallbackAction.SUPPORT),
@@ -116,7 +129,9 @@ def runtime_menu_rows(menu: list[dict[str, object]], locale: str) -> list[list[d
         "SEARCH_GUIDES": BotCallback(CallbackAction.SEARCH_GUIDES),
         "SHOW_FAQ": BotCallback(CallbackAction.SHOW_FAQ),
         "OPEN_STATUS_PAGE": BotCallback(CallbackAction.OPEN_STATUS_PAGE),
-        "OPEN_MINI_APP": BotCallback(CallbackAction.OPEN_WEB_APP),
+        "OPEN_MINI_APP": BotCallback(
+            CallbackAction.OPEN_WEB_APP, MiniAppRoute.HOME.value
+        ),
         "SHOW_HELP": BotCallback(CallbackAction.HELP),
         "SHOW_CONTACT": BotCallback(CallbackAction.SUPPORT),
         "GO_HOME": BotCallback(CallbackAction.HOME),

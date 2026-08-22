@@ -13,13 +13,19 @@ from telegram_bot.application.identity import (
 from telegram_bot.application.payloads import parse_start_payload
 from telegram_bot.callbacks import BotCallback, CallbackAction
 from telegram_bot.config import BotSettings
-from telegram_bot.conversation import ConversationStoreV2, DurableMemoryConversationStore
+from telegram_bot.conversation import (
+    ConversationStoreV2,
+    DurableMemoryConversationStore,
+)
 from telegram_bot.formatting import format_date, format_toman
 from telegram_bot.idempotency import InMemoryUpdateIdempotency
-from telegram_bot.internal_api import AuthoritativePrivateApiError, PurchaseOutcomeUnknown
+from telegram_bot.internal_api import (
+    AuthoritativePrivateApiError,
+    PurchaseOutcomeUnknown,
+)
 from telegram_bot.localization import t
 from telegram_bot.menu import MenuRegistry, default_menu_registry
-from telegram_bot.mini_app import MiniAppUrlBuilder
+from telegram_bot.mini_app import MiniAppRoute, MiniAppUrlBuilder
 from telegram_bot.observability import BotMetrics
 from telegram_bot.portal import (
     CustomerContext,
@@ -115,12 +121,18 @@ class BotCommandHandler:
         self.settings = settings
         self.identity = identity
         self.idempotency = idempotency or InMemoryUpdateIdempotency()
-        self.rate_limiter = rate_limiter or InMemoryBotRateLimiter(settings.rate_limit_secret)
-        self.in_flight_callbacks = InFlightCallbackDeduplicator(settings.rate_limit_secret)
+        self.rate_limiter = rate_limiter or InMemoryBotRateLimiter(
+            settings.rate_limit_secret
+        )
+        self.in_flight_callbacks = InFlightCallbackDeduplicator(
+            settings.rate_limit_secret
+        )
         self.registry = registry or default_menu_registry()
         self.metrics = metrics or BotMetrics()
         self.url_builder = MiniAppUrlBuilder(
-            settings.mini_app_base_url, settings.mini_app_allowed_hosts, settings.production_like
+            settings.mini_app_base_url,
+            settings.mini_app_allowed_hosts,
+            settings.production_like,
         )
         self.portal = portal or InMemoryCustomerPortal()
         self.conversations = conversations or DurableMemoryConversationStore()
@@ -165,7 +177,9 @@ class BotCommandHandler:
             "/support": self._screen_id.SUPPORT,
         }
         if command.command in command_screens:
-            return self._render(user, command_screens[command.command], locale, push=False)
+            return self._render(
+                user, command_screens[command.command], locale, push=False
+            )
         if command.command == "/privacy":
             return self._render(user, self._screen_id.PRIVACY, locale)
         if command.command == "/cancel":
@@ -200,7 +214,9 @@ class BotCommandHandler:
             return self._single(
                 "مبلغ معتبر و حداقل ۱۰۰٬۰۰۰ تومان ارسال کنید.", self._topup_presets()
             )
-        self.conversations.save(self._conversation_key(message.user), state.review_topup(amount))
+        self.conversations.save(
+            self._conversation_key(message.user), state.review_topup(amount)
+        )
         return self._single(
             f"مبلغ: {amount:,} تومان\nروش: کارت‌به‌کارت\n\nمبلغ را تأیید می‌کنید؟",
             [
@@ -211,11 +227,15 @@ class BotCommandHandler:
                     },
                     {
                         "text": "✅ تأیید و ادامه",
-                        "callback_data": BotCallback(CallbackAction.CONFIRM_TOP_UP).pack(),
+                        "callback_data": BotCallback(
+                            CallbackAction.CONFIRM_TOP_UP
+                        ).pack(),
                     },
                     {
                         "text": "لغو",
-                        "callback_data": BotCallback(CallbackAction.CANCEL_CONVERSATION).pack(),
+                        "callback_data": BotCallback(
+                            CallbackAction.CANCEL_CONVERSATION
+                        ).pack(),
                     },
                 ]
             ],
@@ -308,17 +328,25 @@ class BotCommandHandler:
             [
                 {
                     "text": "📋 درخواست‌های کارت‌به‌کارت",
-                    "callback_data": BotCallback(CallbackAction.LIST_MANUAL_TOPUPS).pack(),
+                    "callback_data": BotCallback(
+                        CallbackAction.LIST_MANUAL_TOPUPS
+                    ).pack(),
                 }
             ],
         ]
 
-    def _start_topup(self, user: IncomingUser, locale: str, update_id: int) -> HandlerResult:
+    def _start_topup(
+        self, user: IncomingUser, locale: str, update_id: int
+    ) -> HandlerResult:
         _ = locale
         key = self._conversation_key(user)
-        state = self.conversations.get(key, now_utc()).start_topup(f"tg-topup:{update_id}")
+        state = self.conversations.get(key, now_utc()).start_topup(
+            f"tg-topup:{update_id}"
+        )
         self.conversations.save(key, state)
-        return self._single("مبلغ افزایش موجودی را به تومان ارسال کنید.", self._topup_presets())
+        return self._single(
+            "مبلغ افزایش موجودی را به تومان ارسال کنید.", self._topup_presets()
+        )
 
     @staticmethod
     def _topup_status(status: str) -> str:
@@ -338,7 +366,9 @@ class BotCommandHandler:
             [
                 {
                     "text": "◀️ بازگشت",
-                    "callback_data": BotCallback(CallbackAction.LIST_MANUAL_TOPUPS).pack(),
+                    "callback_data": BotCallback(
+                        CallbackAction.LIST_MANUAL_TOPUPS
+                    ).pack(),
                 },
                 {
                     "text": "🏠 منوی اصلی",
@@ -380,9 +410,13 @@ class BotCommandHandler:
     ) -> HandlerResult:
         if not reference:
             return self._stale(locale)
-        request = self.portal.manual_topup(self._portal_context(user, locale), reference)
+        request = self.portal.manual_topup(
+            self._portal_context(user, locale), reference
+        )
         if request is None:
-            return self._callback_message("این درخواست پیدا نشد.", self._manual_topup_back_rows())
+            return self._callback_message(
+                "این درخواست پیدا نشد.", self._manual_topup_back_rows()
+            )
         terminal = request.status in {"APPROVED", "REJECTED", "CANCELLED", "EXPIRED"}
         if terminal:
             self._clear_manual_topup_state(user)
@@ -444,13 +478,18 @@ class BotCommandHandler:
     def _cancel_topup_button(reference: str) -> dict[str, str]:
         return {
             "text": "❌ لغو درخواست",
-            "callback_data": BotCallback(CallbackAction.CANCEL_MANUAL_TOPUP, reference).pack(),
+            "callback_data": BotCallback(
+                CallbackAction.CANCEL_MANUAL_TOPUP, reference
+            ).pack(),
         }
 
     def _clear_manual_topup_state(self, user: IncomingUser) -> None:
         key = self._conversation_key(user)
         state = self.conversations.get(key, now_utc())
-        if state.conversation_kind == "manual_topup" or state.active_manual_topup_reference:
+        if (
+            state.conversation_kind == "manual_topup"
+            or state.active_manual_topup_reference
+        ):
             self.conversations.save(
                 key,
                 replace(
@@ -474,7 +513,9 @@ class BotCommandHandler:
             return self._callback_message(t(locale, "group_ignored"), [])
         user = callback.user
         locale = self._customer_locale(user)
-        in_flight_key = self.in_flight_callbacks.claim(user.telegram_user_id, callback.data or "")
+        in_flight_key = self.in_flight_callbacks.claim(
+            user.telegram_user_id, callback.data or ""
+        )
         if in_flight_key is None:
             return HandlerResult(True, True, ())
         try:
@@ -589,7 +630,9 @@ class BotCommandHandler:
                 if prefs is None:
                     rendered = self.renderer.notification_error(locale)
                 else:
-                    rendered = self.renderer.notifications(locale, prefs, mutation_error=True)
+                    rendered = self.renderer.notifications(
+                        locale, prefs, mutation_error=True
+                    )
             return self._callback_message(rendered.text, rendered.rows)
         if callback.action == CallbackAction.TOP_UP:
             result = self._start_topup(user, locale, update_id)
@@ -606,11 +649,15 @@ class BotCommandHandler:
                         [
                             {
                                 "text": "✅ تأیید و ادامه",
-                                "callback_data": BotCallback(CallbackAction.CONFIRM_TOP_UP).pack(),
+                                "callback_data": BotCallback(
+                                    CallbackAction.CONFIRM_TOP_UP
+                                ).pack(),
                             },
                             {
                                 "text": "تغییر مبلغ",
-                                "callback_data": BotCallback(CallbackAction.TOP_UP).pack(),
+                                "callback_data": BotCallback(
+                                    CallbackAction.TOP_UP
+                                ).pack(),
                             },
                             {
                                 "text": "لغو",
@@ -623,7 +670,9 @@ class BotCommandHandler:
                 )
             return result
         if callback.action == CallbackAction.SELECT_PLAN:
-            plan = self.portal.purchase_plan(self._portal_context(user, locale), callback.value)
+            plan = self.portal.purchase_plan(
+                self._portal_context(user, locale), callback.value
+            )
             if plan is None:
                 return self._stale(locale)
             balance = self.portal.wallet_balance(self._portal_context(user, locale))[0]
@@ -643,7 +692,9 @@ class BotCommandHandler:
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
-            state = state.start_purchase(plan.reference, reviewed, f"tg-buy:{update_id}")
+            state = state.start_purchase(
+                plan.reference, reviewed, f"tg-buy:{update_id}"
+            )
             self.conversations.save(key, state)
             details = (
                 f"🛒 بررسی سفارش\n\nپلن: {plan.title}\nموقعیت: {plan.location_label}\n"
@@ -653,18 +704,23 @@ class BotCommandHandler:
             )
             if balance < plan.price_toman:
                 return self._callback_message(
-                    details + f"\n\nمبلغ کسری: {format_toman(plan.price_toman - balance)}",
+                    details
+                    + f"\n\nمبلغ کسری: {format_toman(plan.price_toman - balance)}",
                     [
                         [
                             {
                                 "text": "➕ افزایش موجودی",
-                                "callback_data": BotCallback(CallbackAction.TOP_UP).pack(),
+                                "callback_data": BotCallback(
+                                    CallbackAction.TOP_UP
+                                ).pack(),
                             }
                         ],
                         [
                             {
                                 "text": "◀️ بازگشت به پلن‌ها",
-                                "callback_data": BotCallback(CallbackAction.BUY_SERVICE).pack(),
+                                "callback_data": BotCallback(
+                                    CallbackAction.BUY_SERVICE
+                                ).pack(),
                             }
                         ],
                     ],
@@ -675,13 +731,17 @@ class BotCommandHandler:
                     [
                         {
                             "text": "✅ تأیید و خرید",
-                            "callback_data": BotCallback(CallbackAction.CONFIRM_PURCHASE).pack(),
+                            "callback_data": BotCallback(
+                                CallbackAction.CONFIRM_PURCHASE
+                            ).pack(),
                         }
                     ],
                     [
                         {
                             "text": "✏️ تغییر انتخاب",
-                            "callback_data": BotCallback(CallbackAction.BUY_SERVICE).pack(),
+                            "callback_data": BotCallback(
+                                CallbackAction.BUY_SERVICE
+                            ).pack(),
                         },
                         {
                             "text": "◀️ بازگشت",
@@ -691,7 +751,9 @@ class BotCommandHandler:
                     [
                         {
                             "text": "❌ لغو خرید",
-                            "callback_data": BotCallback(CallbackAction.CANCEL_CONVERSATION).pack(),
+                            "callback_data": BotCallback(
+                                CallbackAction.CANCEL_CONVERSATION
+                            ).pack(),
                         }
                     ],
                 ],
@@ -715,14 +777,17 @@ class BotCommandHandler:
                             {
                                 "text": "🔄 بررسی وضعیت",
                                 "callback_data": BotCallback(
-                                    CallbackAction.PURCHASE_STATUS, result.order_reference
+                                    CallbackAction.PURCHASE_STATUS,
+                                    result.order_reference,
                                 ).pack(),
                             }
                         ],
                         [
                             {
                                 "text": "🏠 منوی اصلی",
-                                "callback_data": BotCallback(CallbackAction.HOME).pack(),
+                                "callback_data": BotCallback(
+                                    CallbackAction.HOME
+                                ).pack(),
                             }
                         ],
                     ],
@@ -762,7 +827,9 @@ class BotCommandHandler:
                         [
                             {
                                 "text": "🏠 منوی اصلی",
-                                "callback_data": BotCallback(CallbackAction.HOME).pack(),
+                                "callback_data": BotCallback(
+                                    CallbackAction.HOME
+                                ).pack(),
                             }
                         ],
                     ],
@@ -774,13 +841,17 @@ class BotCommandHandler:
                         [
                             {
                                 "text": "💳 مشاهده کیف پول",
-                                "callback_data": BotCallback(CallbackAction.WALLET).pack(),
+                                "callback_data": BotCallback(
+                                    CallbackAction.WALLET
+                                ).pack(),
                             }
                         ],
                         [
                             {
                                 "text": "◀️ بازگشت به پلن‌ها",
-                                "callback_data": BotCallback(CallbackAction.BUY_SERVICE).pack(),
+                                "callback_data": BotCallback(
+                                    CallbackAction.BUY_SERVICE
+                                ).pack(),
                             }
                         ],
                     ],
@@ -792,13 +863,17 @@ class BotCommandHandler:
                         [
                             {
                                 "text": "◀️ بازگشت به پلن‌ها",
-                                "callback_data": BotCallback(CallbackAction.BUY_SERVICE).pack(),
+                                "callback_data": BotCallback(
+                                    CallbackAction.BUY_SERVICE
+                                ).pack(),
                             }
                         ],
                         [
                             {
                                 "text": "🏠 منوی اصلی",
-                                "callback_data": BotCallback(CallbackAction.HOME).pack(),
+                                "callback_data": BotCallback(
+                                    CallbackAction.HOME
+                                ).pack(),
                             }
                         ],
                     ],
@@ -837,14 +912,20 @@ class BotCommandHandler:
                         [
                             {
                                 "text": "◀️ بازگشت به پلن‌ها",
-                                "callback_data": BotCallback(CallbackAction.BUY_SERVICE).pack(),
+                                "callback_data": BotCallback(
+                                    CallbackAction.BUY_SERVICE
+                                ).pack(),
                             }
                         ],
                     ],
                 )
             self.conversations.save(
                 key,
-                replace(state, expected_input=None, active_order_reference=result.order_reference),
+                replace(
+                    state,
+                    expected_input=None,
+                    active_order_reference=result.order_reference,
+                ),
             )
             if result.refunded:
                 text = "ساخت سرویس کامل نشد و مبلغ سفارش به کیف پول شما بازگردانده شد."
@@ -881,7 +962,9 @@ class BotCommandHandler:
                 ],
             )
         if callback.action == CallbackAction.PURCHASE_STATUS:
-            result = self.portal.purchase_order(self._portal_context(user, locale), callback.value)
+            result = self.portal.purchase_order(
+                self._portal_context(user, locale), callback.value
+            )
             if result is None:
                 return self._stale(locale)
             if result.refunded:
@@ -939,7 +1022,9 @@ class BotCommandHandler:
                     [
                         {
                             "text": "💳 مشاهده اطلاعات واریز",
-                            "web_app_url": self.url_builder.manual_topup(request.reference),
+                            "web_app_url": self.url_builder.manual_topup(
+                                request.reference
+                            ),
                         }
                     ]
                 ]
@@ -1028,15 +1113,30 @@ class BotCommandHandler:
         if callback.action == CallbackAction.SET_LANGUAGE:
             return self._stale(locale)
         if callback.action == CallbackAction.OPEN_WEB_APP:
+            try:
+                route = MiniAppRoute(callback.value or MiniAppRoute.HOME.value)
+            except ValueError:
+                return self._stale(locale)
             return self._callback_message(
-                "🌐 نسخه وب برای دسترسی به امکانات تکمیلی حساب در دسترس است.",
-                self.renderer.nav_rows(locale),
+                "نسخه یکپارچه حساب آماده است؛ ادامه این بخش را با همان حساب در مینی‌اپ انجام دهید.",
+                [
+                    [
+                        {
+                            "text": "باز کردن مینی‌اپ",
+                            "web_app_url": self.url_builder.build(route),
+                        }
+                    ],
+                    *self.renderer.nav_rows(locale),
+                ],
             )
         if callback.action == CallbackAction.OPEN_SERVICE:
-            service = self.portal.service(self._portal_context(user, locale), callback.value)
+            service = self.portal.service(
+                self._portal_context(user, locale), callback.value
+            )
             if service is None:
                 return self._callback_message(
-                    "این سرویس پیدا نشد یا متعلق به شما نیست.", self.renderer.nav_rows(locale)
+                    "این سرویس پیدا نشد یا متعلق به شما نیست.",
+                    self.renderer.nav_rows(locale),
                 )
             status_label = {
                 "active": "فعال",
@@ -1046,7 +1146,8 @@ class BotCommandHandler:
                 "suspended": "محدود",
             }.get(service.status.casefold(), "در حال بررسی")
             return self._callback_message(
-                f"{service.plan_name}\nوضعیت: {status_label}", self.renderer.nav_rows(locale)
+                f"{service.plan_name}\nوضعیت: {status_label}",
+                self.renderer.nav_rows(locale),
             )
         if callback.action in {
             CallbackAction.OPEN_SUBSCRIPTION,
@@ -1108,7 +1209,9 @@ class BotCommandHandler:
             profile = self.portal.profile(context)
             services = self.portal.services(context)
             active = [s for s in services if s.status.casefold() == "active"]
-            nearest = min((s.expires_at for s in active if s.expires_at is not None), default=None)
+            nearest = min(
+                (s.expires_at for s in active if s.expires_at is not None), default=None
+            )
             data = DashboardData(
                 user.first_name or profile.display_name,
                 self._safe_call(lambda: self.portal.wallet_balance(context)[0]),
@@ -1127,9 +1230,13 @@ class BotCommandHandler:
                     runtime_configuration = None
             rendered = self.renderer.render_home(data, locale, runtime_configuration)
         elif screen_id == ScreenId.PROFILE:
-            rendered = self.renderer.info(screen_id, locale, profile=self.portal.profile(context))
+            rendered = self.renderer.info(
+                screen_id, locale, profile=self.portal.profile(context)
+            )
         elif screen_id == ScreenId.SERVICES:
-            rendered = self.renderer.info(screen_id, locale, services=self.portal.services(context))
+            rendered = self.renderer.info(
+                screen_id, locale, services=self.portal.services(context)
+            )
         elif screen_id == ScreenId.NOTIFICATIONS:
             try:
                 rendered = self.renderer.notifications(
@@ -1148,7 +1255,8 @@ class BotCommandHandler:
             plans = self.portal.purchase_catalog(context)
             if not plans:
                 return self._callback_message(
-                    "در حال حاضر پلن قابل خریدی وجود ندارد.", self.renderer.nav_rows(locale)
+                    "در حال حاضر پلن قابل خریدی وجود ندارد.",
+                    self.renderer.nav_rows(locale),
                 )
             lines = [
                 f"• {p.title} — {p.traffic_gb:,} گیگابایت — "
@@ -1182,7 +1290,14 @@ class BotCommandHandler:
         _ = locale
         return self._callback_message(
             t("fa", "stale"),
-            [[{"text": "🏠 منوی اصلی", "callback_data": BotCallback(CallbackAction.HOME).pack()}]],
+            [
+                [
+                    {
+                        "text": "🏠 منوی اصلی",
+                        "callback_data": BotCallback(CallbackAction.HOME).pack(),
+                    }
+                ]
+            ],
         )
 
     def _customer_locale(self, user: IncomingUser) -> str:
@@ -1208,7 +1323,9 @@ class BotCommandHandler:
         return HandlerResult(True, False, (OutgoingMessage(text, rows),))
 
     def _portal_context(self, user: IncomingUser, locale: str) -> CustomerContext:
-        return CustomerContext(f"user-{user.telegram_user_id}", user.telegram_user_id, "fa")
+        return CustomerContext(
+            f"user-{user.telegram_user_id}", user.telegram_user_id, "fa"
+        )
 
     def _conversation_key(self, user: IncomingUser) -> str:
         return f"tg:{user.telegram_user_id}"

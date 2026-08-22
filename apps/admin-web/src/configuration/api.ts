@@ -25,6 +25,8 @@ export type ConfigurationSnapshot = {
     support_url: string;
     website_url: string;
     mini_app_url: string;
+    logo_asset_reference: string;
+    logo_alt_text: string;
   };
   theme: {
     light: ThemeMode;
@@ -52,7 +54,7 @@ async function parseError(response: Response): Promise<ConfigurationApiError> {
 async function request<T>(path: string, init: RequestInit & { csrf?: boolean; retry?: boolean } = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("accept", "application/json");
-  if (init.body) headers.set("content-type", "application/json");
+  if (init.body && !(init.body instanceof FormData)) headers.set("content-type", "application/json");
   const token = getAccessToken();
   if (token) headers.set("authorization", `Bearer ${token}`);
   if (init.csrf) { const csrf = getCsrfToken(); if (csrf) headers.set("x-csrf-token", csrf); }
@@ -64,8 +66,11 @@ async function request<T>(path: string, init: RequestInit & { csrf?: boolean; re
   if (!response.ok) throw await parseError(response);
   return response.json() as Promise<T>;
 }
+export type UploadedBrandLogo = { reference: string; url: string; alt_text: string; width: number; height: number };
+
 export const configurationApi = {
   dashboard: () => request<ConfigurationDashboard>("/dashboard"),
+  uploadLogo: (file: File, altText: string) => { const body = new FormData(); body.set("file", file); body.set("alt_text", altText); return request<UploadedBrandLogo>("/media/logo", { method: "POST", body, csrf: true }); },
   createDraft: () => request<ConfigurationDraft>("/drafts", { method: "POST", body: JSON.stringify({ clone_active: true }), csrf: true }),
   getDraft: (reference: string) => request<ConfigurationDraft>(`/drafts/${encodeURIComponent(reference)}`),
   updateSection: (reference: string, section: string, value: unknown, expectedVersion: number) => request<{ reference: string; version: number; validation_ok: boolean; issues: ValidationIssue[] }>(`/drafts/${encodeURIComponent(reference)}/sections`, { method: "PATCH", body: JSON.stringify({ section, value, expected_version: expectedVersion }), csrf: true }),

@@ -19,3 +19,8 @@ assert.match(app, /useRuntimeConfiguration/);
 assert.match(app, /CheckoutSessionPage/);
 assert.match(commerce, /getCheckout/);
 assert.doesNotMatch(readFileSync(new URL('../../app/customer.css', import.meta.url), 'utf8'), /DR\.PING/);
+
+const runtimeTypes = readFileSync(new URL('../runtime/runtime-types.ts', import.meta.url), 'utf8');
+assert.match(runtimeTypes, /logo_asset_reference/);
+assert.match(app, /configuration\/media/);
+assert.match(app, /href="\/app"/);

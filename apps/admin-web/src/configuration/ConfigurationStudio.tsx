@@ -54,6 +54,25 @@ export function ConfigurationStudio(): React.ReactElement {
     setSnapshot({ ...snapshot, theme: { ...snapshot.theme, [mode]: { ...snapshot.theme[mode], [key]: value } } });
   };
 
+  const uploadLogo = async (file: File) => {
+    if (!draft || !snapshot) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setStatus({ tone: "error", text: "حجم لوگو باید حداکثر ۲ مگابایت باشد." });
+      return;
+    }
+    setBusy(true);
+    try {
+      const altText = snapshot.brand.logo_alt_text?.trim() || `لوگوی ${snapshot.brand.short_name}`;
+      const uploaded = await configurationApi.uploadLogo(file, altText);
+      setSnapshot((current) => current ? { ...current, brand: { ...current.brand, logo_asset_reference: uploaded.reference, logo_alt_text: uploaded.alt_text } } : current);
+      setStatus({ tone: "ok", text: "لوگو امن‌سازی و بارگذاری شد؛ برای فعال‌شدن، تنظیمات را ذخیره و منتشر کنید." });
+    } catch (error) {
+      setStatus({ tone: "error", text: (error as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const saveAndValidate = async () => {
     if (!draft || !snapshot) return;
     setBusy(true); setIssues([]);
@@ -85,6 +104,18 @@ export function ConfigurationStudio(): React.ReactElement {
     <form onSubmit={(event) => { event.preventDefault(); void saveAndValidate(); }}>
       <fieldset disabled={!draft || busy}>
         <legend>هویت برند</legend>
+        <div className="config-logo-editor">
+          <div className="config-logo-preview">
+            {snapshot.brand.logo_asset_reference ? <img src={`/api/v1/runtime/configuration/media/${encodeURIComponent(snapshot.brand.logo_asset_reference)}`} alt={snapshot.brand.logo_alt_text || `لوگوی ${snapshot.brand.short_name}`} /> : <span aria-hidden="true">{snapshot.brand.short_name.slice(0, 2).toUpperCase()}</span>}
+          </div>
+          <div>
+            <strong>لوگوی محصول</strong>
+            <p>PNG، JPG یا WebP؛ حداکثر ۲ مگابایت. تصویر پیش از انتشار پاک‌سازی و به WebP تبدیل می‌شود.</p>
+            <label className="config-file-button">انتخاب و بارگذاری لوگو<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadLogo(file); event.currentTarget.value = ""; }} /></label>
+            {snapshot.brand.logo_asset_reference ? <button className="btn secondary" type="button" onClick={() => setBrand("logo_asset_reference", "")}>حذف از تم</button> : null}
+          </div>
+          <label>متن جایگزین لوگو<input value={snapshot.brand.logo_alt_text ?? ""} onChange={(event) => setBrand("logo_alt_text", event.target.value)} /></label>
+        </div>
         <div className="config-grid">
           <label>نام فارسی<input value={snapshot.brand.store_name.fa} onChange={(event) => setBrand("store_name", event.target.value, "fa")} /></label>
           <label>نام کوتاه<input dir="ltr" value={snapshot.brand.short_name} onChange={(event) => setBrand("short_name", event.target.value)} /></label>

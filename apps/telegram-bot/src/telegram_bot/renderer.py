@@ -34,29 +34,46 @@ class ScreenRenderer:
         runtime: dict[str, object] | None = None,
     ) -> RenderedScreen:
         wallet = format_toman(data.wallet_balance_minor)
-        active = "نامشخص" if data.active_services is None else fa_number(data.active_services)
+        active = (
+            "نامشخص"
+            if data.active_services is None
+            else fa_number(data.active_services)
+        )
         notice = (
             f"\n\n🔧 اطلاعیه نگهداری: {safe_text(data.maintenance_notice)}"
             if data.maintenance_notice
             else ""
         )
         brand_value = runtime.get("brand") if runtime else None
-        brand = cast(dict[str, object], brand_value) if isinstance(brand_value, dict) else {}
+        brand = (
+            cast(dict[str, object], brand_value)
+            if isinstance(brand_value, dict)
+            else {}
+        )
         short_name_value = brand.get("short_name")
-        short_name = short_name_value if isinstance(short_name_value, str) else "VPN-SALE"
+        short_name = (
+            short_name_value if isinstance(short_name_value, str) else "VPN-SALE"
+        )
         tagline_value = brand.get("tagline")
         tagline_map = (
-            cast(dict[str, object], tagline_value) if isinstance(tagline_value, dict) else {}
+            cast(dict[str, object], tagline_value)
+            if isinstance(tagline_value, dict)
+            else {}
         )
         tagline = tagline_map.get(locale)
         intro = safe_text(
-            tagline if isinstance(tagline, str) else f"حساب شما در {short_name} آماده است."
+            tagline
+            if isinstance(tagline, str)
+            else f"حساب شما در {short_name} آماده است."
         )
         text = (
-            f"سلام {safe_text(data.display_name)} عزیز 👋\n{intro}\n\n"
-            f"💳 موجودی: {wallet}\n"
-            f"📦 سرویس فعال: {active}\n"
-            f"⏳ نزدیک‌ترین انقضا: {safe_date(data.nearest_expiry)}{notice}"
+            f"◈ {safe_text(short_name)}  |  مرکز کنترل\n"
+            f"سلام {safe_text(data.display_name)} عزیز\n"
+            f"{intro}\n\n"
+            f"موجودی کیف پول  ·  {wallet}\n"
+            f"سرویس‌های فعال  ·  {active}\n"
+            f"نزدیک‌ترین انقضا  ·  {safe_date(data.nearest_expiry)}{notice}\n\n"
+            "یکی از کارهای زیر را انتخاب کنید:"
         )
         menu_value = runtime.get("telegram_menu") if runtime else None
         menu_items = (
@@ -81,19 +98,30 @@ class ScreenRenderer:
             }
 
         return [
-            [nav("🛒 خرید سرویس", ScreenId.BUY), nav("📦 سرویس‌های من", ScreenId.SERVICES)],
+            [
+                nav("🛒 خرید سرویس", ScreenId.BUY),
+                nav("📦 سرویس‌های من", ScreenId.SERVICES),
+            ],
             [
                 nav("💳 کیف پول", ScreenId.WALLET),
-                {"text": "➕ افزایش موجودی", "callback_data": cb(CallbackAction.TOP_UP)},
+                {
+                    "text": "➕ افزایش موجودی",
+                    "callback_data": cb(CallbackAction.TOP_UP),
+                },
             ],
             [nav("🎫 پشتیبانی", ScreenId.SUPPORT), nav("👤 حساب من", ScreenId.PROFILE)],
             [
                 nav("🔔 اعلان‌ها", ScreenId.NOTIFICATIONS),
-                {"text": "🌐 باز کردن مینی‌اپ", "callback_data": cb(CallbackAction.OPEN_WEB_APP)},
+                {
+                    "text": "🌐 باز کردن مینی‌اپ",
+                    "callback_data": cb(CallbackAction.OPEN_WEB_APP),
+                },
             ],
         ]
 
-    def nav_rows(self, locale: str, *, refresh: bool = False) -> list[list[dict[str, str]]]:
+    def nav_rows(
+        self, locale: str, *, refresh: bool = False
+    ) -> list[list[dict[str, str]]]:
         _ = locale
         rows = [
             [
@@ -102,7 +130,10 @@ class ScreenRenderer:
             ],
         ]
         if refresh:
-            rows.insert(0, [{"text": "🔄 بروزرسانی", "callback_data": cb(CallbackAction.REFRESH)}])
+            rows.insert(
+                0,
+                [{"text": "🔄 بروزرسانی", "callback_data": cb(CallbackAction.REFRESH)}],
+            )
         return rows
 
     def notifications(
@@ -129,7 +160,11 @@ class ScreenRenderer:
             "support_reply_enabled": preferences.support_reply_enabled,
             "announcements_enabled": preferences.announcements_enabled,
         }
-        prefix = "⚠️ تغییر تنظیمات ذخیره نشد.\nلطفاً دوباره تلاش کنید.\n\n" if mutation_error else ""
+        prefix = (
+            "⚠️ تغییر تنظیمات ذخیره نشد.\nلطفاً دوباره تلاش کنید.\n\n"
+            if mutation_error
+            else ""
+        )
         text = (
             f"{prefix}🔔 تنظیمات اعلان‌ها\n\n"
             "اعلان‌هایی را که مایل به دریافت آن‌ها هستید مدیریت کنید.\n\n"
@@ -235,11 +270,17 @@ class ScreenRenderer:
                 f"{format_toman(abs(tx.amount_minor))} — {safe_date(tx.created_at)}"
                 for tx in recent[:5]
             ]
-            text = f"💳 موجودی\n\n{format_toman(wallet_balance)}\n\nتراکنش‌های اخیر:\n" + (
-                "\n".join(lines) if lines else "تراکنشی ثبت نشده است."
+            text = (
+                f"💳 موجودی\n\n{format_toman(wallet_balance)}\n\nتراکنش‌های اخیر:\n"
+                + ("\n".join(lines) if lines else "تراکنشی ثبت نشده است.")
             )
             rows = [
-                [{"text": "➕ افزایش موجودی", "callback_data": cb(CallbackAction.TOP_UP)}],
+                [
+                    {
+                        "text": "➕ افزایش موجودی",
+                        "callback_data": cb(CallbackAction.TOP_UP),
+                    }
+                ],
                 [
                     {
                         "text": "📋 درخواست‌های کارت‌به‌کارت",
@@ -254,11 +295,15 @@ class ScreenRenderer:
                 [
                     {
                         "text": "🔒 حریم خصوصی",
-                        "callback_data": cb(CallbackAction.NAVIGATE, ScreenId.PRIVACY.value),
+                        "callback_data": cb(
+                            CallbackAction.NAVIGATE, ScreenId.PRIVACY.value
+                        ),
                     },
                     {
                         "text": "🔔 اعلان‌ها",
-                        "callback_data": cb(CallbackAction.NAVIGATE, ScreenId.NOTIFICATIONS.value),
+                        "callback_data": cb(
+                            CallbackAction.NAVIGATE, ScreenId.NOTIFICATIONS.value
+                        ),
                     },
                 ],
                 [
@@ -285,5 +330,7 @@ class ScreenRenderer:
                 ScreenId.HOME,
             )
         return RenderedScreen(
-            fa.get(screen, "⚠️ این بخش در حال آماده‌سازی است."), self.nav_rows(locale), screen
+            fa.get(screen, "⚠️ این بخش در حال آماده‌سازی است."),
+            self.nav_rows(locale),
+            screen,
         )

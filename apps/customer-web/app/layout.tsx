@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import Script from "next/script";
 import "./customer.css";
+import "./marketing.css";
 import { getRuntimeConfiguration } from "../src/runtime/configuration";
 import { RuntimeConfigurationProvider } from "../src/runtime/RuntimeConfigurationProvider";
 
