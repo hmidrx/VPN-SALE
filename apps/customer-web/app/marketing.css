@@ -37,7 +37,7 @@ html[data-theme="light"] {
   --marketing-shadow: 0 22px 68px rgba(37, 48, 72, .10);
 }
 
-html { scroll-behavior: smooth; }
+html { scroll-behavior: auto; }
 body {
   margin: 0;
   background: var(--marketing-bg);
