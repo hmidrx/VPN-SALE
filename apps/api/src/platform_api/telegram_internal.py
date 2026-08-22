@@ -107,7 +107,6 @@ def runtime_configuration(
     db: Database,
     x_telegram_subject: Annotated[int, Header(gt=0)],
 ) -> dict[str, object]:
-    _ = x_telegram_subject
     snapshot, _etag_value, version = _active_snapshot(db)
     _no_store(response)
     return {

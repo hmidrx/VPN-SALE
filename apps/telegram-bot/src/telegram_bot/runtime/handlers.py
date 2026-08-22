@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
+from typing import cast
 
 from telegram_bot.application.identity import (
     AccountStatus,
@@ -1109,7 +1110,9 @@ class BotCommandHandler:
             runtime_loader = getattr(self.portal, "runtime_configuration", None)
             if callable(runtime_loader):
                 try:
-                    runtime_configuration = runtime_loader(user.telegram_user_id)
+                    loaded_runtime = runtime_loader(user.telegram_user_id)
+                    if isinstance(loaded_runtime, dict):
+                        runtime_configuration = cast(dict[str, object], loaded_runtime)
                 except Exception:  # noqa: BLE001 - retain safe built-in bot fallback
                     runtime_configuration = None
             rendered = self.renderer.render_home(data, locale, runtime_configuration)

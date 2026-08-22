@@ -71,6 +71,12 @@ def _mapping(value: object, field: str) -> dict[str, object]:
     return cast(dict[str, object], value)
 
 
+def _object_list(value: object, field: str) -> list[object]:
+    if not isinstance(value, list):
+        raise PrivateApiUnavailable(f"پاسخ مدیریتی معتبر نیست: {field}")
+    return cast(list[object], value)
+
+
 class OperatorPrivatePlatformClient(ServiceManagementPrivatePlatformClient, OperatorPortal):
     def register_or_update(
         self, command: RegisterOrUpdateTelegramBotUser
@@ -102,11 +108,11 @@ class OperatorPrivatePlatformClient(ServiceManagementPrivatePlatformClient, Oper
         short_name = brand.get("short_name")
         if not isinstance(short_name, str) or not short_name.strip() or len(short_name) > 64:
             raise PrivateApiUnavailable("پاسخ برند معتبر نیست.")
-        menu = data.get("telegram_menu")
-        if not isinstance(menu, list) or len(menu) > 32:
+        menu = _object_list(data.get("telegram_menu"), "telegram_menu")
+        if len(menu) > 32:
             raise PrivateApiUnavailable("پاسخ منوی ربات معتبر نیست.")
         checked_menu: list[dict[str, object]] = []
-        for raw in cast(list[object], menu):
+        for raw in menu:
             item = _mapping(raw, "telegram_menu")
             action = item.get("action")
             labels = _mapping(item.get("label"), "telegram_menu.label")
