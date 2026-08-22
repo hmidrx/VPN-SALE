@@ -8,7 +8,7 @@ def test_runtime_defaults_expose_no_private_fields() -> None:
     assert validate_snapshot(snapshot).ok
     assert "draft" not in str(snapshot).lower()
     assert "preview" not in str(snapshot).lower()
-    assert "OPEN_SUPPORT" not in SAFE_ACTIONS
+    assert "DELETE_USER" not in SAFE_ACTIONS
 
 
 def test_migration_revision_is_single_head_candidate() -> None:
