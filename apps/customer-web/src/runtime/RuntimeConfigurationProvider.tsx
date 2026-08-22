@@ -21,14 +21,14 @@ function applyTheme(configuration: RuntimeConfiguration): void {
   set("--color-focus", theme.focus_ring_color);
 }
 
-export function RuntimeConfigurationProvider({ value, children }: { value: RuntimeConfiguration; children: React.ReactNode }): React.ReactElement {
+export function RuntimeConfigurationProvider({ value, children }: { value: RuntimeConfiguration; children: unknown }): React.ReactElement {
   React.useEffect(() => {
     applyTheme(value);
     const observer = new MutationObserver(() => applyTheme(value));
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     return () => observer.disconnect();
   }, [value]);
-  return <RuntimeConfigurationContext.Provider value={value}>{children}</RuntimeConfigurationContext.Provider>;
+  return <RuntimeConfigurationContext.Provider value={value}>{children as React.ReactNode}</RuntimeConfigurationContext.Provider>;
 }
 
 export function useRuntimeConfiguration(): RuntimeConfiguration {
