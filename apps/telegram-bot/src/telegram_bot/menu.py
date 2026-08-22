@@ -8,7 +8,6 @@ from .application.identity import AccountStatus
 from .callbacks import BotCallback, CallbackAction
 from .localization import t
 from .mini_app import MiniAppRoute, MiniAppUrlBuilder
-from .screens import ScreenId
 
 
 class MenuTarget(StrEnum):

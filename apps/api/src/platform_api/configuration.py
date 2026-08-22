@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from vpnsale_domain.configuration import Draft, compiled_defaults, publish, validate_snapshot
 from vpnsale_domain.identity import sanitize_metadata
