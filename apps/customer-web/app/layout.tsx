@@ -1,5 +1,6 @@
 import "@vpnsale/ui/theme.css";
-import type { CSSProperties, Metadata } from "react";
+import type { CSSProperties } from "react";
+import type { Metadata } from "next";
 import Script from "next/script";
 import "./customer.css";
 import { getRuntimeConfiguration } from "../src/runtime/configuration";
@@ -29,5 +30,5 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     "--color-primary": theme.primary_color,
     "--color-focus": theme.focus_ring_color,
   } as CSSProperties;
-  return <html lang="fa" dir="rtl" data-runtime-version={configuration.runtime_version} style={style}><head><Script src={TELEGRAM_BRIDGE_URL} strategy="beforeInteractive" /></head><body><RuntimeConfigurationProvider value={configuration}>{children}</RuntimeConfigurationProvider></body></html>;
+  return <html lang="fa" dir="rtl" data-runtime-version={configuration.runtime_version} style={style}><head><Script src={TELEGRAM_BRIDGE_URL} strategy="beforeInteractive" /></head><body><RuntimeConfigurationProvider value={configuration} children={children} /></body></html>;
 }
