@@ -56,9 +56,9 @@ class ScreenRenderer:
             f"◈ {safe_text(short_name)}  |  مرکز کنترل\n"
             f"سلام {safe_text(data.display_name)} عزیز\n"
             f"{intro}\n\n"
-            f"موجودی کیف پول  ·  {wallet}\n"
-            f"سرویس‌های فعال  ·  {active}\n"
-            f"نزدیک‌ترین انقضا  ·  {safe_date(data.nearest_expiry)}{notice}\n\n"
+            f"💳 موجودی: {wallet}\n"
+            f"📦 سرویس فعال: {active}\n"
+            f"⏳ نزدیک‌ترین انقضا: {safe_date(data.nearest_expiry)}{notice}\n\n"
             "یکی از کارهای زیر را انتخاب کنید:"
         )
         menu_value = runtime.get("telegram_menu") if runtime else None
