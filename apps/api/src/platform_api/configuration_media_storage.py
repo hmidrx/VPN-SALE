@@ -75,6 +75,7 @@ class LocalBrandMediaStorage:
                 ):
                     raise InvalidBrandImage("invalid brand image")
                 clean = ImageOps.exif_transpose(image)
+                assert clean is not None
                 clean.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
                 output = io.BytesIO()
                 clean.convert("RGBA").save(output, format="WEBP", lossless=True, method=6)
