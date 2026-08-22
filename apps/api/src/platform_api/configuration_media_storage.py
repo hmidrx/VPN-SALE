@@ -77,9 +77,7 @@ class LocalBrandMediaStorage:
                 clean = ImageOps.exif_transpose(image)
                 clean.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
                 output = io.BytesIO()
-                clean.convert("RGBA").save(
-                    output, format="WEBP", lossless=True, method=6
-                )
+                clean.convert("RGBA").save(output, format="WEBP", lossless=True, method=6)
                 sanitized = output.getvalue()
                 stored_width, stored_height = clean.size
         except (OSError, UnidentifiedImageError, Image.DecompressionBombError) as exc:

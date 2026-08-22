@@ -72,6 +72,4 @@ class MiniAppUrlBuilder:
         if not re.fullmatch(r"[A-Za-z0-9_-]{8,48}", reference):
             raise ValueError("invalid manual top-up reference")
         self.build(MiniAppRoute.HOME)
-        return urljoin(
-            self.base_url.rstrip("/") + "/", f"wallet/top-up/manual/{reference}"
-        )
+        return urljoin(self.base_url.rstrip("/") + "/", f"wallet/top-up/manual/{reference}")

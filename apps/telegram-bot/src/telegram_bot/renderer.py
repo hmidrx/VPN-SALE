@@ -34,37 +34,23 @@ class ScreenRenderer:
         runtime: dict[str, object] | None = None,
     ) -> RenderedScreen:
         wallet = format_toman(data.wallet_balance_minor)
-        active = (
-            "نامشخص"
-            if data.active_services is None
-            else fa_number(data.active_services)
-        )
+        active = "نامشخص" if data.active_services is None else fa_number(data.active_services)
         notice = (
             f"\n\n🔧 اطلاعیه نگهداری: {safe_text(data.maintenance_notice)}"
             if data.maintenance_notice
             else ""
         )
         brand_value = runtime.get("brand") if runtime else None
-        brand = (
-            cast(dict[str, object], brand_value)
-            if isinstance(brand_value, dict)
-            else {}
-        )
+        brand = cast(dict[str, object], brand_value) if isinstance(brand_value, dict) else {}
         short_name_value = brand.get("short_name")
-        short_name = (
-            short_name_value if isinstance(short_name_value, str) else "VPN-SALE"
-        )
+        short_name = short_name_value if isinstance(short_name_value, str) else "VPN-SALE"
         tagline_value = brand.get("tagline")
         tagline_map = (
-            cast(dict[str, object], tagline_value)
-            if isinstance(tagline_value, dict)
-            else {}
+            cast(dict[str, object], tagline_value) if isinstance(tagline_value, dict) else {}
         )
         tagline = tagline_map.get(locale)
         intro = safe_text(
-            tagline
-            if isinstance(tagline, str)
-            else f"حساب شما در {short_name} آماده است."
+            tagline if isinstance(tagline, str) else f"حساب شما در {short_name} آماده است."
         )
         text = (
             f"◈ {safe_text(short_name)}  |  مرکز کنترل\n"
@@ -119,9 +105,7 @@ class ScreenRenderer:
             ],
         ]
 
-    def nav_rows(
-        self, locale: str, *, refresh: bool = False
-    ) -> list[list[dict[str, str]]]:
+    def nav_rows(self, locale: str, *, refresh: bool = False) -> list[list[dict[str, str]]]:
         _ = locale
         rows = [
             [
@@ -160,11 +144,7 @@ class ScreenRenderer:
             "support_reply_enabled": preferences.support_reply_enabled,
             "announcements_enabled": preferences.announcements_enabled,
         }
-        prefix = (
-            "⚠️ تغییر تنظیمات ذخیره نشد.\nلطفاً دوباره تلاش کنید.\n\n"
-            if mutation_error
-            else ""
-        )
+        prefix = "⚠️ تغییر تنظیمات ذخیره نشد.\nلطفاً دوباره تلاش کنید.\n\n" if mutation_error else ""
         text = (
             f"{prefix}🔔 تنظیمات اعلان‌ها\n\n"
             "اعلان‌هایی را که مایل به دریافت آن‌ها هستید مدیریت کنید.\n\n"
@@ -270,9 +250,8 @@ class ScreenRenderer:
                 f"{format_toman(abs(tx.amount_minor))} — {safe_date(tx.created_at)}"
                 for tx in recent[:5]
             ]
-            text = (
-                f"💳 موجودی\n\n{format_toman(wallet_balance)}\n\nتراکنش‌های اخیر:\n"
-                + ("\n".join(lines) if lines else "تراکنشی ثبت نشده است.")
+            text = f"💳 موجودی\n\n{format_toman(wallet_balance)}\n\nتراکنش‌های اخیر:\n" + (
+                "\n".join(lines) if lines else "تراکنشی ثبت نشده است."
             )
             rows = [
                 [
@@ -295,15 +274,11 @@ class ScreenRenderer:
                 [
                     {
                         "text": "🔒 حریم خصوصی",
-                        "callback_data": cb(
-                            CallbackAction.NAVIGATE, ScreenId.PRIVACY.value
-                        ),
+                        "callback_data": cb(CallbackAction.NAVIGATE, ScreenId.PRIVACY.value),
                     },
                     {
                         "text": "🔔 اعلان‌ها",
-                        "callback_data": cb(
-                            CallbackAction.NAVIGATE, ScreenId.NOTIFICATIONS.value
-                        ),
+                        "callback_data": cb(CallbackAction.NAVIGATE, ScreenId.NOTIFICATIONS.value),
                     },
                 ],
                 [

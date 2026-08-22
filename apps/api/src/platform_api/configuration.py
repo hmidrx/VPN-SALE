@@ -29,28 +29,24 @@ from vpnsale_domain.configuration import (
 )
 from vpnsale_domain.identity import sanitize_metadata
 
-from .configuration_models import (
-    ConfigurationDraftModel,
-    MediaAssetModel,
-    ConfigurationPreviewSessionModel,
-    ConfigurationReleaseModel,
-    ConfigurationValidationRunModel,
-    RuntimeConfigurationSnapshotModel,
-)
 from .configuration_media_storage import (
     InvalidBrandImage,
     configured_brand_media_storage,
+)
+from .configuration_models import (
+    ConfigurationDraftModel,
+    ConfigurationPreviewSessionModel,
+    ConfigurationReleaseModel,
+    ConfigurationValidationRunModel,
+    MediaAssetModel,
+    RuntimeConfigurationSnapshotModel,
 )
 from .database import get_db_session
 from .identity.models import AuditLogModel, SecurityEventModel
 from .management import _active_permissions, current_admin  # pyright: ignore[reportPrivateUsage]
 
-public_router = APIRouter(
-    prefix="/api/v1/runtime/configuration", tags=["runtime-configuration"]
-)
-admin_router = APIRouter(
-    prefix="/api/v1/admin/configuration", tags=["admin-configuration"]
-)
+public_router = APIRouter(prefix="/api/v1/runtime/configuration", tags=["runtime-configuration"])
+admin_router = APIRouter(prefix="/api/v1/admin/configuration", tags=["admin-configuration"])
 
 
 class DraftCreate(BaseModel):
@@ -81,17 +77,11 @@ class RuntimeContext(BaseModel):
 
 
 def _cid(request: Request) -> str:
-    return (
-        request.headers.get("x-request-id")
-        or request.headers.get("x-correlation-id")
-        or "local"
-    )
+    return request.headers.get("x-request-id") or request.headers.get("x-correlation-id") or "local"
 
 
 def _err(status: int, code: str) -> HTTPException:
-    return HTTPException(
-        status, detail={"code": code, "message_key": f"configuration.{code}"}
-    )
+    return HTTPException(status, detail={"code": code, "message_key": f"configuration.{code}"})
 
 
 def _permitted(db: Session, admin_id: str, perm: str) -> bool:
@@ -145,11 +135,7 @@ def _canonical_json(value: dict[str, Any]) -> str:
 
 
 def _etag(value: dict[str, Any]) -> str:
-    return (
-        'W/"cfg-'
-        + hashlib.sha256(_canonical_json(value).encode()).hexdigest()[:24]
-        + '"'
-    )
+    return 'W/"cfg-' + hashlib.sha256(_canonical_json(value).encode()).hexdigest()[:24] + '"'
 
 
 def _token_hash(value: str) -> str:
@@ -257,12 +243,7 @@ def resolve_preview(
         if row and row.expires_at.tzinfo is None
         else (row.expires_at if row else now)
     )
-    if (
-        not row
-        or row.revoked_at is not None
-        or expires_at <= now
-        or row.channel != body.channel
-    ):
+    if not row or row.revoked_at is not None or expires_at <= now or row.channel != body.channel:
         raise _err(404, "preview_not_found")
     draft = db.get(ConfigurationDraftModel, row.draft_id)
     if not draft or not validate_snapshot(draft.snapshot).ok:
@@ -284,9 +265,7 @@ def evaluate_flags(
         if not isinstance(flag_obj, dict):
             continue
         flag = cast(dict[str, Any], flag_obj)
-        enabled = bool(
-            flag.get("enabled", flag.get("safe_default", False))
-        ) and stable_rollout(
+        enabled = bool(flag.get("enabled", flag.get("safe_default", False))) and stable_rollout(
             code, ctx.subject_key, int(flag.get("rollout_percentage", 100))
         )
         if any(not out.get(dep, False) for dep in flag.get("dependencies", [])):
@@ -374,9 +353,7 @@ def get_draft(
     if not _permitted(db, admin.id, "configuration.read"):
         raise _err(403, "forbidden")
     row = db.scalar(
-        select(ConfigurationDraftModel).where(
-            ConfigurationDraftModel.reference == reference
-        )
+        select(ConfigurationDraftModel).where(ConfigurationDraftModel.reference == reference)
     )
     if not row:
         raise _err(404, "draft_not_found")
@@ -423,9 +400,7 @@ def update_section(
     if not _permitted(db, admin.id, "configuration.manage"):
         raise _err(403, "forbidden")
     row = db.scalar(
-        select(ConfigurationDraftModel).where(
-            ConfigurationDraftModel.reference == reference
-        )
+        select(ConfigurationDraftModel).where(ConfigurationDraftModel.reference == reference)
     )
     if not row or row.status not in {"DRAFT", "VALIDATION_FAILED", "READY_FOR_REVIEW"}:
         raise _err(404, "draft_not_found")
@@ -472,9 +447,7 @@ def validate_draft(
     if not _permitted(db, admin.id, "configuration.manage"):
         raise _err(403, "forbidden")
     row = db.scalar(
-        select(ConfigurationDraftModel).where(
-            ConfigurationDraftModel.reference == reference
-        )
+        select(ConfigurationDraftModel).where(ConfigurationDraftModel.reference == reference)
     )
     if not row:
         raise _err(404, "draft_not_found")
@@ -502,9 +475,7 @@ def preview(
     if not _permitted(db, admin.id, "configuration.preview"):
         raise _err(403, "forbidden")
     draft = db.scalar(
-        select(ConfigurationDraftModel).where(
-            ConfigurationDraftModel.reference == reference
-        )
+        select(ConfigurationDraftModel).where(ConfigurationDraftModel.reference == reference)
     )
     if not draft:
         raise _err(404, "draft_not_found")
@@ -545,9 +516,7 @@ def publish_draft(
     if not _permitted(db, admin.id, "configuration.publish"):
         raise _err(403, "forbidden")
     row = db.scalar(
-        select(ConfigurationDraftModel).where(
-            ConfigurationDraftModel.reference == reference
-        )
+        select(ConfigurationDraftModel).where(ConfigurationDraftModel.reference == reference)
     )
     if not row:
         raise _err(404, "draft_not_found")
@@ -594,9 +563,7 @@ def publish_draft(
         )
     )
     row.status = "PUBLISHED"
-    _audit(
-        db, admin.id, "configuration.published", request, {"release": release_reference}
-    )
+    _audit(db, admin.id, "configuration.published", request, {"release": release_reference})
     return {
         "release_reference": release_reference,
         "version": release.version,

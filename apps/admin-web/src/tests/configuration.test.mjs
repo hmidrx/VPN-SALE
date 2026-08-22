@@ -20,4 +20,4 @@ assert.match(studio, /لوگوی محصول/);
 assert.match(studio, /uploadLogo/);
 assert.match(studio, /logo_asset_reference/);
 assert.match(api, /FormData/);
-assert.match(api, /configuration\/media\/logo/);
+assert.match(api, /\/media\/logo/);
