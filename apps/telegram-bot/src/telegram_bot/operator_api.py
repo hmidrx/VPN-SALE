@@ -78,7 +78,11 @@ class OperatorPortal(Protocol):
         welcome = _mapping(data.get("welcome_template"), "welcome_template")
         return {
             "runtime_version": version,
-            "brand": {"short_name": short_name, "store_name": brand.get("store_name"), "tagline": brand.get("tagline")},
+            "brand": {
+                "short_name": short_name,
+                "store_name": brand.get("store_name"),
+                "tagline": brand.get("tagline"),
+            },
             "telegram_menu": checked_menu,
             "welcome_template": welcome,
             "maintenance": bool(data.get("maintenance", False)),

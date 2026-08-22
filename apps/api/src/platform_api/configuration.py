@@ -185,13 +185,12 @@ def resolve_preview(
         )
     )
     now = datetime.now(UTC)
-    expires_at = row.expires_at.replace(tzinfo=UTC) if row and row.expires_at.tzinfo is None else (row.expires_at if row else now)
-    if (
-        not row
-        or row.revoked_at is not None
-        or expires_at <= now
-        or row.channel != body.channel
-    ):
+    expires_at = (
+        row.expires_at.replace(tzinfo=UTC)
+        if row and row.expires_at.tzinfo is None
+        else (row.expires_at if row else now)
+    )
+    if not row or row.revoked_at is not None or expires_at <= now or row.channel != body.channel:
         raise _err(404, "preview_not_found")
     draft = db.get(ConfigurationDraftModel, row.draft_id)
     if not draft or not validate_snapshot(draft.snapshot).ok:

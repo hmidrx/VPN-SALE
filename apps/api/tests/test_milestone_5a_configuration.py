@@ -40,4 +40,9 @@ def test_private_telegram_runtime_projection_is_safe_and_no_store() -> None:
     assert '@router.get("/runtime-configuration")' in source
     assert '"telegram_menu": snapshot["telegram_menu"]' in source
     assert "_no_store(response)" in source
-    assert "provider" not in source[source.index('@router.get("/runtime-configuration")'):source.index("def _account")]
+    assert (
+        "provider"
+        not in source[
+            source.index('@router.get("/runtime-configuration")') : source.index("def _account")
+        ]
+    )
