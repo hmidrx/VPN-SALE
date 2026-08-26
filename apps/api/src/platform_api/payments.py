@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from vpnsale_domain.payments import PaymentAmount, PaymentDomainError
 
 from .database import get_db_session
+from .management import require_perm
 from .payment_models import PaymentMethodModel, PaymentMethodPolicyModel
 from .wallet import current_wallet_customer_id
 
@@ -197,7 +198,7 @@ async def handle_payment_return(intent_reference: str) -> dict[str, str]:
     }
 
 
-@admin_router.get("/methods")
+@admin_router.get("/methods", dependencies=[Depends(require_perm("payment_methods.read"))])
 async def admin_list_payment_methods(
     session: Session = DB_SESSION_DEPENDENCY,
 ) -> list[dict[str, object]]:
@@ -220,14 +221,18 @@ async def admin_list_payment_methods(
     ]
 
 
-@admin_router.post("/methods", status_code=status.HTTP_201_CREATED)
+@admin_router.post(
+    "/methods",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_perm("payment_methods.manage"))],
+)
 async def admin_create_payment_method(body: PaymentMethodAdminCreate) -> dict[str, str]:
     if body.provider_code == "fake":
         return {"code": body.code, "status": "DRAFT", "credential_state": "DEVELOPMENT_ONLY"}
     return {"code": body.code, "status": "DRAFT", "credential_state": "UNCONFIGURED"}
 
 
-@admin_router.post("/reconciliation")
+@admin_router.post("/reconciliation", dependencies=[Depends(require_perm("payments.reconcile"))])
 async def run_reconciliation() -> dict[str, object]:
     return {"status": "DRY_RUN_COMPLETE", "mismatches": []}
 
@@ -375,13 +380,19 @@ class WebhookRecoveryResponse(BaseModel):
     security_event_reference: str | None = None
 
 
-@admin_router.get("/refunds", response_model=dict[str, object])
+@admin_router.get(
+    "/refunds",
+    response_model=dict[str, object],
+    dependencies=[Depends(require_perm("payment_refunds.read"))],
+)
 async def admin_list_refunds() -> dict[str, object]:
     return {"items": [], "next_cursor": None}
 
 
 @admin_router.get(
-    "/refunds/eligibility/{settlement_reference}", response_model=RefundEligibilityResponse
+    "/refunds/eligibility/{settlement_reference}",
+    response_model=RefundEligibilityResponse,
+    dependencies=[Depends(require_perm("payment_refunds.read"))],
 )
 async def admin_refund_eligibility(settlement_reference: str) -> RefundEligibilityResponse:
     return RefundEligibilityResponse(
@@ -392,7 +403,12 @@ async def admin_refund_eligibility(settlement_reference: str) -> RefundEligibili
     )
 
 
-@admin_router.post("/refunds", response_model=AdminRefund, status_code=status.HTTP_201_CREATED)
+@admin_router.post(
+    "/refunds",
+    response_model=AdminRefund,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_perm("payment_refunds.manage"))],
+)
 async def admin_create_refund_request(body: RefundRequestCreate) -> AdminRefund:
     now = datetime.now(UTC)
     return AdminRefund(
@@ -409,7 +425,11 @@ async def admin_create_refund_request(body: RefundRequestCreate) -> AdminRefund:
     )
 
 
-@admin_router.post("/refunds/{refund_reference}/approve", response_model=AdminRefund)
+@admin_router.post(
+    "/refunds/{refund_reference}/approve",
+    response_model=AdminRefund,
+    dependencies=[Depends(require_perm("payment_refunds.approve"))],
+)
 async def admin_approve_refund(refund_reference: str, body: RefundApprovalRequest) -> AdminRefund:
     if body.approver_admin_reference == "current-admin":
         raise HTTPException(status_code=403, detail={"code": "REFUND_SELF_APPROVAL_DENIED"})
@@ -428,7 +448,11 @@ async def admin_approve_refund(refund_reference: str, body: RefundApprovalReques
     )
 
 
-@admin_router.post("/refunds/{refund_reference}/reject", response_model=AdminRefund)
+@admin_router.post(
+    "/refunds/{refund_reference}/reject",
+    response_model=AdminRefund,
+    dependencies=[Depends(require_perm("payment_refunds.approve"))],
+)
 async def admin_reject_refund(refund_reference: str, body: RefundApprovalRequest) -> AdminRefund:
     if not body.reason:
         raise HTTPException(status_code=422, detail={"code": "REFUND_REJECTION_REASON_REQUIRED"})
@@ -446,7 +470,11 @@ async def admin_reject_refund(refund_reference: str, body: RefundApprovalRequest
     )
 
 
-@admin_router.post("/refunds/{refund_reference}/retry", response_model=AdminRefund)
+@admin_router.post(
+    "/refunds/{refund_reference}/retry",
+    response_model=AdminRefund,
+    dependencies=[Depends(require_perm("payment_refunds.manage"))],
+)
 async def admin_retry_refund(refund_reference: str) -> AdminRefund:
     return AdminRefund(
         refund_reference=refund_reference,
@@ -462,7 +490,11 @@ async def admin_retry_refund(refund_reference: str) -> AdminRefund:
     )
 
 
-@admin_router.get("/reconciliation/overview", response_model=dict[str, object])
+@admin_router.get(
+    "/reconciliation/overview",
+    response_model=dict[str, object],
+    dependencies=[Depends(require_perm("payments.reconcile"))],
+)
 async def admin_reconciliation_overview() -> dict[str, object]:
     return {
         "open_critical": 0,
@@ -472,7 +504,11 @@ async def admin_reconciliation_overview() -> dict[str, object]:
     }
 
 
-@admin_router.post("/reconciliation/dry-run", response_model=ReconciliationRunResponse)
+@admin_router.post(
+    "/reconciliation/dry-run",
+    response_model=ReconciliationRunResponse,
+    dependencies=[Depends(require_perm("payments.reconcile"))],
+)
 async def admin_reconciliation_dry_run() -> ReconciliationRunResponse:
     return ReconciliationRunResponse(
         run_reference=f"pr_{uuid4().hex[:24]}",
@@ -485,7 +521,11 @@ async def admin_reconciliation_dry_run() -> ReconciliationRunResponse:
     )
 
 
-@admin_router.post("/reconciliation/repair-plan", response_model=RepairPlanResponse)
+@admin_router.post(
+    "/reconciliation/repair-plan",
+    response_model=RepairPlanResponse,
+    dependencies=[Depends(require_perm("payments.repair"))],
+)
 async def admin_repair_plan(body: RepairPlanRequest) -> RepairPlanResponse:
     blocked = body.mismatch_reference.startswith("critical")
     return RepairPlanResponse(
@@ -498,17 +538,29 @@ async def admin_repair_plan(body: RepairPlanRequest) -> RepairPlanResponse:
     )
 
 
-@admin_router.get("/late-settlements", response_model=dict[str, object])
+@admin_router.get(
+    "/late-settlements",
+    response_model=dict[str, object],
+    dependencies=[Depends(require_perm("payments.read"))],
+)
 async def admin_list_late_settlements() -> dict[str, object]:
     return {"items": [], "next_cursor": None}
 
 
-@admin_router.get("/unapplied-payments", response_model=dict[str, object])
+@admin_router.get(
+    "/unapplied-payments",
+    response_model=dict[str, object],
+    dependencies=[Depends(require_perm("payments.unapplied.read"))],
+)
 async def admin_list_unapplied_payments() -> dict[str, object]:
     return {"items": [], "next_cursor": None}
 
 
-@admin_router.post("/webhooks/{webhook_reference}/recover", response_model=WebhookRecoveryResponse)
+@admin_router.post(
+    "/webhooks/{webhook_reference}/recover",
+    response_model=WebhookRecoveryResponse,
+    dependencies=[Depends(require_perm("payment_webhooks.recover"))],
+)
 async def admin_recover_webhook(
     webhook_reference: str, body: WebhookRecoveryRequest
 ) -> WebhookRecoveryResponse:
@@ -524,7 +576,9 @@ async def admin_recover_webhook(
 
 
 @admin_router.post(
-    "/webhooks/{webhook_reference}/query-provider", response_model=WebhookRecoveryResponse
+    "/webhooks/{webhook_reference}/query-provider",
+    response_model=WebhookRecoveryResponse,
+    dependencies=[Depends(require_perm("payment_webhooks.recover"))],
 )
 async def admin_query_webhook_provider(webhook_reference: str) -> WebhookRecoveryResponse:
     return WebhookRecoveryResponse(

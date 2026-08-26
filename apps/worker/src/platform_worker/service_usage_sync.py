@@ -10,16 +10,16 @@ from uuid import UUID, uuid4
 
 import httpx
 from panel_adapters.contracts import EndpointValidator
-from panel_adapters.sanaei_3x_ui import Sanaei3xUiAdapter
-from panel_adapters.write_execution import SanaeiAuthenticatedTransport
+from panel_adapters.sanaei_3x_ui_v370 import (
+    HttpxSanaei3xUiV370Transport,
+    Sanaei3xUiV370ClientRecord,
+)
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from vpnsale_domain.providers import (
     ProviderError,
     ProviderKind,
-    ProviderRequestContext,
-    RemoteClientSnapshot,
 )
 from vpnsale_domain.usage import (
     CERTIFIED_COUNTER_SEMANTICS,
@@ -44,6 +44,7 @@ from platform_api.usage_models import (
     ServiceUsageObservationModel,
     ServiceUsageSyncRunModel,
 )
+from platform_worker.provider_v370_connection import connect_v370
 from platform_worker.real_activator import DatabaseSanaeiActivator
 
 _SYNC_INTERVAL = timedelta(minutes=5)
@@ -200,45 +201,38 @@ class ServiceUsageSyncWorker:
 
     async def _fetch_client(
         self, attachment: ServiceAttachmentModel
-    ) -> tuple[RemoteClientSnapshot, str]:
-        panel, target, _, username, password = self.resolver.provider_read_context(attachment)
-        base_url = EndpointValidator().validate(
-            panel.endpoint_origin + panel.base_path,
+    ) -> tuple[Sanaei3xUiV370ClientRecord, str]:
+        panel, target, _, credential = self.resolver.provider_read_context(attachment)
+        endpoint_origin = EndpointValidator().validate(
+            panel.endpoint_origin,
             panel.endpoint_policy,
             panel.tls_policy,
         )
-        transport: SanaeiAuthenticatedTransport | None = None
+        transport: HttpxSanaei3xUiV370Transport | None = None
         try:
-            transport = await SanaeiAuthenticatedTransport.authenticate(
-                base_url,
-                username,
-                password,
-                verify_tls=panel.tls_policy.verify_tls,
-            )
-            adapter = Sanaei3xUiAdapter()
-            inventory = await adapter.fetch_inventory(
-                ProviderRequestContext(panel, correlation_id=f"usage:{attachment.service_id}"),
-                transport,
+            transport, client = await connect_v370(
+                panel,
+                endpoint_origin,
+                credential,
             )
             remote_identity = str(UUID(attachment.remote_identity_reference or ""))
-            matches = [
-                client
-                for client in inventory.clients
-                if str(client.remote_client_identity) == remote_identity
-                and target.inbound_id in {str(value) for value in client.inbound_remote_ids}
-            ]
-            if len(matches) != 1:
+            provider_label = f"svc-{remote_identity.replace('-', '')[:20]}"
+            record = await client.read_client(provider_label)
+            record_identity = record.client.get("id", record.client.get("uuid"))
+            if (
+                record_identity is not None
+                and str(record_identity) != remote_identity
+                or int(target.inbound_id) not in record.inbound_ids
+            ):
                 raise ValueError("authoritative provider usage identity unavailable")
-            return matches[0], adapter.definition.adapter_version
+            return record, "0.7.0"
         finally:
             if transport is not None:
                 await transport.aclose()
 
     @staticmethod
-    def _counter(client: RemoteClientSnapshot) -> int | None:
-        if client.upload_bytes is None or client.download_bytes is None:
-            return None
-        return client.upload_bytes + client.download_bytes
+    def _counter(client: Sanaei3xUiV370ClientRecord) -> int | None:
+        return client.used_traffic_bytes
 
     def _account_cycle(
         self,
@@ -309,7 +303,7 @@ class ServiceUsageSyncWorker:
         self,
         service_id: str,
         attachment_id: str,
-        client: RemoteClientSnapshot,
+        client: Sanaei3xUiV370ClientRecord,
         adapter_version: str,
         observed_at: datetime,
     ) -> bool:
@@ -338,9 +332,9 @@ class ServiceUsageSyncWorker:
                 observed_at=observed_at,
                 expires_at=service.expires_at,
             )
-            scope = (
-                f"{attachment.id}:{client.inbound_remote_ids[0]}:{client.remote_client_identity}"
-            )
+            if not client.inbound_ids:
+                return False
+            scope = f"{attachment.id}:{client.inbound_ids[0]}:{client.email}"
             bucket = int(observed_at.timestamp()) // int(_SYNC_INTERVAL.total_seconds())
             idem = hashlib.sha256(f"usage:v1:{attachment.id}:{scope}:{bucket}".encode()).hexdigest()
             if db.scalar(
@@ -366,13 +360,21 @@ class ServiceUsageSyncWorker:
                 adapter_version=adapter_version,
                 observed_at=observed_at,
                 counter_scope_key=scope,
-                upload_bytes=client.upload_bytes,
-                download_bytes=client.download_bytes,
+                upload_bytes=None,
+                download_bytes=None,
                 combined_bytes=combined,
-                remote_limit_bytes=client.traffic_limit_bytes,
-                remote_expiry_at=client.expiry_at,
-                remote_enabled=client.enabled,
-                online_state=client.online,
+                remote_limit_bytes=client.total_bytes,
+                remote_expiry_at=(
+                    datetime.fromtimestamp(client.expiry_time_ms / 1000, tz=UTC)
+                    if client.expiry_time_ms > 0
+                    else None
+                ),
+                remote_enabled=(
+                    client.client.get("enable")
+                    if type(client.client.get("enable")) is bool
+                    else None
+                ),
+                online_state=None,
                 confidence=projection.confidence,
                 anomaly_flags=anomalies,
                 idempotency_key_hash=idem,

@@ -1,0 +1,46 @@
+{
+  "success": true,
+  "msg": "synthetic inbound picker",
+  "obj": [
+    {
+      "awgServer": null,
+      "enable": true,
+      "id": 101,
+      "listen": "",
+      "mtprotoDomain": "",
+      "nodeAddress": "",
+      "nodeId": null,
+      "port": 443,
+      "protocol": "vless",
+      "remark": "Synthetic VLESS",
+      "shareAddr": "",
+      "shareAddrStrategy": "",
+      "ssMethod": "",
+      "tag": "synthetic-vless-443",
+      "tlsFlowCapable": true,
+      "wgDns": "",
+      "wgMtu": 0,
+      "wgPublicKey": ""
+    },
+    {
+      "awgServer": null,
+      "enable": false,
+      "id": 202,
+      "listen": "",
+      "mtprotoDomain": "",
+      "nodeAddress": "node.example.invalid",
+      "nodeId": 7,
+      "port": 8443,
+      "protocol": "trojan",
+      "remark": "Synthetic Trojan",
+      "shareAddr": "",
+      "shareAddrStrategy": "node",
+      "ssMethod": "",
+      "tag": "synthetic-trojan-8443",
+      "tlsFlowCapable": false,
+      "wgDns": "",
+      "wgMtu": 0,
+      "wgPublicKey": ""
+    }
+  ]
+}

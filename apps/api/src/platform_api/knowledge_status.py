@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from vpnsale_domain.knowledge_status import (
     ArticleState,
@@ -21,6 +21,8 @@ from vpnsale_domain.knowledge_status import (
     normalize_search_text,
     recommend_guide,
 )
+
+from .management import require_perm
 
 public_router = APIRouter(prefix="/api/v1/education", tags=["education"])
 admin_router = APIRouter(prefix="/api/v1/admin/knowledge", tags=["admin-knowledge"])
@@ -98,7 +100,7 @@ def _public_article(article: KnowledgeArticleVersion) -> dict[str, object]:
     }
 
 
-@admin_router.post("/drafts")
+@admin_router.post("/drafts", dependencies=[Depends(require_perm("knowledge.manage"))])
 def create_draft(payload: ArticleDraftPayload) -> dict[str, object]:
     blocks = tuple(
         KnowledgeContentBlock(
@@ -133,7 +135,10 @@ def create_draft(payload: ArticleDraftPayload) -> dict[str, object]:
     }
 
 
-@admin_router.post("/articles/{article_code}/publish")
+@admin_router.post(
+    "/articles/{article_code}/publish",
+    dependencies=[Depends(require_perm("knowledge.publish"))],
+)
 def publish_article(article_code: str) -> dict[str, object]:
     article = _ARTICLES.get(article_code)
     if article is None:
@@ -210,7 +215,7 @@ def article_feedback(article_code: str, payload: FeedbackPayload) -> dict[str, o
     }
 
 
-@admin_router.post("/media/inspect")
+@admin_router.post("/media/inspect", dependencies=[Depends(require_perm("knowledge.media.read"))])
 def inspect_media(content_type: str, body: bytes = b"") -> dict[str, object]:
     inspected = EducationalMediaAsset("upload", "upload.bin", content_type, body).inspect()
     return {"state": inspected.state, "digest": inspected.digest}
@@ -232,7 +237,9 @@ def public_status(response: Response) -> dict[str, object]:
     }
 
 
-@admin_status_router.post("/incidents")
+@admin_status_router.post(
+    "/incidents", dependencies=[Depends(require_perm("status.manage_incidents"))]
+)
 def create_incident(payload: IncidentPayload) -> dict[str, object]:
     incident = StatusIncident(uuid4(), _lt(payload.title), IncidentState.INVESTIGATING)
     try:

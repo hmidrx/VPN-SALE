@@ -4,20 +4,19 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from panel_adapters.contracts import CERTIFIED_CONTRACTS
+from panel_adapters.sanaei_3x_ui_v370 import SANAEI_3X_UI_V370_CONTRACT
 from panel_adapters.vault import ProviderCredentialVault
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from vpnsale_domain.providers import ProviderCertificationStatus, ProviderKind
 
 from platform_api.database import sync_database_url
-from platform_api.fulfillment_runtime_models import FulfillmentTargetBindingModel
 from platform_api.provider_runtime_models import (
     PanelCredentialModel,
     PanelInstanceModel,
     ProviderConnectionTestModel,
 )
-from platform_api.service_models import AllocationTargetModel
+from platform_api.service_models import AllocationPolicyVersionModel, AllocationTargetModel
 
 
 class StagingPreflightError(RuntimeError):
@@ -71,7 +70,7 @@ def collect_staging_provider_readiness(
     factory: sessionmaker[Session],
 ) -> StagingProviderReadiness:
     provider_kind = ProviderKind.SANAEI_3X_UI.value
-    contract = CERTIFIED_CONTRACTS[ProviderKind.SANAEI_3X_UI]
+    contract = SANAEI_3X_UI_V370_CONTRACT
     valid_versions = {contract.release_tag, contract.release_tag.lstrip("v")}
 
     with factory() as db:
@@ -91,15 +90,9 @@ def collect_staging_provider_readiness(
         active_bindings = int(
             db.scalar(
                 select(func.count())
-                .select_from(FulfillmentTargetBindingModel)
-                .join(
-                    AllocationTargetModel,
-                    AllocationTargetModel.id == FulfillmentTargetBindingModel.allocation_target_id,
-                )
+                .select_from(AllocationPolicyVersionModel)
                 .where(
-                    FulfillmentTargetBindingModel.active.is_(True),
-                    AllocationTargetModel.provider_kind == provider_kind,
-                    AllocationTargetModel.status.in_(("ACTIVE", "ENABLED")),
+                    AllocationPolicyVersionModel.status == "PUBLISHED",
                 )
             )
             or 0
@@ -114,7 +107,7 @@ def collect_staging_provider_readiness(
                 )
                 .where(
                     PanelInstanceModel.provider_kind == provider_kind,
-                    PanelInstanceModel.status == "enabled",
+                    PanelInstanceModel.status.in_(("ACTIVE", "ENABLED", "enabled")),
                     ProviderConnectionTestModel.status
                     == ProviderCertificationStatus.CONTRACT_VERIFIED.value,
                     ProviderConnectionTestModel.detected_version.in_(valid_versions),
@@ -133,7 +126,7 @@ def collect_staging_provider_readiness(
                 )
                 .where(
                     PanelInstanceModel.provider_kind == provider_kind,
-                    PanelInstanceModel.status == "enabled",
+                    PanelInstanceModel.status.in_(("ACTIVE", "ENABLED", "enabled")),
                     PanelCredentialModel.key_version.like("aead-%"),
                 )
             )

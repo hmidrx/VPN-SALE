@@ -4,7 +4,7 @@ from __future__ import annotations
 import secrets
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -521,6 +521,20 @@ def create_checkout(
     version = db.get(ProductVersionModel, quote.product_version_id)
     if not product or not version:
         raise _err(409, request, "PRODUCT_UNAVAILABLE")
+    allocation_value = quote.validation_summary.get("allocation")
+    if not isinstance(allocation_value, dict):
+        raise _err(409, request, "ALLOCATION_POLICY_UNAVAILABLE")
+    allocation = cast(dict[str, object], allocation_value)
+    allocation_mode = allocation.get("mode")
+    is_versioned_policy = allocation_mode == "POLICY_V2" and isinstance(
+        allocation.get("policy_version_id"), str
+    )
+    is_legacy_binding = allocation_mode == "LEGACY_BINDING_V1" and (
+        allocation.get("required_target_count") == 1
+        and allocation.get("identity_strategy") == "PER_TARGET"
+    )
+    if not is_versioned_policy and not is_legacy_binding:
+        raise _err(409, request, "ALLOCATION_POLICY_UNAVAILABLE")
     InvoiceTotals(quote.subtotal_minor, 0, 0, 0, quote.final_amount_minor).validate()
     order = OrderModel(
         reference=_ref("ord"),
@@ -546,6 +560,7 @@ def create_checkout(
             "selected_options": quote.selected_options,
             "fulfillment_requirement_schema_version": "catalog.v1",
             "fulfillment_requirement_snapshot": version.fulfillment_requirements_snapshot,
+            "allocation_policy_snapshot": allocation,
             "pricing_engine_version": quote.pricing_engine_version,
             "quote_issued_at": quote.issued_at.isoformat(),
             "quote_expires_at": quote.expires_at.isoformat(),

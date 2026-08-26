@@ -192,6 +192,123 @@ def active_revision_connection(db: Session, service: ServiceModel) -> DeliveryRe
     return resolve_connection(ctx, resolution_profile, remote_identity)
 
 
+def active_revision_connections(
+    db: Session, service: ServiceModel
+) -> tuple[DeliveryResolvedConnection, ...]:
+    """Resolve every immutable target/profile pinned by a grouped delivery revision."""
+
+    primary = active_revision_connection(db, service)
+    revision = db.scalar(
+        select(DeliveryRevisionModel)
+        .where(
+            DeliveryRevisionModel.service_id == service.id,
+            DeliveryRevisionModel.status == "ACTIVE",
+        )
+        .order_by(DeliveryRevisionModel.revision_number.desc())
+        .limit(1)
+    )
+    if revision is None:
+        raise DeliveryError(
+            DeliveryErrorCode.DELIVERY_REVISION_STALE,
+            "active delivery revision missing",
+        )
+    raw_connections = revision.attachment_snapshot.get("connections")
+    if raw_connections is None:
+        return (primary,)
+    if not isinstance(raw_connections, list) or not raw_connections:
+        raise DeliveryError(
+            DeliveryErrorCode.DELIVERY_REVISION_STALE,
+            "delivery connection snapshot is invalid",
+        )
+    attachments = _required_attachments(db, service.id)
+    if len(attachments) != 1:
+        raise DeliveryError(
+            DeliveryErrorCode.DELIVERY_NOT_READY,
+            "delivery attachment cardinality invalid",
+        )
+    attachment = attachments[0]
+    remote_identity = attachment.remote_identity_reference
+    product_version = service.entitlement_snapshot.get("product_version_id")
+    expected_fingerprint = revision.credential_fingerprints.get(attachment.id)
+    if (
+        not remote_identity
+        or not isinstance(product_version, str)
+        or not isinstance(expected_fingerprint, str)
+    ):
+        raise DeliveryError(
+            DeliveryErrorCode.DELIVERY_REVISION_STALE,
+            "delivery connection identity is unavailable",
+        )
+    actual_fingerprint = hashlib.sha256(remote_identity.encode()).hexdigest()
+    if not hmac.compare_digest(expected_fingerprint, actual_fingerprint):
+        raise DeliveryError(
+            DeliveryErrorCode.DELIVERY_REVISION_STALE,
+            "delivery credential fingerprint changed",
+        )
+
+    resolved: list[DeliveryResolvedConnection] = []
+    seen_targets: set[str] = set()
+    for raw_item in cast(list[object], raw_connections):
+        if not isinstance(raw_item, dict):
+            raise DeliveryError(
+                DeliveryErrorCode.DELIVERY_REVISION_STALE,
+                "delivery connection snapshot is invalid",
+            )
+        item = cast(dict[str, object], raw_item)
+        target_id = item.get("allocation_target_id")
+        profile_version_id = item.get("profile_version_id")
+        if (
+            not isinstance(target_id, str)
+            or not isinstance(profile_version_id, str)
+            or target_id in seen_targets
+        ):
+            raise DeliveryError(
+                DeliveryErrorCode.DELIVERY_REVISION_STALE,
+                "delivery connection snapshot is invalid",
+            )
+        seen_targets.add(target_id)
+        target = db.get(AllocationTargetModel, target_id)
+        profile_row = db.get(DeliveryProfileVersionModel, profile_version_id)
+        if target is None or profile_row is None:
+            raise DeliveryError(
+                DeliveryErrorCode.DELIVERY_REVISION_STALE,
+                "delivery revision references unavailable state",
+            )
+        profile = delivery_profile_from_model(profile_row, require_published=False)
+        if not hmac.compare_digest(profile_version_id, str(profile.version_id)):
+            raise DeliveryError(
+                DeliveryErrorCode.DELIVERY_REVISION_STALE,
+                "delivery profile version changed",
+            )
+        ctx = DeliveryAttachmentContext(
+            attachment_id=UUID(attachment.id),
+            service_id=UUID(service.id),
+            allocation_target_id=UUID(target.id),
+            inbound_id=target.inbound_id,
+            panel_id=UUID(target.panel_id),
+            node_id=UUID(target.node_id) if target.node_id else None,
+            product_version_id=UUID(product_version),
+            protocol=DeliveryProtocol(target.required_protocol.upper()),
+            transport=profile.transport,
+            security=profile.security,
+            status=attachment.status,
+            verification_status=attachment.verification_status,
+            credential_fingerprint=actual_fingerprint,
+            observed_remote_identity=remote_identity,
+            required=attachment.required,
+        )
+        resolution_profile = profile
+        if profile.status is DeliveryProfileStatus.SUPERSEDED:
+            resolution_profile = replace(profile, status=DeliveryProfileStatus.PUBLISHED)
+        resolved.append(resolve_connection(ctx, resolution_profile, remote_identity))
+    if not resolved:
+        raise DeliveryError(
+            DeliveryErrorCode.DELIVERY_REVISION_STALE,
+            "delivery connection snapshot is empty",
+        )
+    return tuple(resolved)
+
+
 def _subscription_for_update(db: Session, service_id: str) -> DeliverySubscriptionModel | None:
     return db.scalar(
         select(DeliverySubscriptionModel)
@@ -422,10 +539,9 @@ def _domain_token(row: DeliverySubscriptionTokenModel) -> DeliverySubscriptionTo
 
 
 def _render_output(
-    connection: DeliveryResolvedConnection,
+    connections: tuple[DeliveryResolvedConnection, ...],
     fmt: DeliveryOutputFormat,
 ) -> str:
-    connections = (connection,)
     if fmt is DeliveryOutputFormat.PLAIN_LINKS:
         return render_plain_links(connections)
     if fmt is DeliveryOutputFormat.BASE64_LINKS:
@@ -471,9 +587,9 @@ def render_public_subscription(
     service = db.get(ServiceModel, subscription.service_id)
     if service is None:
         raise DeliveryError(DeliveryErrorCode.DELIVERY_NOT_READY, "service unavailable")
-    connection = active_revision_connection(db, service)
+    connections = active_revision_connections(db, service)
     try:
-        rendered = _render_output(connection, fmt)
+        rendered = _render_output(connections, fmt)
     except DeliveryError:
         _record_event(
             db,

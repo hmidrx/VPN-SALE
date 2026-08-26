@@ -1,5 +1,5 @@
-import { ServiceConsole } from "../service-console";
+import { AllocationPolicyConsole } from "../../../src/management/allocation";
 
 export default function Page(): React.ReactElement {
-  return <ServiceConsole title="سیاست‌های تخصیص" focus="نسخه‌های پیش‌نویس، اعتبارسنجی، انتشار، بازگشت و شبیه‌سازی" />;
+  return <AllocationPolicyConsole />;
 }

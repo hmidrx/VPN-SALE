@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from admin_auth_test_support import AdminAuthorizer
 from fastapi.testclient import TestClient
 
 from platform_api.main import app
 
+pytest_plugins = ("admin_auth_test_support",)
 
-def test_knowledge_api_publish_search_recommend_feedback_and_no_draft_leakage() -> None:
+
+def test_knowledge_api_publish_search_recommend_feedback_and_no_draft_leakage(
+    admin_authorizer: AdminAuthorizer,
+) -> None:
     client = TestClient(app)
     payload = {
         "article_code": "android-safe-guide-api",
@@ -28,6 +33,9 @@ def test_knowledge_api_publish_search_recommend_feedback_and_no_draft_leakage() 
             {"block_type": "WARNING", "order": 3, "text": {"fa": "از منابع ناشناس استفاده نکنید"}},
         ],
     }
+    admin_authorizer(None)
+    assert client.post("/api/v1/admin/knowledge/drafts", json=payload).status_code == 401
+    admin_authorizer({"knowledge.manage", "knowledge.publish"})
     assert client.post("/api/v1/admin/knowledge/drafts", json=payload).status_code == 200
     assert client.get("/api/v1/education/articles/android-safe-guide-api").status_code == 404
     assert (
@@ -58,7 +66,9 @@ def test_knowledge_api_publish_search_recommend_feedback_and_no_draft_leakage() 
     )
 
 
-def test_knowledge_api_rejects_unsafe_blocks_and_status_hides_infrastructure() -> None:
+def test_knowledge_api_rejects_unsafe_blocks_and_status_hides_infrastructure(
+    admin_authorizer: AdminAuthorizer,
+) -> None:
     client = TestClient(app)
     bad_payload = {
         "article_code": "unsafe-guide-api",
@@ -70,6 +80,9 @@ def test_knowledge_api_rejects_unsafe_blocks_and_status_hides_infrastructure() -
             {"block_type": "PARAGRAPH", "order": 1, "text": {"fa": "<script>alert(1)</script>"}}
         ],
     }
+    admin_authorizer(set())
+    assert client.post("/api/v1/admin/knowledge/drafts", json=bad_payload).status_code == 403
+    admin_authorizer({"knowledge.manage", "knowledge.publish", "status.manage_incidents"})
     client.post("/api/v1/admin/knowledge/drafts", json=bad_payload)
     assert (
         client.post("/api/v1/admin/knowledge/articles/unsafe-guide-api/publish").status_code == 422

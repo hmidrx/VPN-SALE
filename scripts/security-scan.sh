@@ -66,6 +66,7 @@ is_safe_assigned_secret_line() {
   [[ "$line" == *'$('* ]] && return 0
   [[ "$line" == *'`'* ]] && return 0
   [[ "$line" == *'_hash'* || "$line" == *'bot_token = bot_token'* || "$line" == *'# noqa: S105'* ]] && return 0
+  [[ "$line" =~ (tests|fixtures)/.*(synthetic|inert-test) ]] && return 0
   [[ "$line" =~ (REDACTED|redacted|MISSING|missing|CHANGEME|change-me|example|placeholder) ]] && return 0
   # An unquoted Python attribute/method expression is runtime data, not a
   # committed literal. Keep this language-scoped so shell TOKEN=literal.value

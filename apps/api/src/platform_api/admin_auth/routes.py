@@ -170,6 +170,7 @@ def _current(
     if (
         not sess
         or sess.revoked_at
+        or sess.consumed_at
         or sess.idle_expires_at.replace(tzinfo=UTC) < now
         or sess.absolute_expires_at.replace(tzinfo=UTC) < now
         or not admin

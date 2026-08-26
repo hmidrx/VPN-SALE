@@ -10,9 +10,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from vpnsale_domain.service_operations import ServiceOperationType
 
+from .customer_auth.routes import current_customer_session_dependency
 from .database import get_db_session
+from .identity.models import AdminModel, CustomerSessionModel
 from .management import require_perm
 from .order_models import TransactionalOutboxModel
+from .reseller_models import ResellerAccountModel
 from .service_models import ServiceModel, ServiceOperationModel, ServiceOperationPolicyVersionModel
 from .service_operation_payment_models import ServiceOperationPaymentModel
 
@@ -146,14 +149,34 @@ ELIGIBLE_DEFAULTS: tuple[ServiceOperationType, ...] = (
 )
 
 
+def current_reseller_account_dependency(
+    customer_session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> ResellerAccountModel:
+    reseller = db.scalar(
+        select(ResellerAccountModel).where(
+            ResellerAccountModel.principal_user_id == customer_session.user_id,
+            ResellerAccountModel.status == "ACTIVE",
+        )
+    )
+    if reseller is None:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail={"code": "RESELLER_ACCESS_DENIED"},
+        )
+    return reseller
+
+
 @customer_router.get("/{service_reference}/eligibility", response_model=list[OperationEligibility])
 def customer_eligibility(
-    service_reference: str, x_customer_id: str, db: Annotated[Session, Depends(get_db_session)]
+    service_reference: str,
+    customer_session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
+    db: Annotated[Session, Depends(get_db_session)],
 ) -> list[OperationEligibility]:
     service = db.scalar(
         select(ServiceModel).where(
             ServiceModel.public_reference == service_reference,
-            ServiceModel.beneficiary_customer_id == x_customer_id,
+            ServiceModel.beneficiary_customer_id == customer_session.user_id,
         )
     )
     if service is None:
@@ -180,13 +203,13 @@ def customer_eligibility(
 @customer_router.post("", response_model=OperationStatus, status_code=status.HTTP_201_CREATED)
 def create_customer_operation(
     body: OperationCreateRequest,
-    x_customer_id: str,
+    customer_session: Annotated[CustomerSessionModel, Depends(current_customer_session_dependency)],
     db: Annotated[Session, Depends(get_db_session)],
 ) -> OperationStatus:
     service = db.scalar(
         select(ServiceModel).where(
             ServiceModel.public_reference == body.service_reference,
-            ServiceModel.beneficiary_customer_id == x_customer_id,
+            ServiceModel.beneficiary_customer_id == customer_session.user_id,
         )
     )
     if service is None:
@@ -226,7 +249,7 @@ def create_customer_operation(
         operation_type=body.operation_type.value,
         status="QUEUED",
         requester_type="CUSTOMER",
-        requester_id=x_customer_id,
+        requester_id=customer_session.user_id,
         idempotency_key_digest=digest,
         reason_code=body.reason_code,
         policy_version_id=policy_version.id,
@@ -259,8 +282,7 @@ def list_admin_operations(
 @admin_router.post("/{operation_id}/approve", response_model=OperationStatus)
 def approve_operation(
     operation_id: str,
-    x_admin_actor: str,
-    _: Annotated[object, Depends(require_perm("service_operations.approve"))],
+    admin: Annotated[AdminModel, Depends(require_perm("service_operations.approve"))],
     db: Annotated[Session, Depends(get_db_session)],
 ) -> OperationStatus:
     row = db.scalar(
@@ -270,7 +292,7 @@ def approve_operation(
     )
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "OPERATION_NOT_FOUND"})
-    if row.requester_id == x_admin_actor:
+    if row.requester_id == admin.id:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, detail={"code": "OPERATION_SELF_APPROVAL_DENIED"}
         )
@@ -291,12 +313,14 @@ def approve_operation(
 
 @reseller_router.get("/{service_reference}/eligibility", response_model=list[OperationEligibility])
 def reseller_eligibility(
-    service_reference: str, x_reseller_id: str, db: Annotated[Session, Depends(get_db_session)]
+    service_reference: str,
+    reseller: Annotated[ResellerAccountModel, Depends(current_reseller_account_dependency)],
+    db: Annotated[Session, Depends(get_db_session)],
 ) -> list[OperationEligibility]:
     service = db.scalar(
         select(ServiceModel).where(
             ServiceModel.public_reference == service_reference,
-            ServiceModel.reseller_id == x_reseller_id,
+            ServiceModel.reseller_id == reseller.id,
         )
     )
     if service is None:

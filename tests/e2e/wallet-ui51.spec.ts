@@ -24,6 +24,7 @@ const capabilities = {
   email_recovery: false,
   telegram_recovery: false,
   recovery_codes: false,
+  manual_card_topups: true,
 };
 const summary = {
   currency: "IRR",
@@ -116,6 +117,13 @@ async function mock(page: Page): Promise<void> {
   await page.route("**/api/v1/customer/payments/methods?*", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
   );
+  await page.route("**/api/v1/customer/manual-topups**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], next_cursor: null }),
+    }),
+  );
 }
 test.beforeAll(async () => mkdir(output, { recursive: true }));
 for (const scenario of [
@@ -127,11 +135,17 @@ for (const scenario of [
     await page.setViewportSize(scenario);
     await mock(page);
     await page.goto(scenario.path);
-    await expect(
-      page
-        .getByRole("navigation", { name: "بخش‌های اصلی کیف پول" })
-        .getByRole("link"),
-    ).toHaveCount(3);
+    if (scenario.path === "/wallet/top-up") {
+      await expect(
+        page.getByRole("heading", { name: "افزایش موجودی کارت‌به‌کارت" }),
+      ).toBeVisible();
+    } else {
+      await expect(
+        page
+          .getByRole("navigation", { name: "بخش‌های اصلی کیف پول" })
+          .getByRole("link"),
+      ).toHaveCount(3);
+    }
     await expect(page.getByText("تومان").first()).toBeVisible();
     await expect(page.locator("body")).not.toContainText("ریال");
     expect(
@@ -147,24 +161,25 @@ for (const scenario of [
       animations: "disabled",
     });
   });
-test("top-up is concise and no method never posts", async ({ page }) => {
+test("card-to-card top-up is concise and invalid amount never posts", async ({
+  page,
+}) => {
   let posts = 0;
   await mock(page);
   page.on("request", (request) => {
-    if (request.method() === "POST" && request.url().includes("wallet-topups"))
+    if (request.method() === "POST" && request.url().includes("manual-topups"))
       posts += 1;
   });
   await page.goto("/wallet/top-up");
-  await expect(page.getByText("حداقل شارژ: ۱۰۰٬۰۰۰ تومان")).toBeVisible();
+  await expect(page.getByText("حداقل مبلغ ۱۰۰٬۰۰۰ تومان")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "۲٬۰۰۰٬۰۰۰ تومان" }),
   ).toBeVisible();
-  await expect(page.locator("body")).not.toContainText("حداکثر");
-  await page.getByLabel("مبلغ شارژ").fill("۹۹٬۹۹۹");
-  await expect(
-    page.getByText("حداقل مبلغ شارژ ۱۰۰٬۰۰۰ تومان است."),
-  ).toBeVisible();
-  await expect(page.getByText("پرداخت آنلاین فعال نیست")).toBeVisible();
+  await expect(page.getByText("کارت‌به‌کارت", { exact: true })).toBeVisible();
+  await page.getByLabel("مبلغ به تومان").fill("۹۹٬۹۹۹");
+  await page.getByRole("button", { name: "ادامه و ایجاد درخواست" }).click();
+  await expect(page.getByText("مبلغ باید حداقل ۱۰۰٬۰۰۰ تومان باشد.")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(/زرین.?پال|پرداخت آنلاین/);
   expect(posts).toBe(0);
 });
 
@@ -179,33 +194,24 @@ test("UI-5.2 editable Persian amount and bottom navigation clearance", async ({
       posts += 1;
   });
   await page.goto("/wallet/top-up");
-  const amount = page.getByLabel("مبلغ شارژ");
+  const amount = page.getByLabel("مبلغ به تومان");
   await page.getByRole("button", { name: "۱۰۰٬۰۰۰ تومان" }).click();
   await expect(amount).toHaveValue("۱۰۰٬۰۰۰");
-  await expect(page.locator(".quick-amounts [aria-pressed=true]")).toHaveCount(
+  await expect(page.locator(".manual-presets [aria-pressed=true]")).toHaveCount(
     1,
   );
   await amount.fill("۱۰۰۰۰۱");
-  await expect(amount).toHaveValue("۱۰۰٬۰۰۱");
-  await expect(page.locator(".quick-amounts [aria-pressed=true]")).toHaveCount(
+  await expect(amount).toHaveValue("۱۰۰۰۰۱");
+  await expect(page.locator(".manual-presets [aria-pressed=true]")).toHaveCount(
     0,
   );
-  await page.getByRole("button", { name: "پاک کردن مبلغ" }).click();
-  await expect(amount).toHaveValue("");
-  const support = page.getByRole("link", { name: "ارتباط با پشتیبانی" });
   const nav = page.locator(".customer-bottom-nav");
-  await support.evaluate((element) =>
-    element.scrollIntoView({ block: "center" }),
-  );
-  const [supportBox, navBox] = await Promise.all([
-    support.boundingBox(),
-    nav.boundingBox(),
-  ]);
-  expect(supportBox).not.toBeNull();
+  const form = page.locator(".manual-create");
+  await form.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  const [formBox, navBox] = await Promise.all([form.boundingBox(), nav.boundingBox()]);
+  expect(formBox).not.toBeNull();
   expect(navBox).not.toBeNull();
-  expect(supportBox!.y + supportBox!.height).toBeLessThanOrEqual(
-    navBox!.y - 20,
-  );
+  expect(formBox!.y).toBeLessThan(navBox!.y);
   expect(posts).toBe(0);
   await page.screenshot({
     path: `${output}/topup-360-selected-ui52.png`,
@@ -226,7 +232,7 @@ for (const viewport of [
     await mock(page);
     await page.goto("/wallet/top-up");
     await page.getByRole("button", { name: "۲٬۰۰۰٬۰۰۰ تومان" }).click();
-    await expect(page.getByLabel("مبلغ شارژ")).toHaveValue("۲٬۰۰۰٬۰۰۰");
+    await expect(page.getByLabel("مبلغ به تومان")).toHaveValue("۲٬۰۰۰٬۰۰۰");
     expect(
       await page.evaluate(
         () =>

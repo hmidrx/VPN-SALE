@@ -52,3 +52,5 @@ def test_active_transition_is_atomic_with_revision_and_entitlement_clock() -> No
     assert 'attachment.verification_status = "VERIFIED"' in source
     assert '"provider_host_used": False' in source
     assert "credential_fingerprints" in source
+    assert '"connections": delivery_connections' in source
+    assert '"delivery_connection_count": len(delivery_connections)' in source

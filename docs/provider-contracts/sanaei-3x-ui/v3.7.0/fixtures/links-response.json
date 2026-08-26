@@ -1,0 +1,8 @@
+{
+  "success": true,
+  "msg": "synthetic direct links",
+  "obj": [
+    "synthetic-config://fixture-one",
+    "synthetic-config://fixture-two"
+  ]
+}

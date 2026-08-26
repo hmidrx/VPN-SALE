@@ -8,13 +8,17 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID
 
-from panel_adapters.activation_execution import (
-    SanaeiActivationExecutor,
-    execute_certified_sanaei_activation,
+from panel_adapters.contracts import EndpointValidator
+from panel_adapters.sanaei_3x_ui_v370 import (
+    SANAEI_3X_UI_V370_CONTRACT,
+    HttpxSanaei3xUiV370Transport,
 )
-from panel_adapters.contracts import CERTIFIED_CONTRACTS, EndpointValidator
+from panel_adapters.sanaei_3x_ui_v370_execution import (
+    Sanaei3xUiV370Executor,
+    execute_v370_mutation,
+)
 from panel_adapters.vault import EncryptedProviderCredential, ProviderCredentialVault
-from panel_adapters.write_execution import MutationOutcome, SanaeiAuthenticatedTransport
+from panel_adapters.write_execution import MutationOutcome
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 from vpnsale_domain.delivery import DeliveryError
@@ -46,6 +50,7 @@ from platform_api.provider_runtime_models import (
     ProviderConnectionTestModel,
 )
 from platform_api.service_models import AllocationTargetModel, ServiceAttachmentModel, ServiceModel
+from platform_worker.provider_v370_connection import connect_v370
 from platform_worker.service_activation import ActivationResult
 
 
@@ -67,8 +72,7 @@ class DatabaseSanaeiActivator:
                 panel,
                 target,
                 certification,
-                login_name,
-                login_passphrase,
+                credential,
             ) = self._select(attachment)
             duration_days, traffic_bytes, device_limit = self._entitlement(service)
             remote_identity = self._remote_identity(attachment)
@@ -84,8 +88,8 @@ class DatabaseSanaeiActivator:
             if not rendered_uri:
                 raise ValueError("delivery renderer returned empty output")
             delivery_profile_version_id = str(profile.version_id)
-            base_url = EndpointValidator().validate(
-                panel.endpoint_origin + panel.base_path,
+            endpoint_origin = EndpointValidator().validate(
+                panel.endpoint_origin,
                 panel.endpoint_policy,
                 panel.tls_policy,
             )
@@ -108,9 +112,8 @@ class DatabaseSanaeiActivator:
                 panel,
                 target,
                 certification,
-                login_name,
-                login_passphrase,
-                base_url,
+                credential,
+                endpoint_origin,
                 remote_identity,
                 traffic_bytes,
                 device_limit,
@@ -151,8 +154,7 @@ class DatabaseSanaeiActivator:
         PanelInstance,
         AllocationTargetModel,
         ProviderConnectionTestModel,
-        str,
-        str,
+        dict[str, object],
     ]:
         """Resolve the same certified panel context for read-only provider operations."""
         return self._select(attachment)
@@ -163,10 +165,9 @@ class DatabaseSanaeiActivator:
         PanelInstance,
         AllocationTargetModel,
         ProviderConnectionTestModel,
-        str,
-        str,
+        dict[str, object],
     ]:
-        contract = CERTIFIED_CONTRACTS[ProviderKind.SANAEI_3X_UI]
+        contract = SANAEI_3X_UI_V370_CONTRACT
         with self.factory() as db:
             target = db.get(AllocationTargetModel, attachment.allocation_target_id)
             if target is None:
@@ -184,7 +185,7 @@ class DatabaseSanaeiActivator:
                 raise ValueError("allocation target is not activation eligible")
 
             panel_row = db.get(PanelInstanceModel, target.panel_id)
-            if panel_row is None or panel_row.status != "enabled":
+            if panel_row is None or panel_row.status.upper() not in {"ACTIVE", "ENABLED"}:
                 raise ValueError("panel unavailable")
             credential_row = db.scalar(
                 select(PanelCredentialModel)
@@ -208,7 +209,7 @@ class DatabaseSanaeiActivator:
                 not in {contract.release_tag, contract.release_tag.lstrip("v")}
                 or certification.contract_digest != contract.contract_digest
             ):
-                raise ValueError("provider certification unavailable or stale")
+                raise ValueError("v3.7.0 provider certification unavailable or stale")
 
             vault = ProviderCredentialVault.from_environment()
             plaintext = vault.decrypt_for_adapter(
@@ -218,22 +219,19 @@ class DatabaseSanaeiActivator:
                     credential_row.ciphertext_b64,
                     credential_row.credential_kind,
                 ),
-                panel_row.id.encode(),
+                f"panel:{panel_row.id}".encode(),
             )
             secret_value: object = json.loads(plaintext)
             if not isinstance(secret_value, dict):
                 raise ValueError("credential invalid")
             credential_fields = cast(dict[str, object], secret_value)
-            login_name = credential_fields.get("username")
-            login_passphrase = credential_fields.get("password")
-            if not isinstance(login_name, str) or not isinstance(login_passphrase, str):
+            if credential_fields.get("auth_mode") != credential_row.credential_kind:
                 raise ValueError("credential invalid")
             return (
                 self._panel(panel_row, credential_row),
                 target,
                 certification,
-                login_name,
-                login_passphrase,
+                credential_fields,
             )
 
     @staticmethod
@@ -274,9 +272,8 @@ class DatabaseSanaeiActivator:
         panel: PanelInstance,
         target: AllocationTargetModel,
         certification: ProviderConnectionTestModel,
-        login_name: str,
-        login_passphrase: str,
-        base_url: str,
+        credential: dict[str, object],
+        endpoint_origin: str,
         remote_identity: str,
         traffic_bytes: int,
         device_limit: int,
@@ -285,22 +282,26 @@ class DatabaseSanaeiActivator:
         delivery_profile_version_id: str,
         credential_fingerprint: str,
     ) -> ActivationResult:
-        transport: SanaeiAuthenticatedTransport | None = None
+        transport: HttpxSanaei3xUiV370Transport | None = None
         try:
             try:
-                transport = await SanaeiAuthenticatedTransport.authenticate(
-                    base_url,
-                    login_name,
-                    login_passphrase,
-                    verify_tls=panel.tls_policy.verify_tls,
-                )
+                transport, client = await connect_v370(panel, endpoint_origin, credential)
             except PermissionError:
                 return ActivationResult("BLOCKED_BY_CONFIGURATION", "PROVIDER_AUTH_FAILED")
-            except ConnectionError:
+            except (ConnectionError, OSError):
                 return ActivationResult("TRANSIENT_FAILURE", "PROVIDER_AUTH_UNAVAILABLE")
+            except (ProviderError, ValueError):
+                return ActivationResult("BLOCKED_BY_CONFIGURATION", "PROVIDER_AUTH_BLOCKED")
 
-            contract = CERTIFIED_CONTRACTS[ProviderKind.SANAEI_3X_UI]
-            inbound = RemoteIdentifier(target.inbound_id)
+            contract = SANAEI_3X_UI_V370_CONTRACT
+            inbound_values = (target.inbound_id,)
+            allocation_snapshot = service.allocation_policy_snapshot or {}
+            snapshot_inbounds = allocation_snapshot.get("inbound_ids")
+            if isinstance(snapshot_inbounds, list) and snapshot_inbounds:
+                inbound_values = tuple(
+                    str(value) for value in cast(list[object], snapshot_inbounds)
+                )
+            inbounds = tuple(RemoteIdentifier(value) for value in inbound_values)
             provider_label = f"svc-{remote_identity.replace('-', '')[:20]}"
             command = ProviderMutationCommand(
                 UUID(request.id),
@@ -311,7 +312,7 @@ class DatabaseSanaeiActivator:
                 contract.contract_digest,
                 certification.detected_version or "",
                 RemoteIdentifier(remote_identity),
-                (inbound,),
+                inbounds,
                 DesiredRemoteIdentity(
                     service.public_reference,
                     target.required_protocol,
@@ -321,7 +322,7 @@ class DatabaseSanaeiActivator:
                     device_limit,
                     "customer service",
                     provider_label,
-                    (inbound,),
+                    inbounds,
                 ),
                 "PROVISIONED_DISABLED_NO_EXPIRY",
                 f"service-activation:v1:{service.id}",
@@ -331,8 +332,8 @@ class DatabaseSanaeiActivator:
                 request.correlation_id,
                 request.causation_id,
             )
-            result = await execute_certified_sanaei_activation(
-                SanaeiActivationExecutor(transport, panel),
+            result = await execute_v370_mutation(
+                Sanaei3xUiV370Executor(client),
                 panel,
                 command,
                 writes_enabled=True,

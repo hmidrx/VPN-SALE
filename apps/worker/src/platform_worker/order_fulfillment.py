@@ -361,6 +361,11 @@ class OrderFulfillmentWorker:
                     target_snapshot={
                         "provider_kind": mapping.get("provider_kind"),
                         "panel_reference": mapping.get("panel_reference"),
+                        "provider_version": mapping.get("provider_version"),
+                        "contract_digest": mapping.get("contract_digest"),
+                        "allocation_policy_version_id": mapping.get("allocation_policy_version_id"),
+                        "allocation_target_ids": mapping.get("allocation_target_ids", [target_id]),
+                        "inbound_ids": mapping.get("inbound_ids", []),
                         "entitlement_start_policy": mapping.get("entitlement_start_policy"),
                     },
                     observed_state={"provider_verified": True, "delivery_verified": False},

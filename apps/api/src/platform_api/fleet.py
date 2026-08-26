@@ -176,7 +176,8 @@ def hierarchy(
     "/resources", response_model=FleetResourceResponse, status_code=status.HTTP_201_CREATED
 )
 def create_resource(
-    resource: FleetResourceResponse, _: Annotated[object, Depends(require_perm("fleet.read"))]
+    resource: FleetResourceResponse,
+    _: Annotated[object, Depends(require_perm("providers.manage"))],
 ) -> FleetResourceResponse:
     model = FleetResource(
         resource.resource_id,
@@ -195,7 +196,7 @@ def create_resource(
 @admin_router.post("/health/observations", status_code=status.HTTP_202_ACCEPTED)
 def ingest_health(
     payload: HealthObservationRequest,
-    _: Annotated[object, Depends(require_perm("fleet.read_health"))],
+    _: Annotated[object, Depends(require_perm("fleet.manage_health_policies"))],
 ) -> dict[str, UUID]:
     observation = FleetHealthObservation(
         uuid4(),
@@ -244,7 +245,7 @@ def read_health(
 @admin_router.post("/capacity/snapshots", response_model=CapacitySnapshotResponse)
 def create_capacity(
     payload: CapacitySnapshotRequest,
-    _: Annotated[object, Depends(require_perm("fleet.read_capacity"))],
+    _: Annotated[object, Depends(require_perm("fleet.manage_capacity_policies"))],
 ) -> CapacitySnapshotResponse:
     snapshot = FleetCapacitySnapshot(
         uuid4(),

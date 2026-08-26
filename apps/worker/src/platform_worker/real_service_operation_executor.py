@@ -8,20 +8,22 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
-import httpx
-from panel_adapters.contracts import CERTIFIED_CONTRACTS, EndpointValidator
-from panel_adapters.sanaei_adjust_execution import (
-    SanaeiAdjustExecutor,
-    execute_certified_sanaei_adjust,
+from panel_adapters.contracts import EndpointValidator
+from panel_adapters.sanaei_3x_ui_v370 import (
+    SANAEI_3X_UI_V370_CONTRACT,
+    HttpxSanaei3xUiV370Transport,
 )
-from panel_adapters.write_execution import MutationOutcome, SanaeiAuthenticatedTransport
+from panel_adapters.sanaei_3x_ui_v370_execution import (
+    Sanaei3xUiV370Executor,
+    execute_v370_mutation,
+)
+from panel_adapters.write_execution import MutationOutcome
 from sqlalchemy.orm import Session, sessionmaker
 from vpnsale_domain.providers import (
     DesiredRemoteIdentity,
     PanelInstance,
     ProviderCertificationStatus,
     ProviderError,
-    ProviderKind,
     ProviderMutationCommand,
     ProviderMutationOperation,
     RemoteExpiryPolicy,
@@ -37,6 +39,7 @@ from platform_api.service_models import (
     ServiceOperationAttachmentPlanModel,
     ServiceOperationModel,
 )
+from platform_worker.provider_v370_connection import connect_v370
 from platform_worker.real_activator import DatabaseSanaeiActivator
 from platform_worker.service_operation_execution import ServiceOperationExecutionResult
 
@@ -90,16 +93,14 @@ class DatabaseSanaeiServiceOperationExecutor:
                 "BLOCKED_BY_CONFIGURATION", "PROVIDER_WRITES_DISABLED"
             )
         try:
-            panel, target, certification, username, password = self.context_loader._select(
-                attachment
-            )
+            panel, target, certification, credential = self.context_loader._select(attachment)
             traffic, expires_at, device_limit = self._desired(operation, plan)
             if not attachment.remote_identity_reference or not plan.provider_operation_id:
                 raise ValueError("remote or provider operation identity unavailable")
             remote_identity = str(UUID(attachment.remote_identity_reference))
             operation_uuid = UUID(plan.provider_operation_id)
-            base_url = EndpointValidator().validate(
-                panel.endpoint_origin + panel.base_path,
+            endpoint_origin = EndpointValidator().validate(
+                panel.endpoint_origin,
                 panel.endpoint_policy,
                 panel.tls_policy,
             )
@@ -114,9 +115,8 @@ class DatabaseSanaeiServiceOperationExecutor:
                 panel,
                 target,
                 certification,
-                username,
-                password,
-                base_url,
+                credential,
+                endpoint_origin,
                 remote_identity,
                 operation_uuid,
                 traffic,
@@ -133,9 +133,8 @@ class DatabaseSanaeiServiceOperationExecutor:
         panel: PanelInstance,
         target: AllocationTargetModel,
         certification: ProviderConnectionTestModel,
-        username: str,
-        password: str,
-        base_url: str,
+        credential: dict[str, object],
+        endpoint_origin: str,
         remote_identity: str,
         operation_uuid: UUID,
         traffic: int | None,
@@ -143,26 +142,28 @@ class DatabaseSanaeiServiceOperationExecutor:
         device_limit: int | None,
         plan: ServiceOperationAttachmentPlanModel,
     ) -> ServiceOperationExecutionResult:
-        transport: SanaeiAuthenticatedTransport | None = None
+        transport: HttpxSanaei3xUiV370Transport | None = None
         try:
             try:
-                transport = await SanaeiAuthenticatedTransport.authenticate(
-                    base_url,
-                    username,
-                    password,
-                    verify_tls=panel.tls_policy.verify_tls,
-                )
+                transport, client = await connect_v370(panel, endpoint_origin, credential)
             except PermissionError:
                 return ServiceOperationExecutionResult(
                     "BLOCKED_BY_CONFIGURATION", "PROVIDER_AUTH_FAILED"
                 )
-            except ConnectionError:
+            except (ConnectionError, OSError):
                 return ServiceOperationExecutionResult(
                     "TRANSIENT_FAILURE", "PROVIDER_AUTH_UNAVAILABLE"
                 )
 
-            contract = CERTIFIED_CONTRACTS[ProviderKind.SANAEI_3X_UI]
-            inbound = RemoteIdentifier(target.inbound_id)
+            contract = SANAEI_3X_UI_V370_CONTRACT
+            inbound_values = (target.inbound_id,)
+            allocation_snapshot = service.allocation_policy_snapshot or {}
+            snapshot_inbounds = allocation_snapshot.get("inbound_ids")
+            if isinstance(snapshot_inbounds, list) and snapshot_inbounds:
+                inbound_values = tuple(
+                    str(value) for value in cast(list[object], snapshot_inbounds)
+                )
+            inbounds = tuple(RemoteIdentifier(value) for value in inbound_values)
             provider_label = f"svc-{remote_identity.replace('-', '')[:20]}"
             traffic_policy = (
                 RemoteTrafficLimit(traffic)
@@ -183,7 +184,7 @@ class DatabaseSanaeiServiceOperationExecutor:
                 adapter_contract_version=contract.contract_digest,
                 expected_panel_version=certification.detected_version or "",
                 target_remote_identity=RemoteIdentifier(remote_identity),
-                target_inbound_relationships=(inbound,),
+                target_inbound_relationships=inbounds,
                 desired_state=DesiredRemoteIdentity(
                     shop_identity_reference=service.public_reference,
                     protocol=target.required_protocol,
@@ -193,7 +194,7 @@ class DatabaseSanaeiServiceOperationExecutor:
                     device_or_ip_limit=device_limit,
                     customer_safe_remark="customer service",
                     provider_safe_label=provider_label,
-                    inbound_assignments=(inbound,),
+                    inbound_assignments=inbounds,
                 ),
                 expected_remote_snapshot=None,
                 idempotency_scope=f"service-operation:v1:{operation.id}:{plan.attachment_id}",
@@ -203,24 +204,15 @@ class DatabaseSanaeiServiceOperationExecutor:
                 correlation_reference=f"service-operation:{operation.id}",
                 causation_reference=operation.id,
             )
-            try:
-                result = await execute_certified_sanaei_adjust(
-                    SanaeiAdjustExecutor(transport, panel),
-                    panel,
-                    command,
-                    writes_enabled=True,
-                    detected_version=certification.detected_version,
-                    detected_digest=certification.contract_digest,
-                    certification_status=ProviderCertificationStatus(certification.status),
-                )
-            except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError, ConnectionError):
-                return ServiceOperationExecutionResult(
-                    "TRANSIENT_FAILURE", "PROVIDER_EXECUTION_UNAVAILABLE"
-                )
-            except ProviderError:
-                return ServiceOperationExecutionResult(
-                    "BLOCKED_BY_CONFIGURATION", "PROVIDER_EXECUTION_BLOCKED"
-                )
+            result = await execute_v370_mutation(
+                Sanaei3xUiV370Executor(client),
+                panel,
+                command,
+                writes_enabled=True,
+                detected_version=certification.detected_version,
+                detected_digest=certification.contract_digest,
+                certification_status=ProviderCertificationStatus(certification.status),
+            )
             if result.outcome is MutationOutcome.SUCCESS:
                 return ServiceOperationExecutionResult("SUCCESS", result.safe_code)
             return ServiceOperationExecutionResult(result.outcome.value, result.safe_code)

@@ -1,4 +1,4 @@
 import React from "react";
 import { ManagementShell } from "../../../../../src/components/ManagementShell";
-import { ProviderDashboard } from "../../../../../src/management/providers";
-export default function Page(): React.ReactElement { return <ManagementShell title="کنسول ارائه‌دهندگان" required="providers.read"><ProviderDashboard/></ManagementShell>; }
+import { ProviderPanelDetail } from "../../../../../src/management/providers";
+export default async function Page({ params }: { params: Promise<{ panelReference: string }> }): Promise<React.ReactElement> { const { panelReference } = await params; return <ManagementShell title="سلامت پنل" required="providers.read_diagnostics"><ProviderPanelDetail panelReference={panelReference}/></ManagementShell>; }

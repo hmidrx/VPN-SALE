@@ -1,0 +1,8 @@
+{
+  "success": true,
+  "msg": "synthetic sub-id links",
+  "obj": [
+    "synthetic-config://fixture-sub-one",
+    "synthetic-config://fixture-sub-two"
+  ]
+}

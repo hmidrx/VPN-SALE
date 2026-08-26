@@ -6,6 +6,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .pyright/
+.pyright-cache/
+.pytest-tmp-*/
+.tmp-pytest-*/
+pytest-cache-files-*/
 apps/*-web/tsconfig.tsbuildinfo
 
 # Untracked test-server runtime env files
