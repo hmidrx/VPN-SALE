@@ -56,6 +56,28 @@ CERTIFIED_CONTRACTS: dict[ProviderKind, ProviderContractVersion] = {
 }
 
 
+# Keep the legacy single-contract registry stable until the application-level provider
+# gates are deliberately migrated.  Version-aware callers can opt in to this registry
+# without silently changing the already-certified v3.5.0 execution path.
+VERSIONED_CERTIFIED_CONTRACTS: dict[tuple[ProviderKind, str], ProviderContractVersion] = {
+    (
+        ProviderKind.SANAEI_3X_UI,
+        "v3.5.0",
+    ): CERTIFIED_CONTRACTS[ProviderKind.SANAEI_3X_UI],
+    (
+        ProviderKind.SANAEI_3X_UI,
+        "v3.7.0",
+    ): ProviderContractVersion(
+        upstream_repository="https://github.com/MHSanaei/3x-ui",
+        release_tag="v3.7.0",
+        commit_sha="f727d04f6522bb94a8fb52e8352fdcafb51c11e1",
+        release_date="2026-08-24",
+        contract_digest="sha256:sanaei-3x-ui-v3.7.0-admin-client-contract",
+        extraction_date="2026-08-25",
+    ),
+}
+
+
 @dataclass(frozen=True)
 class PanelHealth:
     healthy: bool

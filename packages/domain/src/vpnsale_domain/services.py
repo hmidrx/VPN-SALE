@@ -548,6 +548,11 @@ def canonical_service_entitlement(snapshot: dict[str, object]) -> dict[str, obje
     labels = cast(dict[str, object], labels_value) if isinstance(labels_value, dict) else {}
     fa_value = labels.get("fa")
     fa = cast(dict[str, object], fa_value) if isinstance(fa_value, dict) else {}
+    allocation_value = snapshot.get("allocation_policy_snapshot")
+    allocation = (
+        cast(dict[str, object], allocation_value) if isinstance(allocation_value, dict) else {}
+    )
+    required_target_count = allocation.get("required_target_count", 1)
     values: dict[str, object] = {
         "traffic_quota_bytes": selected.get("traffic_bytes"),
         "duration_days": selected.get("duration_days"),
@@ -560,9 +565,14 @@ def canonical_service_entitlement(snapshot: dict[str, object]) -> dict[str, obje
         or fa.get("title")
         or snapshot.get("product_machine_code"),
         "product_version_id": snapshot.get("product_version_id"),
-        "required_attachment_count": 1,
+        "required_attachment_count": required_target_count,
     }
-    integer_fields = ("traffic_quota_bytes", "duration_days", "device_limit")
+    integer_fields = (
+        "traffic_quota_bytes",
+        "duration_days",
+        "device_limit",
+        "required_attachment_count",
+    )
     if any(
         type(values[name]) is not int or cast(int, values[name]) <= 0 for name in integer_fields
     ):

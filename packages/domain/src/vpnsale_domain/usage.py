@@ -159,11 +159,11 @@ class ProviderCounterSemantics:
 CERTIFIED_COUNTER_SEMANTICS: Mapping[ProviderKind, ProviderCounterSemantics] = {
     ProviderKind.SANAEI_3X_UI: ProviderCounterSemantics(
         ProviderKind.SANAEI_3X_UI,
-        "sanaei-3x-ui-read-v1",
-        CounterScope.INBOUND_CLIENT,
-        "up+down",
-        "up",
-        "down",
+        "sanaei-3x-ui-v3.7.0-global-client-used-traffic-v1",
+        CounterScope.CLIENT,
+        "usedTraffic",
+        None,
+        None,
         True,
         False,
         False,

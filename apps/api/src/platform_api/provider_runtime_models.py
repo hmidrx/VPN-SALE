@@ -53,3 +53,32 @@ class ProviderConnectionTestModel(IdentityBase):
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     safe_error_code: Mapped[str | None] = mapped_column(String(64))
     tested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ProviderSyncRunModel(IdentityBase):
+    __tablename__ = "provider_sync_runs"
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    sync_reference: Mapped[str] = mapped_column(String(48), nullable=False)
+    panel_instance_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("panel_instances.id"), nullable=False
+    )
+    adapter_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    adapter_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ProviderInboundSnapshotModel(IdentityBase):
+    __tablename__ = "provider_inbound_snapshots"
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    panel_instance_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("panel_instances.id"), nullable=False
+    )
+    sync_run_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("provider_sync_runs.id")
+    )
+    remote_identifier: Mapped[str | None] = mapped_column(String(256))
+    status: Mapped[str | None] = mapped_column(String(64))
+    sanitized_payload: Mapped[dict[str, object]] = mapped_column(JSON_TYPE, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

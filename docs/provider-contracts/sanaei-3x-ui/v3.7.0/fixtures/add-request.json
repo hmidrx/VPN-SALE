@@ -1,0 +1,14 @@
+{
+  "client": {
+    "id": "00000000-0000-4000-8000-000000000370",
+    "email": "fixture-client-370",
+    "enable": false,
+    "totalGB": 53687091200,
+    "expiryTime": 1798761600000,
+    "limitIp": 2,
+    "tgId": 0,
+    "subId": "fixture-sub-id-370",
+    "comment": "synthetic contract fixture"
+  },
+  "inboundIds": [101, 202]
+}

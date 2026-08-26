@@ -1,0 +1,52 @@
+{
+  email {$VPN_SALE_TLS_EMAIL}
+  admin 127.0.0.1:2019
+}
+
+{$VPN_SALE_CUSTOMER_HOST} {
+  encode zstd gzip
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+  reverse_proxy 127.0.0.1:3000
+}
+
+{$VPN_SALE_ADMIN_HOST} {
+  encode zstd gzip
+  header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  reverse_proxy 127.0.0.1:3001
+}
+
+{$VPN_SALE_RESELLER_HOST} {
+  encode zstd gzip
+  header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  reverse_proxy 127.0.0.1:3002
+}
+
+{$VPN_SALE_API_HOST} {
+  @private_telegram path /api/v1/internal/telegram /api/v1/internal/telegram/*
+  respond @private_telegram 404
+  encode zstd gzip
+  header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  reverse_proxy 127.0.0.1:8000
+}
+
+{$VPN_SALE_SUBSCRIPTION_HOST} {
+  encode zstd gzip
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Cache-Control "private, no-store"
+  }
+  reverse_proxy 127.0.0.1:8000
+}
+
+{$VPN_SALE_BOT_HOST} {
+  @telegram_webhook path /telegram/webhook
+  handle @telegram_webhook {
+    request_body { max_size 256KB }
+    reverse_proxy 127.0.0.1:8081
+  }
+  respond 404
+}

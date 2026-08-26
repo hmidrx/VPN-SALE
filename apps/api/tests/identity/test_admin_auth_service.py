@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import pyotp
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
+from platform_api.admin_auth.routes import _current
 from platform_api.admin_auth.service import (
     AdminAuthService,
     AuthenticationOutcome,
@@ -132,6 +135,22 @@ def test_login_refresh_reuse_revokes_family() -> None:
                 SecurityEventModel.event_code == "admin.refresh_reuse_detected"
             )
         )
+
+
+def test_rotated_session_access_token_is_rejected_by_route_guard() -> None:
+    with make_session() as session:
+        svc, _ = bootstrap(session)
+        result = svc.login("admin@example.com", "correct horse battery staple")
+        access_token = str(result["access_token"])
+
+        svc.refresh(str(result["refresh_token"]))
+        session.flush()
+
+        request = Request({"type": "http", "headers": []})
+        with pytest.raises(HTTPException) as exc_info:
+            _current(f"Bearer {access_token}", session, settings(), request)
+
+        assert exc_info.value.status_code == 401
 
 
 def test_totp_enrollment_mfa_login_and_recovery_code_one_time() -> None:

@@ -1,34 +1,121 @@
 services:
-  api:
-    env_file: /opt/vpn-sale-runtime/production.env
-    read_only: true
-    tmpfs: [/tmp]
-    restart: unless-stopped
-    deploy:
-      replicas: 2
-      resources: {limits: {cpus: "1.0", memory: 768M}}
-  worker:
-    env_file: /opt/vpn-sale-runtime/production.env
-    read_only: true
-    tmpfs: [/tmp]
-    restart: unless-stopped
-    networks: [default, egress]
-    deploy:
-      resources: {limits: {cpus: "1.0", memory: 768M}}
-  telegram-bot:
-    env_file: /opt/vpn-sale-runtime/production.env
-    read_only: true
-    tmpfs: [/tmp]
-    restart: unless-stopped
-    networks: [default, egress]
   postgres:
-    ports: []
+    env_file: ${VPN_SALE_PRODUCTION_ENV_FILE:-/opt/vpn-sale-runtime/production.env}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in the production env file}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in the production env file}
+      POSTGRES_DB: ${POSTGRES_DB:?set in the production env file}
+    ports: !reset []
+    volumes: !override
+      - production_postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+
   redis:
-    ports: []
+    ports: !reset []
+    volumes: !override
+      - production_redis_data:/data
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     restart: unless-stopped
+
+  api:
+    env_file: ${VPN_SALE_PRODUCTION_ENV_FILE:-/opt/vpn-sale-runtime/production.env}
+    environment:
+      VPN_SALE_DATABASE_URL: ${VPN_SALE_DATABASE_URL:?set in the production env file}
+      VPN_SALE_REDIS_URL: ${VPN_SALE_REDIS_URL:?set in the production env file}
+      VPN_SALE_FAKE_CUSTOMER_AUTH_ENABLED: "false"
+      VPN_SALE_PROVIDER_WRITES_ENABLED: ${VPN_SALE_PROVIDER_WRITES_ENABLED:-false}
+      VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED: "true"
+      VPN_SALE_MANUAL_TOPUP_PRIVATE_UPLOAD_ROOT: /var/lib/vpnsale/private/manual-topups
+      VPN_SALE_SUPPORT_PRIVATE_UPLOAD_ROOT: /var/lib/vpnsale/private/support
+      FORWARDED_ALLOW_IPS: ${VPN_SALE_FORWARDED_ALLOW_IPS:-127.0.0.1}
+    ports: !override
+      - "127.0.0.1:8000:8000"
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    networks: [default, egress]
+    deploy:
+      resources: {limits: {cpus: "1.0", memory: 768M}}
+
+  worker:
+    profiles: !reset []
+    env_file: ${VPN_SALE_PRODUCTION_ENV_FILE:-/opt/vpn-sale-runtime/production.env}
+    environment:
+      VPN_SALE_DATABASE_URL: ${VPN_SALE_DATABASE_URL:?set in the production env file}
+      VPN_SALE_REDIS_URL: ${VPN_SALE_REDIS_URL:?set in the production env file}
+      VPN_SALE_PROVIDER_WRITES_ENABLED: ${VPN_SALE_PROVIDER_WRITES_ENABLED:-false}
+      VPN_SALE_MANUAL_CARD_TOPUPS_ENABLED: "true"
+      VPN_SALE_SUPPORT_PRIVATE_UPLOAD_ROOT: /var/lib/vpnsale/private/support
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    networks: [default, egress]
+    deploy:
+      resources: {limits: {cpus: "1.0", memory: 768M}}
+
+  telegram-bot:
+    profiles: !reset []
+    env_file: ${VPN_SALE_PRODUCTION_ENV_FILE:-/opt/vpn-sale-runtime/production.env}
+    ports: !override
+      - "127.0.0.1:8081:8081"
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    networks: [default, egress]
+
+  customer-web:
+    profiles: !reset []
+    env_file: ${VPN_SALE_PRODUCTION_ENV_FILE:-/opt/vpn-sale-runtime/production.env}
+    build:
+      args:
+        APP_NAME: customer-web
+        NEXT_PUBLIC_API_BASE_URL: ${VPN_SALE_API_PUBLIC_ORIGIN:?set in the production env file}
+        NEXT_PUBLIC_CUSTOMER_API_BASE_URL: ${VPN_SALE_CUSTOMER_API_FRONTEND_URL:?set in the production env file}
+        NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: ${VPN_SALE_TELEGRAM_BOT_USERNAME:?set in the production env file}
+        NEXT_PUBLIC_CUSTOMER_APP_NAME: ${VPN_SALE_CUSTOMER_APP_NAME:-VPN-SALE}
+        NEXT_PUBLIC_CUSTOMER_FAKE_TELEGRAM: "false"
+    ports: !override
+      - "127.0.0.1:3000:3000"
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+
+  admin-web:
+    profiles: !reset []
+    env_file: ${VPN_SALE_PRODUCTION_ENV_FILE:-/opt/vpn-sale-runtime/production.env}
+    build:
+      args:
+        APP_NAME: admin-web
+        NEXT_PUBLIC_API_BASE_URL: ${VPN_SALE_API_PUBLIC_ORIGIN:?set in the production env file}
+    ports: !override
+      - "127.0.0.1:3001:3000"
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+
+  reseller-web:
+    profiles: !reset []
+    env_file: ${VPN_SALE_PRODUCTION_ENV_FILE:-/opt/vpn-sale-runtime/production.env}
+    build:
+      args:
+        APP_NAME: reseller-web
+        NEXT_PUBLIC_API_BASE_URL: ${VPN_SALE_API_PUBLIC_ORIGIN:?set in the production env file}
+    ports: !override
+      - "127.0.0.1:3002:3000"
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+
+  reverse-proxy:
+    profiles: !override ["disabled-in-production"]
+    ports: !reset []
+
 networks:
   default:
     internal: true
   egress:
     internal: false
+
+volumes:
+  production_postgres_data:
+  production_redis_data:

@@ -459,6 +459,16 @@ def create_quote(
     if not p or not v or not plv:
         raise _err(422, request, "pricing_unavailable")
     selection = _selection(body)
+    from platform_api.services import resolve_allocation_policy_for_product
+
+    allocation = resolve_allocation_policy_for_product(
+        db,
+        product_version_id=v.id,
+        plan_reference=p.machine_code,
+        location=selection.location_code,
+    )
+    if allocation is None:
+        raise _err(422, request, "allocation_unavailable")
     quote = CustomerPriceQuoteModel(
         product_id=p.id,
         product_version_id=v.id,
@@ -476,7 +486,7 @@ def create_quote(
         status="ACTIVE",
         issued_at=now,
         expires_at=now + timedelta(seconds=settings.catalog_quote_lifetime_seconds),
-        validation_summary={"validated": True},
+        validation_summary={"validated": True, "allocation": allocation},
     )
     db.add(quote)
     db.flush()
@@ -591,6 +601,76 @@ def activate_category(
     c.version += 1
     _audit(db, "admin", admin.id, "catalog.category.updated", "product_category", c.id, request)
     return {"id": c.id, "status": c.status}
+
+
+@admin_router.get("/products", response_model=Page)
+def admin_products(
+    db: Annotated[Session, Depends(get_db_session)],
+    _admin: Annotated[Any, Depends(CATALOG_READ)],
+    status_filter: str | None = None,
+    limit: int = 100,
+) -> Page:
+    statement = select(ProductModel)
+    if status_filter:
+        statement = statement.where(ProductModel.status == status_filter.upper())
+    rows = db.scalars(
+        statement.order_by(ProductModel.display_order, ProductModel.machine_code).limit(
+            min(max(limit, 1), 100)
+        )
+    ).all()
+    return Page(
+        items=[
+            {
+                "id": row.id,
+                "category_id": row.category_id,
+                "machine_code": row.machine_code,
+                "status": row.status,
+                "current_version_id": row.current_version_id,
+                "customer_visible": row.customer_visible,
+                "display_order": row.display_order,
+                "localizations": row.localizations,
+                "availability": row.availability,
+                "updated_at": row.updated_at,
+                "version": row.version,
+            }
+            for row in rows
+        ]
+    )
+
+
+@admin_router.get("/products/{product_id}/versions", response_model=Page)
+def admin_product_versions(
+    product_id: str,
+    request: Request,
+    db: Annotated[Session, Depends(get_db_session)],
+    _admin: Annotated[Any, Depends(CATALOG_READ)],
+) -> Page:
+    if db.get(ProductModel, product_id) is None:
+        raise _err(404, request, "not_found")
+    rows = db.scalars(
+        select(ProductVersionModel)
+        .where(ProductVersionModel.product_id == product_id)
+        .order_by(ProductVersionModel.version_number.desc())
+    ).all()
+    return Page(
+        items=[
+            {
+                "id": row.id,
+                "product_id": row.product_id,
+                "version_number": row.version_number,
+                "status": row.status,
+                "product_type": row.product_type,
+                "definition_snapshot": row.definition_snapshot,
+                "options_snapshot": row.options_snapshot,
+                "constraints_snapshot": row.constraints_snapshot,
+                "fulfillment_requirements_snapshot": row.fulfillment_requirements_snapshot,
+                "created_at": row.created_at,
+                "published_at": row.published_at,
+                "retired_at": row.retired_at,
+            }
+            for row in rows
+        ]
+    )
 
 
 @admin_router.post("/products")

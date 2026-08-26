@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 const src = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
 
 function readProjectFile(path) {
@@ -52,7 +53,7 @@ if (
   )
 )
   throw new Error("forbidden payment persistence or unsafe control in modules");
-const appRoot = new URL("../../app/management", import.meta.url).pathname;
+const appRoot = fileURLToPath(new URL("../../app/management", import.meta.url));
 function walk(dir) {
   return readdirSync(dir).flatMap((n) => {
     const p = join(dir, n);

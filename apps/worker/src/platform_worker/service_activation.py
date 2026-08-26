@@ -310,14 +310,51 @@ class ServiceActivationWorker:
                 db.commit()
                 return
             try:
-                profile = load_allocation_delivery_profile(db, target.id, target.required_protocol)
-                rendered_uri, fingerprint = render_service_connection(
-                    service,
-                    attachment,
-                    target,
-                    profile,
-                    require_verified=True,
+                target_ids_value = (attachment.target_snapshot or {}).get(
+                    "allocation_target_ids", [target.id]
                 )
+                if not isinstance(target_ids_value, list) or not target_ids_value:
+                    raise ValueError("allocation target snapshot invalid")
+                target_ids = tuple(dict.fromkeys(str(value) for value in target_ids_value))
+                if target.id not in target_ids:
+                    raise ValueError("primary allocation target missing from snapshot")
+                delivery_connections: list[dict[str, str]] = []
+                fingerprint = ""
+                profile = None
+                rendered_uri = ""
+                for target_id in target_ids:
+                    selected_target = db.get(AllocationTargetModel, target_id)
+                    if selected_target is None or selected_target.panel_id != target.panel_id:
+                        raise ValueError("allocation target changed or crossed panels")
+                    selected_profile = load_allocation_delivery_profile(
+                        db, selected_target.id, selected_target.required_protocol
+                    )
+                    selected_uri, selected_fingerprint = render_service_connection(
+                        service,
+                        attachment,
+                        selected_target,
+                        selected_profile,
+                        require_verified=True,
+                    )
+                    if not fingerprint:
+                        fingerprint = selected_fingerprint
+                    elif fingerprint != selected_fingerprint:
+                        raise ValueError("grouped delivery credential mismatch")
+                    delivery_connections.append(
+                        {
+                            "allocation_target_id": selected_target.id,
+                            "inbound_id": selected_target.inbound_id,
+                            "profile_version_id": str(selected_profile.version_id),
+                            "protocol": selected_profile.protocol.value,
+                            "transport": selected_profile.transport.value,
+                            "security": selected_profile.security.value,
+                        }
+                    )
+                    if selected_target.id == target.id:
+                        profile = selected_profile
+                        rendered_uri = selected_uri
+                if profile is None:
+                    raise ValueError("primary delivery profile unavailable")
             except (DeliveryError, ValueError):
                 self._retry_delivery_drift(request, "DELIVERY_PROFILE_CHANGED_OR_INVALID", now)
                 db.commit()
@@ -366,6 +403,7 @@ class ServiceActivationWorker:
                         "protocol": profile.protocol.value,
                         "transport": profile.transport.value,
                         "security": profile.security.value,
+                        "connections": delivery_connections,
                     },
                     renderer_versions={"URI": RENDERER_VERSION},
                     credential_fingerprints={attachment.id: fingerprint},
@@ -404,6 +442,7 @@ class ServiceActivationWorker:
                     "delivery_verified": True,
                     "activation_result_code": result.safe_code,
                     "delivery_profile_version_id": str(profile.version_id),
+                    "delivery_connection_count": len(delivery_connections),
                 }
             )
             attachment.observed_state = observed

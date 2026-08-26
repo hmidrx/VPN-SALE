@@ -14,6 +14,7 @@ from vpnsale_domain.delivery import (
     DeliveryOutputFormat,
     DeliveryProtocol,
     render_qr_png,
+    render_uri,
 )
 
 from platform_api.customer_auth.routes import current_customer_session_dependency
@@ -25,12 +26,14 @@ from platform_api.delivery_resolution import (
     render_service_connection,
 )
 from platform_api.delivery_subscriptions import (
+    active_revision_connections,
     issue_service_subscription,
     render_public_subscription,
     revoke_service_subscription,
     rotate_service_subscription,
 )
 from platform_api.identity.models import CustomerSessionModel
+from platform_api.management import require_perm
 from platform_api.service_models import (
     AllocationTargetModel,
     ServiceAttachmentModel,
@@ -94,12 +97,20 @@ class SubscriptionStatus(BaseModel):
     token_visible_once: str | None = None
 
 
-@admin_router.get("/profiles", response_model=list[DeliveryProfileSummary])
+@admin_router.get(
+    "/profiles",
+    response_model=list[DeliveryProfileSummary],
+    dependencies=[Depends(require_perm("delivery_profiles.read"))],
+)
 async def list_profiles() -> list[DeliveryProfileSummary]:
     return []
 
 
-@admin_router.post("/profiles/validate", response_model=DeliveryProfileValidationResponse)
+@admin_router.post(
+    "/profiles/validate",
+    response_model=DeliveryProfileValidationResponse,
+    dependencies=[Depends(require_perm("delivery_profiles.preview"))],
+)
 async def validate_profile(
     payload: DeliveryProfileDraftRequest,
 ) -> DeliveryProfileValidationResponse:
@@ -113,7 +124,11 @@ async def validate_profile(
     )
 
 
-@admin_router.get("/compatibility", response_model=dict[str, object])
+@admin_router.get(
+    "/compatibility",
+    response_model=dict[str, object],
+    dependencies=[Depends(require_perm("delivery_compatibility.read"))],
+)
 async def compatibility_matrix() -> dict[str, object]:
     return {
         "renderer_contracts": _renderer_contracts(),
@@ -121,7 +136,11 @@ async def compatibility_matrix() -> dict[str, object]:
     }
 
 
-@admin_router.get("/services/{service_reference}/delivery", response_model=DeliverySummary)
+@admin_router.get(
+    "/services/{service_reference}/delivery",
+    response_model=DeliverySummary,
+    dependencies=[Depends(require_perm("service_delivery.read"))],
+)
 async def admin_service_delivery(service_reference: str) -> DeliverySummary:
     return _safe_summary(service_reference)
 
@@ -238,6 +257,11 @@ def _render_active_delivery(db: Session, service: ServiceModel) -> str:
     return uri
 
 
+def _render_active_deliveries(db: Session, service: ServiceModel) -> list[str]:
+    connections = active_revision_connections(db, service)
+    return [render_uri(connection) for connection in connections]
+
+
 @customer_router.get("/services/{service_reference}", response_model=DeliverySummary)
 def customer_service_delivery(
     service_reference: str,
@@ -255,12 +279,12 @@ def customer_service_delivery(
             connections=[],
             formats=[],
         )
-    uri = _render_active_delivery(db, service)
+    uris = _render_active_deliveries(db, service)
     return DeliverySummary(
         service_reference=service.public_reference,
         status="ACTIVE",
         delivery_ready=True,
-        connections=[{"uri": uri}],
+        connections=[{"uri": uri} for uri in uris],
         formats=[DeliveryOutputFormat.URI, DeliveryOutputFormat.PLAIN_LINKS],
     )
 

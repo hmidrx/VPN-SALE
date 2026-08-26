@@ -149,9 +149,9 @@ def test_success_applies_only_the_purchased_local_dimension() -> None:
 
 def test_real_executor_uses_certified_additive_adjustment_path() -> None:
     source = getsource(real_service_operation_executor.DatabaseSanaeiServiceOperationExecutor)
-    assert "SanaeiAdjustExecutor" in source
-    assert "execute_certified_sanaei_adjust" in source
-    assert "SanaeiAuthenticatedTransport.authenticate" in source
+    assert "Sanaei3xUiV370Executor" in source
+    assert "execute_v370_mutation" in source
+    assert "connect_v370" in source
     assert "UPDATE_REMOTE_IDENTITY" in source
     assert "CREATE_REMOTE_IDENTITY" not in source
 

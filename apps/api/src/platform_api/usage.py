@@ -3,9 +3,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 from vpnsale_domain.usage import ExpiryState, ObservationConfidence, QuotaState
+
+from .management import require_perm
 
 customer_router = APIRouter(
     prefix="/api/v1/customer/service-usage", tags=["customer-service-usage"]
@@ -88,7 +90,11 @@ def reseller_usage_summary(service_reference: str) -> ServiceUsageSummary:
     return unavailable_summary(service_reference)
 
 
-@admin_router.get("/dashboard", response_model=AdminUsageDashboard)
+@admin_router.get(
+    "/dashboard",
+    response_model=AdminUsageDashboard,
+    dependencies=[Depends(require_perm("service_usage.read"))],
+)
 def admin_usage_dashboard() -> AdminUsageDashboard:
     return AdminUsageDashboard(
         near_quota_count=0,
@@ -101,22 +107,38 @@ def admin_usage_dashboard() -> AdminUsageDashboard:
     )
 
 
-@admin_router.get("/{service_reference}", response_model=ServiceUsageSummary)
+@admin_router.get(
+    "/{service_reference}",
+    response_model=ServiceUsageSummary,
+    dependencies=[Depends(require_perm("service_usage.read"))],
+)
 def admin_usage_detail(service_reference: str) -> ServiceUsageSummary:
     return unavailable_summary(service_reference)
 
 
-@policy_router.get("", response_model=dict[str, str])
+@policy_router.get(
+    "",
+    response_model=dict[str, str],
+    dependencies=[Depends(require_perm("service_usage.read"))],
+)
 def usage_policy_index() -> dict[str, str]:
     return {"status": "versioned usage and threshold policy API placeholder"}
 
 
-@anomaly_router.get("", response_model=list[dict[str, str]])
+@anomaly_router.get(
+    "",
+    response_model=list[dict[str, str]],
+    dependencies=[Depends(require_perm("service_usage.read_anomalies"))],
+)
 def usage_anomaly_index() -> list[dict[str, str]]:
     return []
 
 
-@automation_router.get("", response_model=dict[str, str | datetime | UUID])
+@automation_router.get(
+    "",
+    response_model=dict[str, str | datetime | UUID],
+    dependencies=[Depends(require_perm("lifecycle_automation.read"))],
+)
 def lifecycle_automation_index() -> dict[str, str | datetime | UUID]:
     return {
         "status": "bounded workers scheduled from PostgreSQL leases",

@@ -162,15 +162,18 @@ are excluded; partial multi-inbound failure converges safely; replay is idempote
 **Exit gate:** token ownership, expiry, rotation, revocation, QR parity, custom-domain
 host validation and cache invalidation are covered by integration and browser tests.
 
-### 4. COMMERCE — complete payments, wallet and reconciliation
+### 4. COMMERCE — card-to-card, wallet and reconciliation
 
-- Keep wallet purchase and manual top-up fully operational; complete real gateway
-  adapters only from documented APIs with signature verification and exact amount/unit
-  checks.
-- Add idempotent checkout creation, callback/webhook inbox, replay protection, pending
-  expiry, success/failure/cancel/refund/chargeback state machines and reconciliation.
-- Support admin-configurable payment methods, availability schedules, min/max amounts,
-  fees/discount ownership, maintenance mode and safe public instructions.
+- **Card-to-card is the only supported deposit method for this release.** Do not ship,
+  configure or advertise Zarinpal or any other online payment gateway. Purchases debit
+  the internal wallet after a reviewed card-to-card receipt has credited it.
+- Keep the manual top-up flow complete and idempotent: active destination presentation,
+  amount/reference capture, private bounded receipt upload, duplicate detection,
+  customer status/cancel/resubmission, administrator review/reject/approve and exactly-once
+  wallet credit.
+- Support admin-configurable card destinations, availability schedules, min/max amounts,
+  maintenance mode and safe public instructions. Destination changes require step-up
+  confirmation and audit history; card data is never accepted from a customer request.
 - Complete wallet history, immutable ledger explorer, manual adjustment with dual
   control, refund/compensation, downloadable safe receipt and finance exports.
 - Add coupons/campaigns, referral credit and reseller commission only as separate ledger
@@ -178,8 +181,9 @@ host validation and cache invalidation are covered by integration and browser te
 - Add finance dashboards for settlement mismatch, stuck payments, wallet liabilities,
   revenue/refunds and reconciliation age without mutable accounting shortcuts.
 
-**Exit gate:** money conservation and concurrent webhook/payment races are verified in
-PostgreSQL; reconciliation identifies and safely resolves every supported mismatch.
+**Exit gate:** money conservation, concurrent receipt review and duplicate/replay races
+are verified in PostgreSQL; reconciliation identifies and safely resolves every supported
+manual-deposit mismatch, and all online-gateway entry points fail closed.
 
 ### 5. CUSTOMER-EXPERIENCE — complete website and Telegram Mini App
 
@@ -296,7 +300,6 @@ values that must never be committed:
 - Telegram bot token/username and webhook or polling choice;
 - disposable and production Sanaei/3x-ui panel URLs, credentials, TLS expectations and
   allowed inbound IDs;
-- payment provider account, callback domains, credentials and settlement rules;
 - card-to-card destination details, business identity/support/privacy text;
 - SMTP/SMS/object-storage credentials if those optional channels are enabled.
 
@@ -310,6 +313,8 @@ operator supplies them out of band.
 - Direct writes to a panel database or undocumented provider endpoints.
 - Cryptocurrency custody, automatic exchange, credit/negative wallet balances or
   accounting behavior without explicit legal/product requirements.
+- Online payment gateways (including Zarinpal), gateway callbacks/webhooks and automatic
+  bank settlement; they are intentionally outside this release per the product decision.
 - Telegram operator mutations that bypass existing backend permission, audit and approval
   rules.
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from admin_auth_test_support import AdminAuthorizer
+from admin_auth_test_support import _admin_authorizer as _admin_authorizer
 from fastapi.testclient import TestClient
 
 from platform_api.main import app
@@ -12,8 +14,28 @@ TELEGRAM_DELIVERY_PATHS = {
 }
 
 
-def test_delivery_admin_compatibility_and_validation() -> None:
+def test_delivery_admin_compatibility_and_validation(
+    admin_authorizer: AdminAuthorizer,
+) -> None:
     client = TestClient(app)
+    admin_authorizer(None)
+    assert client.get("/api/v1/admin/delivery/compatibility").status_code == 401
+    assert (
+        client.post(
+            "/api/v1/admin/delivery/profiles/validate",
+            json={
+                "title": "bad",
+                "protocol": "VMESS",
+                "transport": "RAW",
+                "security": "REALITY",
+                "public_address": "https://bad",
+                "public_port": 443,
+                "remark_template": "safe",
+            },
+        ).status_code
+        == 401
+    )
+    admin_authorizer({"delivery_compatibility.read", "delivery_profiles.preview"})
     matrix = client.get("/api/v1/admin/delivery/compatibility")
     assert matrix.status_code == 200
     assert "sing_box" in matrix.json()["renderer_contracts"]

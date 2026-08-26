@@ -521,6 +521,9 @@ def create_checkout(
     version = db.get(ProductVersionModel, quote.product_version_id)
     if not product or not version:
         raise _err(409, request, "PRODUCT_UNAVAILABLE")
+    allocation = quote.validation_summary.get("allocation")
+    if not isinstance(allocation, dict) or not isinstance(allocation.get("policy_version_id"), str):
+        raise _err(409, request, "ALLOCATION_POLICY_UNAVAILABLE")
     InvoiceTotals(quote.subtotal_minor, 0, 0, 0, quote.final_amount_minor).validate()
     order = OrderModel(
         reference=_ref("ord"),
@@ -546,6 +549,7 @@ def create_checkout(
             "selected_options": quote.selected_options,
             "fulfillment_requirement_schema_version": "catalog.v1",
             "fulfillment_requirement_snapshot": version.fulfillment_requirements_snapshot,
+            "allocation_policy_snapshot": allocation,
             "pricing_engine_version": quote.pricing_engine_version,
             "quote_issued_at": quote.issued_at.isoformat(),
             "quote_expires_at": quote.expires_at.isoformat(),

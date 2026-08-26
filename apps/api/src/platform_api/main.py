@@ -43,9 +43,7 @@ from .orders import (
 )
 from .orders import admin_router as admin_order_router
 from .orders import customer_router as order_router
-from .payments import admin_router as admin_payment_router
-from .payments import customer_router as payment_router
-from .payments import webhook_router as payment_webhook_router
+from .providers import router as admin_provider_router
 from .resellers import admin_router as admin_reseller_router
 from .resellers import reseller_router
 from .service_migrations import admin_router as admin_service_migration_router
@@ -180,7 +178,6 @@ def create_app(settings: Settings) -> FastAPI:
         admin_catalog_router,
         wallet_router,
         order_router,
-        payment_router,
         admin_order_router,
         admin_invoice_router,
         admin_checkout_router,
@@ -188,10 +185,9 @@ def create_app(settings: Settings) -> FastAPI:
         admin_wallet_reservation_router,
         admin_outbox_router,
         admin_commerce_router,
-        admin_payment_router,
+        admin_provider_router,
         admin_reseller_router,
         reseller_router,
-        payment_webhook_router,
         admin_wallet_router,
         admin_customer_router,
         customer_manual_topup_router,

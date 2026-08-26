@@ -4,7 +4,7 @@ import secrets
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from vpnsale_domain.resellers import (
     CreditFacility,
@@ -16,6 +16,8 @@ from vpnsale_domain.resellers import (
     require_expected_version,
     require_reseller_transition,
 )
+
+from .management import require_perm
 
 admin_router = APIRouter(prefix="/api/v1/admin/management/resellers", tags=["admin-resellers"])
 reseller_router = APIRouter(prefix="/api/v1/reseller", tags=["reseller-foundation"])
@@ -56,12 +58,12 @@ def _ref(prefix: str) -> str:
     return f"{prefix}_{secrets.token_urlsafe(16).replace('-', '').replace('_', '')[:22]}"
 
 
-@admin_router.get("")
+@admin_router.get("", dependencies=[Depends(require_perm("resellers.read"))])
 def list_resellers() -> dict[str, object]:
     return {"items": list(_RESELLERS.values()), "next_cursor": None}
 
 
-@admin_router.post("")
+@admin_router.post("", dependencies=[Depends(require_perm("resellers.manage"))])
 def create_reseller(body: ResellerCreateRequest, request: Request) -> dict[str, object]:
     ref = _ref("rsl")
     item: dict[str, Any] = {
@@ -84,7 +86,10 @@ def create_reseller(body: ResellerCreateRequest, request: Request) -> dict[str, 
     return item
 
 
-@admin_router.post("/{reseller_reference}/lifecycle")
+@admin_router.post(
+    "/{reseller_reference}/lifecycle",
+    dependencies=[Depends(require_perm("resellers.manage_status"))],
+)
 def lifecycle(
     reseller_reference: str, body: LifecycleRequest, request: Request
 ) -> dict[str, object]:
@@ -105,7 +110,10 @@ def lifecycle(
     return item
 
 
-@admin_router.post("/pricing/simulate")
+@admin_router.post(
+    "/pricing/simulate",
+    dependencies=[Depends(require_perm("reseller_price_books.read"))],
+)
 def simulate_price(body: PriceSimulationRequest) -> dict[str, object]:
     rule = ResellerPricingRule(
         kind=body.rule_kind,

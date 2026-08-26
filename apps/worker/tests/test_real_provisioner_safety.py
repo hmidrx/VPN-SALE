@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from panel_adapters.contracts import CERTIFIED_CONTRACTS
-from panel_adapters.write_execution import SanaeiAuthenticatedTransport
+from panel_adapters.sanaei_3x_ui_v370 import (
+    SANAEI_3X_UI_V370_CONTRACT,
+    HttpxSanaei3xUiV370Transport,
+)
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -48,7 +50,7 @@ def _factory() -> sessionmaker[Session]:
 
 def _seed(factory: sessionmaker[Session]) -> None:
     now = datetime.now(UTC)
-    contract = CERTIFIED_CONTRACTS[ProviderKind.SANAEI_3X_UI]
+    contract = SANAEI_3X_UI_V370_CONTRACT
     with factory.begin() as db:
         pool = AllocationPoolModel(name="provider-safe", status="ACTIVE", created_at=now)
         db.add(pool)
@@ -102,7 +104,7 @@ def _seed(factory: sessionmaker[Session]) -> None:
             PanelCredentialModel(
                 id=CREDENTIAL_ID,
                 panel_instance_id=PANEL_ID,
-                credential_kind="session",
+                credential_kind="username_password",
                 key_version="aead-v1",
                 nonce_b64="AAAAAAAAAAAAAAAA",
                 ciphertext_b64="AAAAAAAAAAAAAAAAAAAAAA==",
@@ -114,7 +116,7 @@ def _seed(factory: sessionmaker[Session]) -> None:
                 id=CONNECTION_TEST_ID,
                 panel_instance_id=PANEL_ID,
                 status="CONTRACT_VERIFIED",
-                detected_version="3.5.0",
+                detected_version="3.7.0",
                 contract_digest=contract.contract_digest,
                 latency_ms=1,
                 safe_error_code=None,
@@ -194,7 +196,7 @@ def test_missing_or_invalid_vault_key_blocks_releases_lease_and_performs_zero_ht
         calls += 1
         raise AssertionError("provider HTTP authentication must not run")
 
-    monkeypatch.setattr(SanaeiAuthenticatedTransport, "authenticate", forbidden_authentication)
+    monkeypatch.setattr(HttpxSanaei3xUiV370Transport, "connect", forbidden_authentication)
     worker = OrderFulfillmentWorker(
         factory,
         DatabaseSanaeiProvisioner(factory, writes_enabled=True),
