@@ -24,9 +24,10 @@ from platform_api.catalog_models import (
 )
 from platform_api.config import Settings, get_settings
 from platform_api.database import get_db_session
+from platform_api.fulfillment_runtime_models import FulfillmentTargetBindingModel
 from platform_api.identity.models import IdentityBase, TelegramAccountModel, UserModel
 from platform_api.order_models import OrderModel, TransactionalOutboxModel, WalletPaymentModel
-from platform_api.service_models import ServiceModel
+from platform_api.service_models import AllocationPoolModel, AllocationTargetModel, ServiceModel
 from platform_api.services import customer_service_summaries
 from platform_api.wallet_models import (
     JournalEntryModel,
@@ -109,6 +110,38 @@ def purchase_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> PurchaseApp
         db.add(version)
         db.flush()
         product.current_version_id = version.id
+        pool = AllocationPoolModel(name="telegram-test-pool", status="ACTIVE", created_at=now)
+        db.add(pool)
+        db.flush()
+        target = AllocationTargetModel(
+            id=PURCHASE_TEST_TARGET_ID,
+            pool_id=pool.id,
+            panel_id="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            inbound_id="1",
+            provider_kind="sanaei_3x_ui",
+            required_protocol="vless",
+            role="PRIMARY",
+            priority=1,
+            weight=1,
+            max_capacity=100,
+            safety_reserve=0,
+            status="ACTIVE",
+            certification_minimum="v3.7.0",
+            safe_diagnostics={},
+        )
+        db.add(target)
+        db.flush()
+        db.add(
+            FulfillmentTargetBindingModel(
+                product_version_id=version.id,
+                location_code="de",
+                quality_code="standard",
+                allocation_target_id=target.id,
+                capability_codes=["limit.traffic"],
+                active=True,
+                created_at=now,
+            )
+        )
         price_list = PriceListModel(key="retail", scope="DEFAULT_RETAIL", active=True)
         db.add(price_list)
         db.flush()

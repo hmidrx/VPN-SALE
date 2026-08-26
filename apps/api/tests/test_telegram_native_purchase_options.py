@@ -25,8 +25,10 @@ from platform_api.catalog_models import (
 )
 from platform_api.config import Settings, get_settings
 from platform_api.database import get_db_session
+from platform_api.fulfillment_runtime_models import FulfillmentTargetBindingModel
 from platform_api.identity.models import IdentityBase, TelegramAccountModel, UserModel
 from platform_api.order_models import OrderModel, WalletPaymentModel
+from platform_api.service_models import AllocationPoolModel, AllocationTargetModel
 from platform_api.wallet_models import (
     JournalEntryModel,
     WalletBalanceBucketModel,
@@ -126,6 +128,39 @@ def purchase_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> PurchaseApp
         db.add(version)
         db.flush()
         product.current_version_id = version.id
+        pool = AllocationPoolModel(
+            name="telegram-options-test-pool", status="ACTIVE", created_at=now
+        )
+        db.add(pool)
+        db.flush()
+        target = AllocationTargetModel(
+            pool_id=pool.id,
+            panel_id="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            inbound_id="2",
+            provider_kind="sanaei_3x_ui",
+            required_protocol="vless",
+            role="PRIMARY",
+            priority=1,
+            weight=1,
+            max_capacity=100,
+            safety_reserve=0,
+            status="ACTIVE",
+            certification_minimum="v3.7.0",
+            safe_diagnostics={},
+        )
+        db.add(target)
+        db.flush()
+        db.add(
+            FulfillmentTargetBindingModel(
+                product_version_id=version.id,
+                location_code="nl",
+                quality_code="gaming",
+                allocation_target_id=target.id,
+                capability_codes=["limit.traffic"],
+                active=True,
+                created_at=now,
+            )
+        )
 
         price_list = PriceListModel(key="retail-native", scope="DEFAULT_RETAIL", active=True)
         db.add(price_list)
