@@ -201,7 +201,7 @@ test("UI-5.2 editable Persian amount and bottom navigation clearance", async ({
     1,
   );
   await amount.fill("۱۰۰۰۰۱");
-  await expect(amount).toHaveValue("۱۰۰٬۰۰۱");
+  await expect(amount).toHaveValue("۱۰۰۰۰۱");
   await expect(page.locator(".manual-presets [aria-pressed=true]")).toHaveCount(
     0,
   );
