@@ -39,6 +39,7 @@ from platform_api.catalog_models import (
 from platform_api.config import Settings, get_settings
 from platform_api.customer_auth.routes import current_customer_session_dependency
 from platform_api.database import get_db_session
+from platform_api.fulfillment_runtime_models import FulfillmentTargetBindingModel
 from platform_api.identity.models import AuditLogModel, CustomerSessionModel
 from platform_api.management import require_perm
 
@@ -467,6 +468,23 @@ def create_quote(
         plan_reference=p.machine_code,
         location=selection.location_code,
     )
+    if allocation is None:
+        legacy_binding = db.scalar(
+            select(FulfillmentTargetBindingModel.id).where(
+                FulfillmentTargetBindingModel.product_version_id == v.id,
+                FulfillmentTargetBindingModel.location_code == selection.location_code,
+                FulfillmentTargetBindingModel.quality_code == selection.quality_code,
+                FulfillmentTargetBindingModel.active.is_(True),
+            )
+        )
+        if legacy_binding is not None:
+            allocation = {
+                "mode": "LEGACY_BINDING_V1",
+                "required_target_count": 1,
+                "identity_strategy": "PER_TARGET",
+                "plan_reference": p.machine_code,
+                "location": selection.location_code,
+            }
     if allocation is None:
         raise _err(422, request, "allocation_unavailable")
     quote = CustomerPriceQuoteModel(

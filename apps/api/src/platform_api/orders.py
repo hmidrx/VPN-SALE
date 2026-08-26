@@ -525,7 +525,15 @@ def create_checkout(
     if not isinstance(allocation_value, dict):
         raise _err(409, request, "ALLOCATION_POLICY_UNAVAILABLE")
     allocation = cast(dict[str, object], allocation_value)
-    if not isinstance(allocation.get("policy_version_id"), str):
+    allocation_mode = allocation.get("mode")
+    is_versioned_policy = allocation_mode == "POLICY_V2" and isinstance(
+        allocation.get("policy_version_id"), str
+    )
+    is_legacy_binding = allocation_mode == "LEGACY_BINDING_V1" and (
+        allocation.get("required_target_count") == 1
+        and allocation.get("identity_strategy") == "PER_TARGET"
+    )
+    if not is_versioned_policy and not is_legacy_binding:
         raise _err(409, request, "ALLOCATION_POLICY_UNAVAILABLE")
     InvoiceTotals(quote.subtotal_minor, 0, 0, 0, quote.final_amount_minor).validate()
     order = OrderModel(

@@ -839,6 +839,7 @@ def resolve_allocation_policy_for_product(
         if locations and (location is None or location not in locations):
             continue
         return {
+            "mode": "POLICY_V2",
             "policy_id": version.policy_id,
             "policy_version_id": version.id,
             "policy_version_number": version.version_number,
