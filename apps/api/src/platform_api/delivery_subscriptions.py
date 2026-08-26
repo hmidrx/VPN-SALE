@@ -248,12 +248,13 @@ def active_revision_connections(
 
     resolved: list[DeliveryResolvedConnection] = []
     seen_targets: set[str] = set()
-    for item in raw_connections:
-        if not isinstance(item, dict):
+    for raw_item in cast(list[object], raw_connections):
+        if not isinstance(raw_item, dict):
             raise DeliveryError(
                 DeliveryErrorCode.DELIVERY_REVISION_STALE,
                 "delivery connection snapshot is invalid",
             )
+        item = cast(dict[str, object], raw_item)
         target_id = item.get("allocation_target_id")
         profile_version_id = item.get("profile_version_id")
         if (

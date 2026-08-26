@@ -3,12 +3,13 @@ from __future__ import annotations
 import base64
 from collections.abc import Iterator
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
 from panel_adapters.contracts import EndpointValidator
 from panel_adapters.sanaei_3x_ui_v370 import Sanaei3xUiV370InboundOption
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import Engine, Table, create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -34,14 +35,17 @@ def provider_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[TestClien
     )
     IdentityBase.metadata.create_all(
         engine,
-        tables=[
-            PanelInstanceModel.__table__,
-            PanelCredentialModel.__table__,
-            ProviderConnectionTestModel.__table__,
-            ProviderSyncRunModel.__table__,
-            ProviderInboundSnapshotModel.__table__,
-            AuditLogModel.__table__,
-        ],
+        tables=cast(
+            list[Table],
+            [
+                PanelInstanceModel.__table__,
+                PanelCredentialModel.__table__,
+                ProviderConnectionTestModel.__table__,
+                ProviderSyncRunModel.__table__,
+                ProviderInboundSnapshotModel.__table__,
+                AuditLogModel.__table__,
+            ],
+        ),
     )
 
     def database() -> Iterator[Session]:
@@ -56,10 +60,9 @@ def provider_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[TestClien
     original = dict(app.dependency_overrides)
     app.dependency_overrides[get_db_session] = database
     app.dependency_overrides[current_admin] = lambda: SimpleNamespace(id="admin-test")
-    monkeypatch.setattr(
-        management,
-        "_active_permissions",
-        lambda _db, _admin_id: {
+
+    def active_permissions(_db: Session, _admin_id: str) -> set[str]:
+        return {
             "providers.read",
             "providers.manage",
             "providers.manage_credentials",
@@ -67,13 +70,13 @@ def provider_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[TestClien
             "providers.read_inventory",
             "providers.test_connection",
             "providers.sync",
-        },
-    )
-    monkeypatch.setattr(
-        EndpointValidator,
-        "validate",
-        lambda _self, _raw, _endpoint, _tls: "https://panel.example.invalid:443",
-    )
+        }
+
+    def validate_endpoint(_self: object, _raw: object, _endpoint: object, _tls: object) -> str:
+        return "https://panel.example.invalid:443"
+
+    monkeypatch.setattr(management, "_active_permissions", active_permissions)
+    monkeypatch.setattr(EndpointValidator, "validate", validate_endpoint)
     monkeypatch.setenv(
         "PROVIDER_VAULT_MASTER_KEY_B64", base64.urlsafe_b64encode(b"k" * 32).decode()
     )

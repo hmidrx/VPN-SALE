@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from admin_auth_test_support import AdminAuthorizer
-from admin_auth_test_support import _admin_authorizer as _admin_authorizer
 from fastapi.testclient import TestClient
 
 from platform_api.main import app
+
+pytest_plugins = ("admin_auth_test_support",)
 
 
 def test_knowledge_api_publish_search_recommend_feedback_and_no_draft_leakage(

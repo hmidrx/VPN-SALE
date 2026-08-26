@@ -3,10 +3,11 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, Table, create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -43,18 +44,21 @@ def allocation_client(
     )
     IdentityBase.metadata.create_all(
         engine,
-        tables=[
-            PanelInstanceModel.__table__,
-            ProviderConnectionTestModel.__table__,
-            ProviderInboundSnapshotModel.__table__,
-            ProductVersionModel.__table__,
-            AllocationPolicyModel.__table__,
-            AllocationPolicyVersionModel.__table__,
-            AllocationPoolModel.__table__,
-            AllocationTargetModel.__table__,
-            ServiceAttachmentModel.__table__,
-            AllocationReservationModel.__table__,
-        ],
+        tables=cast(
+            list[Table],
+            [
+                PanelInstanceModel.__table__,
+                ProviderConnectionTestModel.__table__,
+                ProviderInboundSnapshotModel.__table__,
+                ProductVersionModel.__table__,
+                AllocationPolicyModel.__table__,
+                AllocationPolicyVersionModel.__table__,
+                AllocationPoolModel.__table__,
+                AllocationTargetModel.__table__,
+                ServiceAttachmentModel.__table__,
+                AllocationReservationModel.__table__,
+            ],
+        ),
     )
     now = datetime.now(UTC)
     with Session(engine) as db:
@@ -132,16 +136,16 @@ def allocation_client(
     original = dict(app.dependency_overrides)
     app.dependency_overrides[get_db_session] = database
     app.dependency_overrides[current_admin] = lambda: SimpleNamespace(id="admin-allocation")
-    monkeypatch.setattr(
-        management,
-        "_active_permissions",
-        lambda _db, _admin_id: {
+
+    def active_permissions(_db: Session, _admin_id: str) -> set[str]:
+        return {
             "allocation.read",
             "allocation.manage",
             "allocation.publish",
             "allocation.simulate",
-        },
-    )
+        }
+
+    monkeypatch.setattr(management, "_active_permissions", active_permissions)
     try:
         yield TestClient(app), engine
     finally:

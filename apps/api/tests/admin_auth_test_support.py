@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterator
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.orm import Session
 
 import platform_api.management as management
 from platform_api.database import get_db_session
@@ -19,17 +20,17 @@ class _TestSession:
 
 
 @pytest.fixture(name="admin_authorizer")
-def _admin_authorizer(monkeypatch: pytest.MonkeyPatch) -> Iterator[AdminAuthorizer]:
+def admin_authorizer_fixture(monkeypatch: pytest.MonkeyPatch) -> Iterator[AdminAuthorizer]:
     """Switch a route test between anonymous, forbidden, and permitted admin states."""
 
     original_overrides = dict(app.dependency_overrides)
     active_permissions: set[str] = set()
     app.dependency_overrides[get_db_session] = _TestSession
-    monkeypatch.setattr(
-        management,
-        "_active_permissions",
-        lambda _db, _admin_id: set(active_permissions),
-    )
+
+    def current_permissions(_db: Session, _admin_id: str) -> set[str]:
+        return set(active_permissions)
+
+    monkeypatch.setattr(management, "_active_permissions", current_permissions)
 
     def authorize(permissions: set[str] | None) -> None:
         active_permissions.clear()

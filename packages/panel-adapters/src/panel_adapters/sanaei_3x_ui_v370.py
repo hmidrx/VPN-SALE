@@ -32,7 +32,7 @@ class Sanaei3xUiV370Authentication(StrEnum):
     """Authentication mechanisms accepted by the tagged management API."""
 
     BEARER_TOKEN = "bearer_token"  # noqa: S105 -- public auth-mode identifier
-    SESSION_COOKIE = "session_cookie"
+    SESSION_COOKIE = "session_cookie"  # noqa: S105 -- public auth-mode identifier
 
 
 class Sanaei3xUiV370Operation(StrEnum):
@@ -119,7 +119,7 @@ class HttpxSanaei3xUiV370Transport:
     ) -> None:
         self._client = client
         self._authorization_header = authorization_header
-        self._session_csrf_token = session_csrf_token
+        self._session_csrf_token = session_csrf_token  # noqa: S105 -- runtime secret reference
         self._max_response_bytes = max_response_bytes
 
     @property
@@ -160,7 +160,7 @@ class HttpxSanaei3xUiV370Transport:
             headers={"Accept": "application/json"},
         )
         if has_bearer:
-            token = _required_string(bearer_token, "bearer_token")
+            token = _required_string(bearer_token, "bearer_token")  # noqa: S105
             if token != token.strip() or "\r" in token or "\n" in token:
                 await client.aclose()
                 raise ValueError("bearer token is invalid")
@@ -174,14 +174,14 @@ class HttpxSanaei3xUiV370Transport:
             normalized_base = normalize_sanaei_base_path(base_path)
             csrf_response = await client.get(f"{normalized_base}/csrf-token")
             csrf_body = cls._bounded_json(csrf_response, max_response_bytes)
-            if (
-                csrf_response.status_code != 200
-                or not isinstance(csrf_body, Mapping)
-                or csrf_body.get("success") is not True
-                or not isinstance(csrf_body.get("obj"), str)
+            if csrf_response.status_code != 200 or not isinstance(csrf_body, Mapping):
+                raise PermissionError("provider CSRF negotiation failed")
+            csrf_mapping = cast(Mapping[str, object], csrf_body)
+            if csrf_mapping.get("success") is not True or not isinstance(
+                csrf_mapping.get("obj"), str
             ):
                 raise PermissionError("provider CSRF negotiation failed")
-            csrf_token = cast(str, csrf_body["obj"])
+            csrf_token = cast(str, csrf_mapping["obj"])
             login_response = await client.post(
                 f"{normalized_base}/login",
                 data={
@@ -192,11 +192,10 @@ class HttpxSanaei3xUiV370Transport:
                 headers={"X-CSRF-Token": csrf_token, "Accept": "application/json"},
             )
             login_body = cls._bounded_json(login_response, max_response_bytes)
-            if (
-                login_response.status_code != 200
-                or not isinstance(login_body, Mapping)
-                or login_body.get("success") is not True
-            ):
+            if login_response.status_code != 200 or not isinstance(login_body, Mapping):
+                raise PermissionError("provider authentication failed")
+            login_mapping = cast(Mapping[str, object], login_body)
+            if login_mapping.get("success") is not True:
                 raise PermissionError("provider authentication failed")
         except (httpx.HTTPError, ValueError, PermissionError):
             await client.aclose()
@@ -533,9 +532,9 @@ def _inbound_option(value: object, index: int) -> Sanaei3xUiV370InboundOption:
         tag=tag,
         protocol=protocol,
         port=port,
-        enabled=cast(bool, enabled_value),
+        enabled=enabled_value,
         node_id=node_id,
-        tls_flow_capable=cast(bool, flow_value),
+        tls_flow_capable=flow_value,
     )
 
 
@@ -653,8 +652,8 @@ class Sanaei3xUiV370Client:
             raise ValueError("bearer and session authentication cannot be combined")
         self._transport = transport
         self._base_path = normalize_sanaei_base_path(base_path)
-        self._bearer_token = bearer_token
-        self._session_csrf_token = session_csrf_token
+        self._bearer_token = bearer_token  # noqa: S105 -- runtime secret reference
+        self._session_csrf_token = session_csrf_token  # noqa: S105 -- runtime secret reference
 
     @property
     def authentication(self) -> Sanaei3xUiV370Authentication:
@@ -745,7 +744,7 @@ class Sanaei3xUiV370Client:
                 ProviderErrorCode.PROVIDER_AUTHENTICATION_FAILED,
                 "provider authentication failed",
             ) from exc
-        self._session_csrf_token = csrf_token
+        self._session_csrf_token = csrf_token  # noqa: S105 -- runtime secret reference
 
     async def list_inbound_options(self) -> tuple[Sanaei3xUiV370InboundOption, ...]:
         response = await self._transport.get(

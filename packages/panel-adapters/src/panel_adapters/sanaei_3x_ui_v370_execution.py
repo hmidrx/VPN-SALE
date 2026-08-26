@@ -8,9 +8,7 @@ safe by the durable worker.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
 
 import httpx
 from vpnsale_domain.providers import (
@@ -271,7 +269,7 @@ class Sanaei3xUiV370Executor:
             missing = tuple(value for value in inbound_ids if value not in current.inbound_ids)
             if missing:
                 current = await self.client.attach_client(current.email, missing)
-            update_payload = dict(cast(Mapping[str, object], current.client))
+            update_payload = dict(current.client)
             desired_payload = _client_payload(command)
             update_payload["enable"] = desired_payload["enable"]
             update_payload["comment"] = desired_payload["comment"]

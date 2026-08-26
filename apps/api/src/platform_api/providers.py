@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -90,9 +90,13 @@ class PanelUpdateRequest(BaseModel):
 
 class CredentialWriteRequest(BaseModel):
     auth_mode: CredentialKind
-    bearer_token: SecretStr | None = Field(default=None, min_length=8, max_length=8192)
+    bearer_token: SecretStr | None = Field(  # noqa: S105 -- typed secret input, no literal
+        default=None, min_length=8, max_length=8192
+    )
     username: str | None = Field(default=None, min_length=1, max_length=160)
-    password: SecretStr | None = Field(default=None, min_length=1, max_length=8192)
+    password: SecretStr | None = Field(  # noqa: S105 -- typed secret input, no literal
+        default=None, min_length=1, max_length=8192
+    )
 
 
 class CredentialSummary(BaseModel):
@@ -316,13 +320,19 @@ async def _live_client(
         f"panel:{row.id}".encode(),
     )
     try:
-        secret = json.loads(plaintext)
+        decoded = json.loads(plaintext)
     except json.JSONDecodeError as exc:
         raise ProviderError(
             ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
             "provider credential record is invalid",
         ) from exc
-    if not isinstance(secret, dict) or secret.get("auth_mode") != credential.credential_kind:
+    if not isinstance(decoded, dict):
+        raise ProviderError(
+            ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
+            "provider credential record is invalid",
+        )
+    secret = cast(dict[str, object], decoded)
+    if secret.get("auth_mode") != credential.credential_kind:
         raise ProviderError(
             ProviderErrorCode.PROVIDER_CREDENTIAL_UNAVAILABLE,
             "provider credential record is invalid",

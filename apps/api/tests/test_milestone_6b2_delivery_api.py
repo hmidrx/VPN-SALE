@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from admin_auth_test_support import AdminAuthorizer
-from admin_auth_test_support import _admin_authorizer as _admin_authorizer
 from fastapi.testclient import TestClient
 
 from platform_api.main import app
+
+pytest_plugins = ("admin_auth_test_support",)
 
 TELEGRAM_DELIVERY_PATHS = {
     "/api/v1/internal/telegram/services/{service_reference}/subscription/issue",

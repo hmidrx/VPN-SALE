@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import Protocol, cast
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -315,7 +315,9 @@ class ServiceActivationWorker:
                 )
                 if not isinstance(target_ids_value, list) or not target_ids_value:
                     raise ValueError("allocation target snapshot invalid")
-                target_ids = tuple(dict.fromkeys(str(value) for value in target_ids_value))
+                target_ids = tuple(
+                    dict.fromkeys(str(value) for value in cast(list[object], target_ids_value))
+                )
                 if target.id not in target_ids:
                     raise ValueError("primary allocation target missing from snapshot")
                 delivery_connections: list[dict[str, str]] = []

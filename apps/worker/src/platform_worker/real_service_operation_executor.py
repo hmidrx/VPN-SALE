@@ -157,9 +157,12 @@ class DatabaseSanaeiServiceOperationExecutor:
 
             contract = SANAEI_3X_UI_V370_CONTRACT
             inbound_values = (target.inbound_id,)
-            snapshot_inbounds = service.allocation_policy_snapshot.get("inbound_ids")
+            allocation_snapshot = service.allocation_policy_snapshot or {}
+            snapshot_inbounds = allocation_snapshot.get("inbound_ids")
             if isinstance(snapshot_inbounds, list) and snapshot_inbounds:
-                inbound_values = tuple(str(value) for value in snapshot_inbounds)
+                inbound_values = tuple(
+                    str(value) for value in cast(list[object], snapshot_inbounds)
+                )
             inbounds = tuple(RemoteIdentifier(value) for value in inbound_values)
             provider_label = f"svc-{remote_identity.replace('-', '')[:20]}"
             traffic_policy = (

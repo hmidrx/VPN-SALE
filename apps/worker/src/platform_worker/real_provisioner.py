@@ -99,10 +99,12 @@ class DatabaseSanaeiProvisioner:
         policy_version_id: str | None = None
         with self.factory() as db:
             targets: tuple[AllocationTargetModel, ...]
-            if isinstance(policy_snapshot, dict) and isinstance(
-                policy_snapshot.get("policy_version_id"), str
-            ):
-                policy_version_id = cast(str, policy_snapshot["policy_version_id"])
+            if isinstance(policy_snapshot, dict):
+                policy_mapping = cast(dict[str, object], policy_snapshot)
+            else:
+                policy_mapping = {}
+            if isinstance(policy_mapping.get("policy_version_id"), str):
+                policy_version_id = cast(str, policy_mapping["policy_version_id"])
                 _policy, targets = select_runtime_allocation_targets(
                     db,
                     policy_version_id=policy_version_id,

@@ -4,7 +4,7 @@ from __future__ import annotations
 import secrets
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -521,8 +521,11 @@ def create_checkout(
     version = db.get(ProductVersionModel, quote.product_version_id)
     if not product or not version:
         raise _err(409, request, "PRODUCT_UNAVAILABLE")
-    allocation = quote.validation_summary.get("allocation")
-    if not isinstance(allocation, dict) or not isinstance(allocation.get("policy_version_id"), str):
+    allocation_value = quote.validation_summary.get("allocation")
+    if not isinstance(allocation_value, dict):
+        raise _err(409, request, "ALLOCATION_POLICY_UNAVAILABLE")
+    allocation = cast(dict[str, object], allocation_value)
+    if not isinstance(allocation.get("policy_version_id"), str):
         raise _err(409, request, "ALLOCATION_POLICY_UNAVAILABLE")
     InvoiceTotals(quote.subtotal_minor, 0, 0, 0, quote.final_amount_minor).validate()
     order = OrderModel(

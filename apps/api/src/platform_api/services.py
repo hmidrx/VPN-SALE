@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, cast
 from uuid import UUID, uuid4
@@ -497,22 +498,28 @@ def _policy_snapshot(row: AllocationPolicyVersionModel) -> dict[str, object]:
 
 def _string_list(snapshot: dict[str, object], key: str) -> list[str]:
     value = snapshot.get(key)
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+    if not isinstance(value, list):
         raise _allocation_error(
             "ALLOCATION_POLICY_SNAPSHOT_INVALID",
             status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-    return cast(list[str], value)
+    items = cast(list[object], value)
+    if not all(isinstance(item, str) for item in items):
+        raise _allocation_error(
+            "ALLOCATION_POLICY_SNAPSHOT_INVALID",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    return [cast(str, item) for item in items]
 
 
 def _positive_snapshot_int(snapshot: dict[str, object], key: str) -> int:
     value = snapshot.get(key)
-    if type(value) is not int or cast(int, value) < 1:
+    if type(value) is not int or value < 1:
         raise _allocation_error(
             "ALLOCATION_POLICY_SNAPSHOT_INVALID",
             status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-    return cast(int, value)
+    return value
 
 
 def _policy_version_response(
@@ -780,9 +787,10 @@ def _domain_candidates(
             )
         except HTTPException as exc:
             detail = exc.detail
+            detail_mapping = cast(dict[str, object], detail) if isinstance(detail, dict) else {}
             reason = (
-                str(detail.get("code"))
-                if isinstance(detail, dict) and detail.get("code")
+                str(detail_mapping.get("code"))
+                if detail_mapping.get("code")
                 else "ALLOCATION_TARGET_INVALID"
             )
             rejected.append(AllocationTargetRejection(target_id=row.id, reason_code=reason))
@@ -796,12 +804,10 @@ def _domain_candidates(
 def _assert_version_selectable(db: Session, row: AllocationPolicyVersionModel) -> None:
     now = datetime.now(UTC)
     candidates, _ = _domain_candidates(db, row, now=now)
-    validation_policy = DomainAllocationPolicyVersion(
-        **{
-            **_domain_policy(row).__dict__,
-            "status": AllocationPolicyStatus.PUBLISHED,
-            "published_at": now,
-        }
+    validation_policy = replace(
+        _domain_policy(row),
+        status=AllocationPolicyStatus.PUBLISHED,
+        published_at=now,
     )
     try:
         select_targets(validation_policy, tuple(candidates), f"validate:{row.id}", now)
@@ -1058,7 +1064,7 @@ def _verified_attachment_count(db: Session, service_id: str) -> int:
     for row in rows:
         inbound_ids = row.target_snapshot.get("inbound_ids")
         if isinstance(inbound_ids, list) and inbound_ids:
-            verified += len({str(value) for value in inbound_ids})
+            verified += len({str(value) for value in cast(list[object], inbound_ids)})
         else:
             verified += 1
     return verified
@@ -1164,13 +1170,10 @@ def list_allocation_pools(
     _: Annotated[object, Depends(require_perm("allocation.read"))],
 ) -> list[AllocationPoolResponse]:
     rows = db.scalars(select(AllocationPoolModel).order_by(AllocationPoolModel.name)).all()
-    counts = dict(
-        db.execute(
-            select(AllocationTargetModel.pool_id, func.count()).group_by(
-                AllocationTargetModel.pool_id
-            )
-        ).all()
-    )
+    count_rows = db.execute(
+        select(AllocationTargetModel.pool_id, func.count()).group_by(AllocationTargetModel.pool_id)
+    ).all()
+    counts = {str(row[0]): int(row[1]) for row in count_rows}
     return [_pool_response(row, int(counts.get(row.id, 0))) for row in rows]
 
 

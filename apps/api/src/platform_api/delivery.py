@@ -178,7 +178,9 @@ def _verified_required_attachments(db: Session, service_id: str) -> bool:
     )
 
 
-def _render_active_delivery(db: Session, service: ServiceModel) -> str:
+def _render_active_delivery(  # pyright: ignore[reportUnusedFunction]
+    db: Session, service: ServiceModel
+) -> str:
     attachments = _required_attachments(db, service.id)
     if len(attachments) != 1:
         raise HTTPException(

@@ -4,13 +4,15 @@ import inspect
 
 import pytest
 from admin_auth_test_support import AdminAuthorizer
-from admin_auth_test_support import _admin_authorizer as _admin_authorizer
-from fastapi.routing import APIRoute, Dependant
+from fastapi.dependencies.models import Dependant
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from platform_api.customer_auth.routes import current_customer_session_dependency
 from platform_api.main import app
 from platform_api.management import current_admin
+
+pytest_plugins = ("admin_auth_test_support",)
 
 SECURED_ADMIN_MODULES = {
     "platform_api.delivery",
@@ -21,8 +23,10 @@ SECURED_ADMIN_MODULES = {
 
 
 def _dependency_calls(dependant: Dependant) -> set[object]:
-    calls = {child.call for child in dependant.dependencies}
+    calls: set[object] = set()
     for child in dependant.dependencies:
+        if child.call is not None:
+            calls.add(child.call)
         calls.update(_dependency_calls(child))
     return calls
 

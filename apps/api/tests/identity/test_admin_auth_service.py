@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
-from platform_api.admin_auth.routes import _current
+from platform_api.admin_auth.routes import _current  # pyright: ignore[reportPrivateUsage]
 from platform_api.admin_auth.service import (
     AdminAuthService,
     AuthenticationOutcome,
