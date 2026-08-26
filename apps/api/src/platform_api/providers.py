@@ -338,29 +338,32 @@ async def _live_client(
             "provider credential record is invalid",
         )
     auth_mode = secret.get("auth_mode")
-    if auth_mode == "bearer_token" and isinstance(secret.get("bearer_token"), str):
+    bearer_value = secret.get("bearer_token")
+    username_value = secret.get("username")
+    password_value = secret.get("password")
+    if auth_mode == "bearer_token" and isinstance(bearer_value, str):
         transport = await HttpxSanaei3xUiV370Transport.connect(
             endpoint_origin,
             base_path=base_path,
-            bearer_token=secret["bearer_token"],
+            bearer_token=bearer_value,
             verify_tls=tls_input.verify_tls,
             max_response_bytes=endpoint_input.max_response_bytes,
         )
         client = Sanaei3xUiV370Client(
             transport,
             base_path=base_path,
-            bearer_token=secret["bearer_token"],
+            bearer_token=bearer_value,
         )
     elif (
         auth_mode == "username_password"
-        and isinstance(secret.get("username"), str)
-        and isinstance(secret.get("password"), str)
+        and isinstance(username_value, str)
+        and isinstance(password_value, str)
     ):
         transport = await HttpxSanaei3xUiV370Transport.connect(
             endpoint_origin,
             base_path=base_path,
-            username=secret["username"],
-            password=secret["password"],
+            username=username_value,
+            password=password_value,
             verify_tls=tls_input.verify_tls,
             max_response_bytes=endpoint_input.max_response_bytes,
         )
